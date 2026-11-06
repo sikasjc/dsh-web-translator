@@ -338,6 +338,9 @@ async function main() {
   page.on('Runtime.exceptionThrown', (params) => pageErrors.push(JSON.stringify(params.exceptionDetails).slice(0, 200)));
   await page.send('Runtime.enable');
   await page.send('Page.enable');
+  if (process.env.DARK) {
+    await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+  }
   await page.send('Page.navigate', { url: TARGET_URL });
   await sleep(6000);
   const before = await evalOn(page, BEFORE_EXPR);
