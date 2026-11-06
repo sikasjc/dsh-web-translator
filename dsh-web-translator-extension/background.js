@@ -596,6 +596,7 @@ chrome.runtime.onInstalled.addListener(function () {
       if (!stored || typeof stored.doubleClickLookup !== 'boolean') patch.doubleClickLookup = true;
       if (!stored || typeof stored.followTranslation !== 'boolean') patch.followTranslation = true;
       if (!stored || typeof stored.hideBallSameLanguage !== 'boolean') patch.hideBallSameLanguage = true;
+      if (!stored || typeof stored.translateIframes !== 'boolean') patch.translateIframes = false;
       if (!stored || (stored.uiLang !== 'zh' && stored.uiLang !== 'en')) patch.uiLang = 'zh';
       if (Object.keys(patch).length) await chrome.storage.local.set(patch);
     } catch (err) {

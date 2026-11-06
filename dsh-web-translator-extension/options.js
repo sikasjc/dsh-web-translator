@@ -38,6 +38,7 @@ const DEFAULT_SETTINGS = {
   followTranslation: true,
   showFloatingBall: true,
   hideBallSameLanguage: true,
+  translateIframes: false,
   uiLang: 'zh'
 };
 const RPC_TIMEOUT_MS = 120000;
@@ -84,6 +85,7 @@ const I18N = {
     fieldFollow: '跟随翻译（翻译过的页面里点击链接，打开的新页面自动翻译）',
     fieldShowBall: '显示悬浮球（可拖动；隐藏后可用右键菜单「dsh翻译 → 显示悬浮球」恢复）',
     fieldHideSameLang: '页面语言与目标语言一致时隐藏悬浮球（默认开启）',
+    fieldTranslateIframes: '翻译 iframe 内内容（默认关闭；Cookie 弹窗、嵌入评论等）',
     fieldUiLang: '界面语言',
     btnSave: '保存',
     btnOpenDsh: '打开 DSH 页面',
@@ -150,6 +152,7 @@ const I18N = {
     fieldFollow: 'Follow translation (auto-translate pages opened from links on a translated page)',
     fieldShowBall: 'Show floating ball (draggable; restore via right-click → dsh翻译 → Show floating ball)',
     fieldHideSameLang: 'Hide the floating ball when the page language matches the target language (on by default)',
+    fieldTranslateIframes: 'Translate content inside iframes (off by default; cookie dialogs, embedded comments)',
     fieldUiLang: 'UI language',
     btnSave: 'Save',
     btnOpenDsh: 'Open DSH page',
@@ -316,6 +319,7 @@ function normalizeSettings(raw) {
   if (typeof raw.followTranslation === 'boolean') result.followTranslation = raw.followTranslation;
   if (typeof raw.showFloatingBall === 'boolean') result.showFloatingBall = raw.showFloatingBall;
   if (typeof raw.hideBallSameLanguage === 'boolean') result.hideBallSameLanguage = raw.hideBallSameLanguage;
+  if (typeof raw.translateIframes === 'boolean') result.translateIframes = raw.translateIframes;
   if (raw.uiLang === 'zh' || raw.uiLang === 'en') result.uiLang = raw.uiLang;
   return result;
 }
@@ -399,6 +403,7 @@ function fillForm() {
   $('followTranslation').checked = state.settings.followTranslation !== false;
   $('showFloatingBall').checked = state.settings.showFloatingBall !== false;
   $('hideBallSameLanguage').checked = state.settings.hideBallSameLanguage !== false;
+  $('translateIframes').checked = state.settings.translateIframes === true;
   $('uiLang').value = state.settings.uiLang;
 }
 
@@ -418,6 +423,7 @@ function readForm() {
   const followTranslation = !!$('followTranslation').checked;
   const showFloatingBall = !!$('showFloatingBall').checked;
   const hideBallSameLanguage = !!$('hideBallSameLanguage').checked;
+  const translateIframes = !!$('translateIframes').checked;
   const uiLang = $('uiLang').value === 'en' ? 'en' : 'zh';
 
   return {
@@ -433,6 +439,7 @@ function readForm() {
     followTranslation: followTranslation,
     showFloatingBall: showFloatingBall,
     hideBallSameLanguage: hideBallSameLanguage,
+    translateIframes: translateIframes,
     uiLang: uiLang
   };
 }
@@ -470,7 +477,7 @@ async function save(options) {
 
 function setBusy(busy) {
   state.busy = busy;
-  for (const id of ['testBtn', 'modelBtn', 'saveBtn', 'openDshBtn', 'baseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'uiLang']) {
+  for (const id of ['testBtn', 'modelBtn', 'saveBtn', 'openDshBtn', 'baseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'uiLang']) {
     const el = $(id);
     if (el) el.disabled = busy;
   }

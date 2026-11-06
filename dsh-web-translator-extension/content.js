@@ -22,7 +22,15 @@
   /* 常量                                                              */
   /* ================================================================ */
 
-  var EXT_VERSION = '1.14.11';
+  /** 是否为 iframe 子框架：子框架只响应父页面广播，不创建悬浮球/面板 */
+  var IS_SUBFRAME = false;
+  try {
+    IS_SUBFRAME = window.top !== window.self;
+  } catch (err) {
+    IS_SUBFRAME = true;
+  }
+
+  var EXT_VERSION = '1.15.0';
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
@@ -81,6 +89,7 @@
     shortcutTranslate: false,
     followTranslation: true,
     hideBallSameLanguage: true,
+    translateIframes: false,
     showFloatingBall: true,
     ballPosition: { right: 16, bottom: 16 },
     uiLang: 'zh'
@@ -97,6 +106,7 @@
     'shortcutTranslate',
     'followTranslation',
     'hideBallSameLanguage',
+    'translateIframes',
     'showFloatingBall',
     'ballPosition',
     'uiLang'
@@ -513,6 +523,7 @@
 
   /** 跟随翻译：向 background 查询/设置当前标签页的跟随状态（session storage，按 tab 隔离） */
   function followAction(action) {
+    if (IS_SUBFRAME) return;
     return new Promise(function (resolve) {
       try {
         if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) return resolve(null);
@@ -664,6 +675,7 @@
     if (typeof raw.doubleClickTranslate === 'boolean') result.doubleClickTranslate = raw.doubleClickTranslate;
     if (typeof raw.shortcutTranslate === 'boolean') result.shortcutTranslate = raw.shortcutTranslate;
     if (typeof raw.hideBallSameLanguage === 'boolean') result.hideBallSameLanguage = raw.hideBallSameLanguage;
+    if (typeof raw.translateIframes === 'boolean') result.translateIframes = raw.translateIframes;
     if (typeof raw.followTranslation === 'boolean') result.followTranslation = raw.followTranslation;
     if (typeof raw.showFloatingBall === 'boolean') result.showFloatingBall = raw.showFloatingBall;
     if (raw.ballPosition && typeof raw.ballPosition === 'object') {
@@ -2146,6 +2158,7 @@
     } catch (err) {
       /* ignore */
     }
+    postToChildFrames({ __dshItFrame: true, action: 'mode', mode: next });
     updateModeButtons();
     if (persist) {
       if (state.settings.mode === next) {
@@ -4051,9 +4064,10 @@
         refreshUi();
         state.starting = false;
         // 懒加载未完成时也要监听 URL 变化（SPA 路由切换），否则状态会停在旧文案
-        startUrlWatch();
+        if (!IS_SUBFRAME) startUrlWatch();
         // 视口懒加载：只翻译当前视口 + 预载一屏，滚动时继续；不再一次性翻译整页
         startLazy(session);
+        broadcastFrameTranslate(0);
         // 跟随翻译：当前页翻译成功后，后续经由链接打开/跳转的页面自动翻译
         followAction('enable');
         // 点击翻译后自动收起面板，只保留悬浮球（进度/状态可再次点开查看）
@@ -4157,6 +4171,7 @@
     stopUrlWatch();
     closeCard();
     clearTranslations();
+    postToChildFrames({ __dshItFrame: true, action: 'restore' });
     resetPageTokenStats();
     try {
       document.documentElement.removeAttribute(MODE_ATTR);
@@ -4818,6 +4833,10 @@
         next.hideBallSameLanguage = changes.hideBallSameLanguage.newValue;
         changed = true;
       }
+      if (changes.translateIframes) {
+        next.translateIframes = changes.translateIframes.newValue === true;
+        changed = true;
+      }
       if (changes.followTranslation) {
         next.followTranslation = changes.followTranslation.newValue;
         changed = true;
@@ -4939,13 +4958,90 @@
     check(0);
   }
 
+  /** 子框架：只响应父页面广播，不创建悬浮球/面板 */
+  function initSubframeMode() {
+    try {
+      window.addEventListener('message', onSubframeMessage, false);
+    } catch (err) {
+      /* ignore */
+    }
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ __dshItFrame: true, action: 'ready' }, '*');
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  function onSubframeMessage(event) {
+    try {
+      if (!event || event.source !== window.parent) return;
+      var data = event.data;
+      if (!data || data.__dshItFrame !== true) return;
+      if (data.action === 'translate') {
+        if (state.running || state.lazyActive || hasTranslations()) return;
+        safe(function () {
+          return startTranslate({ silent: true });
+        });
+      } else if (data.action === 'restore') {
+        safe(restoreAll);
+      } else if (data.action === 'mode' && MODES.indexOf(data.mode) !== -1) {
+        safe(function () {
+          applyMode(data.mode, false);
+        });
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  /** 顶层页面：向直接子 iframe 广播翻译指令（跨域也只需 postMessage） */
+  function postToChildFrames(payload) {
+    if (IS_SUBFRAME) return;
+    try {
+      var frames = document.querySelectorAll('iframe');
+      for (var i = 0; i < frames.length; i++) {
+        var frameWin = frames[i].contentWindow;
+        if (!frameWin) continue;
+        try {
+          frameWin.postMessage(payload, '*');
+        } catch (err) {
+          /* 单个 iframe 异常不影响其它 */
+        }
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  function broadcastFrameTranslate(attempt) {
+    try {
+      if (IS_SUBFRAME || state.settings.translateIframes !== true) return;
+      if (attempt === 0) postToChildFrames({ __dshItFrame: true, action: 'restore' });
+      postToChildFrames({ __dshItFrame: true, action: 'translate' });
+      if (attempt < 3) {
+        setTimeout(function () {
+          broadcastFrameTranslate(attempt + 1);
+        }, 700);
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
   function init() {
     storageGet(STORAGE_KEYS)
       .then(function (raw) {
         applyStoredSettings(raw);
+        if (IS_SUBFRAME) return null;
         return loadBallSites();
       })
       .then(function () {
+        if (IS_SUBFRAME) {
+          initSubframeMode();
+          return;
+        }
         createUI();
         bindEvents();
         setStatus(t('statusIdle'), '');

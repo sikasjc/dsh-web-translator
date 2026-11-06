@@ -379,6 +379,25 @@ async function main() {
       response.end(TEST_HTML);
       return;
     }
+    if (request.url && request.url.startsWith('/iframe-parent.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Iframe parent</title></head><body>' +
+          '<h1>Iframe parent page</h1><p>Parent page paragraph with enough English content for translation.</p>' +
+          '<iframe id="test-frame" src="/iframe-child.html" width="600" height="220" title="child frame"></iframe>' +
+          '</body></html>'
+      );
+      return;
+    }
+    if (request.url && request.url.startsWith('/iframe-child.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Child frame</title></head><body>' +
+          '<h1>Child frame heading</h1><p>Child frame paragraph with enough English content for translation.</p>' +
+          '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/compact.html')) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
@@ -2101,6 +2120,62 @@ async function main() {
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 
+  /* 7.97) iframe 翻译：默认关闭；开启后子框架翻译，且子框架无 UI */
+  await evalOn(sw, `chrome.storage.local.set({ translateIframes: false, followTranslation: false, autoTranslate: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/iframe-parent.html' });
+  await wait(1800);
+  await fireToggle();
+  await wait(1800);
+  const iframeOffProbe = await evalOn(page, `(() => {
+    const frame = document.getElementById('test-frame');
+    const doc = frame && frame.contentDocument;
+    return {
+      frameLoaded: !!(doc && doc.body),
+      host: !!(doc && doc.getElementById('dsh-it-host')),
+      trans: doc ? doc.querySelectorAll('[data-dsh-it="trans"]').length : -1,
+      inline: doc ? doc.querySelectorAll('[data-dsh-it="trans-inline"]').length : -1
+    };
+  })()`);
+  check(
+    'iframe 翻译：默认关闭时子框架不翻译、不注入 UI',
+    iframeOffProbe.frameLoaded === true && iframeOffProbe.host === false && iframeOffProbe.trans === 0 && iframeOffProbe.inline === 0,
+    JSON.stringify(iframeOffProbe)
+  );
+  await fireToggle();
+  await wait(600);
+  await evalOn(sw, `chrome.storage.local.set({ translateIframes: true })`);
+  await wait(650);
+  await fireToggle();
+  await wait(3200);
+  const iframeOnProbe = await evalOn(page, `(() => {
+    const frame = document.getElementById('test-frame');
+    const doc = frame && frame.contentDocument;
+    return {
+      frameLoaded: !!(doc && doc.body),
+      host: !!(doc && doc.getElementById('dsh-it-host')),
+      trans: doc ? doc.querySelectorAll('[data-dsh-it="trans"]').length : -1,
+      inline: doc ? doc.querySelectorAll('[data-dsh-it="trans-inline"]').length : -1,
+      text: doc && doc.body ? doc.body.textContent.slice(0, 80) : null
+    };
+  })()`);
+  check(
+    'iframe 翻译：开启后子框架内容被翻译且不显示悬浮球',
+    iframeOnProbe.frameLoaded === true && iframeOnProbe.host === false && (iframeOnProbe.trans + iframeOnProbe.inline) > 0,
+    JSON.stringify(iframeOnProbe)
+  );
+  await fireToggle();
+  await wait(1200);
+  const iframeRestoredProbe = await evalOn(page, `(() => {
+    const frame = document.getElementById('test-frame');
+    const doc = frame && frame.contentDocument;
+    return {
+      trans: doc ? doc.querySelectorAll('[data-dsh-it]').length : -1
+    };
+  })()`);
+  check('iframe 翻译：还原时子框架译文一并清理', iframeRestoredProbe.trans === 0, JSON.stringify(iframeRestoredProbe));
+  await evalOn(sw, `chrome.storage.local.set({ translateIframes: false, followTranslation: true })`);
+
   /* 8) options 页 */
   try {
     const created = await browser.send('Target.createTarget', { url: 'chrome-extension://' + extensionId + '/options.html' });
@@ -2126,6 +2201,7 @@ async function main() {
       follow: (document.getElementById('followTranslation') || {}).checked,
       showBall: (document.getElementById('showFloatingBall') || {}).checked,
       hideSameLang: (document.getElementById('hideBallSameLanguage') || {}).checked,
+      translateIframes: (document.getElementById('translateIframes') || {}).checked,
       labels: document.querySelectorAll('[data-i18n]').length
     }))()`);
     check('options.html 加载：标题正确', String(optionsProbe.title).indexOf('dsh翻译') !== -1, optionsProbe.title);
@@ -2146,6 +2222,7 @@ async function main() {
     check('options.js 运行：跟随翻译默认开启', optionsProbe.follow === true, String(optionsProbe.follow));
     check('options.js 运行：显示悬浮球默认开启', optionsProbe.showBall === true, String(optionsProbe.showBall));
     check('options.js 运行：语言一致隐藏悬浮球默认开启', optionsProbe.hideSameLang === true, String(optionsProbe.hideSameLang));
+    check('options.js 运行：iframe 翻译默认关闭', optionsProbe.translateIframes === false, String(optionsProbe.translateIframes));
     optionsPage.close();
   } catch (err) {
     check('options.html 加载', false, errorText(err));

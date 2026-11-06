@@ -330,6 +330,21 @@ async function main() {
   console.log('extension:', loaded.id);
   await sleep(1200);
 
+  if (process.env.IFRAMES) {
+    try {
+      const earlySwList = await getJson(base + '/json/list');
+      const earlySwInfo = earlySwList.find((target) => target.type === 'service_worker' && String(target.url).endsWith('/background.js'));
+      if (earlySwInfo) {
+        const earlySw = new CDP(earlySwInfo.webSocketDebuggerUrl);
+        await earlySw.connect();
+        await evalOn(earlySw, `chrome.storage.local.set({ translateIframes: true })`);
+        console.log('IFRAMES: translateIframes=true');
+      }
+    } catch (err) {
+      console.log('IFRAMES set failed:', String(err));
+    }
+  }
+
   const pages = await getJson(base + '/json/list');
   const pageTarget = pages.find((target) => target.type === 'page');
   const page = new CDP(pageTarget.webSocketDebuggerUrl);

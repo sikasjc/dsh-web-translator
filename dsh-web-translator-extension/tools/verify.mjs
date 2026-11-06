@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.14.11', manifest.version === '1.14.11', manifest.version);
+  check('manifest: version 1.15.0', manifest.version === '1.15.0', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -100,7 +100,7 @@ const CONTENT_TOKENS = [
   ['译文标记', 'data-dsh-it="trans"'],
   ['原文标记', 'data-dsh-it="src"'],
   ['模式属性', 'data-dsh-it-mode'],
-  ['设置键', "'dshBaseUrl',\n    'targetLanguage',\n    'mode',\n    'scheduleMode',\n    'preload',\n    'autoTranslate',\n    'selectionTranslate',\n    'doubleClickTranslate',\n    'shortcutTranslate',\n    'followTranslation',\n    'hideBallSameLanguage',\n    'showFloatingBall',\n    'ballPosition',\n    'uiLang'"],
+  ['设置键', "'dshBaseUrl',\n    'targetLanguage',\n    'mode',\n    'scheduleMode',\n    'preload',\n    'autoTranslate',\n    'selectionTranslate',\n    'doubleClickTranslate',\n    'shortcutTranslate',\n    'followTranslation',\n    'hideBallSameLanguage',\n    'translateIframes',\n    'showFloatingBall',\n    'ballPosition',\n    'uiLang'"],
   ['单页上限 800', 'MAX_BLOCKS = 800'],
   ['文本下限 2', 'MIN_TEXT = 2'],
   ['行内候选下限 12', 'INLINE_MIN_TEXT = 12'],
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.14.11', "EXT_VERSION = '1.14.11'"],
+  ['EXT 版本 1.15.0', "EXT_VERSION = '1.15.0'"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],
   ['翻译 run 起始 Turn', "state.runId = makeTurnId('tr')"],
   ['translate Turn 身份', 'turnId: state.runId'],
@@ -212,6 +212,10 @@ check('content.js 翻译后自动收起面板', content.includes('closePanel();'
 check(
   'content.js 语言一致隐藏悬浮球（默认开启）',
   content.includes('hideBallSameLanguage') && content.includes('isCurrentLanguageSame') && content.includes('detectPageLanguage')
+);
+check(
+  'iframe 翻译：all_frames 子框架模式（无 UI，父页面广播）',
+  content.includes('IS_SUBFRAME') && content.includes('initSubframeMode') && content.includes('broadcastFrameTranslate') && content.includes("action: 'translate'") && JSON.stringify(manifest.content_scripts[0]).includes('"all_frames":true')
 );
 check(
   'content.js 翻译开始即启动 SPA URL 监听（懒加载也覆盖）',
