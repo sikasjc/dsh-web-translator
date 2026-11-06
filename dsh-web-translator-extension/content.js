@@ -22,7 +22,7 @@
   /* 常量                                                              */
   /* ================================================================ */
 
-  var EXT_VERSION = '1.14.3';
+  var EXT_VERSION = '1.14.4';
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
@@ -1706,6 +1706,36 @@
    * 从该元素复制字体、字号、字重、行高、颜色、背景等 computed 样式；
    * 原文文字节点包一层 src-inline，供「仅译文」模式隐藏。
    */
+  /**
+   * 紧凑导航/侧栏里的行内译文如果被挤到换行（如 MDN 顶栏 "Learn 学/习"），
+   * 改为宿主内的小字块级译注：原文保持一行，译文另起一行，避免拆词/横向溢出。
+   */
+  function compactWrappedChromeInline(host, trans) {
+    try {
+      if (!host || !trans || !host.isConnected || !trans.isConnected) return;
+      if (!isChromeRegion(host)) return;
+      var rect = trans.getBoundingClientRect();
+      if (!rect.height) return;
+      var hostStyle = window.getComputedStyle(host);
+      var fontSize = parseFloat(hostStyle.fontSize) || 16;
+      var lineHeight = parseFloat(hostStyle.lineHeight);
+      if (!lineHeight || isNaN(lineHeight)) lineHeight = fontSize * 1.25;
+      // 只处理确实发生折行的行内译文（未折行保持原样内联）
+      if (rect.height <= lineHeight * 1.45) return;
+      trans.setAttribute('data-dsh-it-compact', '');
+      trans.style.setProperty('display', 'block');
+      trans.style.setProperty('margin-left', '0');
+      trans.style.setProperty('margin-top', '1px');
+      trans.style.setProperty('font-size', '0.72em');
+      trans.style.setProperty('line-height', '1.15');
+      trans.style.setProperty('white-space', 'normal');
+      trans.style.setProperty('word-break', 'keep-all');
+      trans.style.setProperty('overflow-wrap', 'break-word');
+    } catch (err) {
+      /* 紧凑化失败时保留普通行内译文 */
+    }
+  }
+
   function injectInlineTranslation(unit, text) {
     var host = unit && unit.el;
     if (!host || !host.isConnected) return false;
@@ -1756,6 +1786,7 @@
       unit.transNode = trans;
       unit.srcWraps = wraps;
       state.injectedNodes.add(trans);
+      compactWrappedChromeInline(host, trans);
       syncPageMode();
       return true;
     } catch (err) {

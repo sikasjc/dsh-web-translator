@@ -377,6 +377,17 @@ async function main() {
       response.end(TEST_HTML);
       return;
     }
+    if (request.url && request.url.startsWith('/compact.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Compact nav</title>' +
+          '<style>.compact-nav{width:56px}</style></head><body>' +
+          '<h1>Compact nav test</h1><p>Body paragraph with enough English words for translation.</p>' +
+          '<nav class="compact-nav"><ul><li><a id="compact-nav-link" href="#learn">Learn</a></li></ul></nav>' +
+          '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/long.html')) {
       const longText = 'A long paragraph sentence with enough English words for the block translation path. '.repeat(12).trim();
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -1991,6 +2002,30 @@ async function main() {
       longParagraphProbe.hasTrans === true &&
       longParagraphProbe.transLength >= 10,
     JSON.stringify(longParagraphProbe)
+  );
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/compact.html' });
+  await wait(1600);
+  await fireToggle();
+  await wait(2200);
+  const compactNavProbe = await evalOn(page, `(() => {
+    const link = document.querySelector('#compact-nav-link');
+    const trans = link && link.querySelector('[data-dsh-it="trans-inline"]');
+    if (!trans) return null;
+    const style = getComputedStyle(trans);
+    return {
+      compact: trans.hasAttribute('data-dsh-it-compact'),
+      display: style.display,
+      fontSize: style.fontSize,
+      hostHeight: Math.round(link.getBoundingClientRect().height),
+      scrollWidth: document.documentElement.scrollWidth
+    };
+  })()`);
+  check(
+    '紧凑导航：折行的行内译文改为小字块级译注',
+    !!compactNavProbe && compactNavProbe.compact === true && compactNavProbe.display === 'block',
+    JSON.stringify(compactNavProbe)
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 
