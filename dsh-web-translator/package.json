@@ -1,0 +1,41 @@
+{
+  "name": "@local/dsh-web-translator",
+  "version": "1.8.0",
+  "private": true,
+  "description": "LLM translation backend with token-usage accounting for the dsh-web-translator browser extension; left-toolbar page with stats, traces, prompts and wordbook review",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "DESIGN.md",
+    "DESIGN-TOKEN-USAGE.md",
+    "DESIGN-TURN-TRACE.md",
+    "DESIGN-CONVERSATIONS.md",
+    "DESIGN-CACHE.md"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

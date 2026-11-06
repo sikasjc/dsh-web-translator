@@ -1,0 +1,9 @@
+# dsh-web-translator bundle patch.
+#
+# One row: the plugin package. Its host half registers /dsh-immersive/api/* and
+# its client half contributes the "dsh-web-translator" Settings section.
+# Install this bundle from its directory with plugin_manager install_bundle.
+- insert:
+    - id: dsh-web-translator
+      name: '@local/dsh-web-translator'
+      config: {}

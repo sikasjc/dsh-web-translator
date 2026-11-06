@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsh-web-translator",
+    "description": "LLM translation backend for the dsh-web-translator browser extension, with wordbook review and pronunciation practice in Settings."
+  }
+}

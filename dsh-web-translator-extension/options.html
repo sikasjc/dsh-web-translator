@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dsh翻译 · DSH 扩展设置</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f5f9;
+      --card: #ffffff;
+      --fg: #1f2430;
+      --sub: #667085;
+      --border: rgba(15, 23, 42, 0.12);
+      --accent: #4f46e5;
+      --accent-2: #0ea5e9;
+      --ok: #047857;
+      --warn: #b45309;
+      --err: #dc2626;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121722;
+        --card: #1b2130;
+        --fg: #e5e9f2;
+        --sub: #98a2b3;
+        --border: rgba(255, 255, 255, 0.12);
+        --ok: #34d399;
+        --warn: #fbbf24;
+        --err: #f87171;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px 16px 48px;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+    header { display: flex; align-items: center; gap: 14px; padding: 4px 2px 6px; }
+    header img { border-radius: 10px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22); }
+    h1 { margin: 0; font-size: 20px; letter-spacing: 0.2px; }
+    .subtitle { margin: 2px 0 0; color: var(--sub); font-size: 12.5px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px 20px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .card h2 { margin: 0 0 14px; font-size: 14px; font-weight: 600; letter-spacing: 0.2px; }
+    .field { display: flex; align-items: center; gap: 14px; margin: 0 0 12px; }
+    .field > span { flex: 0 0 132px; color: var(--sub); font-size: 13px; }
+    input[type="url"], select {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 34px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg);
+      font: inherit;
+      font-size: 13px;
+    }
+    input[type="url"]:focus-visible, select:focus-visible, .btn:focus-visible, .check input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .check { display: flex; align-items: center; gap: 8px; margin: 0 0 12px 146px; font-size: 13px; color: var(--fg); }
+    .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+    .hint { margin: 0 0 12px; color: var(--sub); font-size: 12px; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+    .btn {
+      height: 34px;
+      padding: 0 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: 0.55; cursor: default; }
+    .btn.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-color: transparent;
+      color: #fff;
+    }
+    .btn.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.06); }
+    .status { font-size: 12.5px; color: var(--sub); word-break: break-word; }
+    .status.ok { color: var(--ok); }
+    .status.warn { color: var(--warn); }
+    .status.err { color: var(--err); }
+    .readonly {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      font-size: 13px;
+      display: grid;
+      grid-template-columns: 132px 1fr;
+      gap: 6px 14px;
+    }
+    .readonly[hidden] { display: none; }
+    .readonly dt { color: var(--sub); font-size: 12.5px; }
+    .readonly dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
+    .tips { margin: 0; padding-left: 20px; color: var(--sub); font-size: 12.5px; }
+    .tips li { margin: 4px 0; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: rgba(127, 127, 127, 0.14);
+    }
+    @media (max-width: 560px) {
+      .field { align-items: stretch; flex-direction: column; gap: 6px; }
+      .field > span { flex: none; }
+      .check { margin-left: 0; }
+      .readonly { grid-template-columns: 1fr; gap: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <img src="icons/icon48.png" width="42" height="42" alt="">
+      <div>
+        <h1 data-i18n="appTitle">dsh翻译 · 扩展设置</h1>
+        <p class="subtitle" data-i18n="appSubtitle">调用本机 DSH 插件 API 做网页翻译；模型与提示词在 DSH 设置页中编辑。</p>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2 data-i18n="secConnection">连接</h2>
+      <label class="field">
+        <span data-i18n="fieldBaseUrl">DSH 地址</span>
+        <input id="baseUrl" type="url" spellcheck="false" autocomplete="off" placeholder="http://127.0.0.1:3080">
+      </label>
+      <p class="hint" data-i18n="hintBaseUrl">默认 http://127.0.0.1:3080（DSH Web / 插件 API 所在地址）。manifest 的 host_permissions 仅覆盖 127.0.0.1:3080 与 localhost:3080，改端口需同步改 manifest 并重新加载扩展。</p>
+      <div class="row">
+        <button id="testBtn" class="btn" type="button" data-i18n="btnTest">测试连接</button>
+        <button id="modelBtn" class="btn" type="button" data-i18n="btnReadModel">读取当前模型</button>
+        <span id="connStatus" class="status" role="status" aria-live="polite"></span>
+      </div>
+      <dl id="modelInfo" class="readonly" hidden>
+        <dt data-i18n="roProvider">Provider</dt><dd id="roProvider">—</dd>
+        <dt data-i18n="roModel">模型</dt><dd id="roModel">—</dd>
+        <dt data-i18n="roEffort">推理强度</dt><dd id="roEffort">—</dd>
+        <dt data-i18n="roTarget">DSH 设置的目标语言</dt><dd id="roTarget">—</dd>
+        <dt data-i18n="roSource">配置来源</dt><dd id="roSource">—</dd>
+      </dl>
+      <p class="hint" style="margin-top:10px" data-i18n="hintReadonly">只读回显。模型、推理强度、提示词请到 DSH → 设置 → dsh翻译 中修改（扩展不保存提示词）。</p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="secTranslate">翻译</h2>
+      <label class="field">
+        <span data-i18n="fieldTarget">目标语言</span>
+        <select id="targetLanguage"></select>
+      </label>
+      <label class="field">
+        <span data-i18n="fieldMode">默认显示模式</span>
+        <select id="mode">
+          <option value="source" data-i18n="modeSource">原文</option>
+          <option value="bilingual" data-i18n="modeBilingual">双语对照</option>
+          <option value="only" data-i18n="modeOnly">仅译文</option>
+        </select>
+      </label>
+      <label class="field">
+        <span data-i18n="fieldSchedule">调度方式</span>
+        <select id="scheduleMode">
+          <option value="screen" data-i18n="scheduleScreen">按屏触发（默认，整屏一次翻译）</option>
+          <option value="block" data-i18n="scheduleBlock">按块懒加载（省 token）</option>
+        </select>
+      </label>
+      <label class="field">
+        <span data-i18n="fieldPreload">预加载</span>
+        <select id="preload">
+          <option value="none" data-i18n="preloadNone">不预加载（仅当前视口）</option>
+          <option value="half" data-i18n="preloadHalf">半屏</option>
+          <option value="one" data-i18n="preloadOne">一屏（默认）</option>
+        </select>
+      </label>
+      <p class="hint" data-i18n="hintSchedule">按屏触发：滚动停稳后整屏翻译（请求更少、译文更整齐）；按块懒加载：只翻进入视口的段落（最省 token）。预加载决定当前视口下方额外翻译多少，选项在新一次翻译时生效。</p>
+      <label class="check">
+        <input id="autoTranslate" type="checkbox">
+        <span data-i18n="fieldAuto">页面加载后自动翻译（默认关闭）</span>
+      </label>
+      <label class="check">
+        <input id="selectionTranslate" type="checkbox">
+        <span data-i18n="fieldSelection">划词翻译（选中文本后弹出翻译卡，默认关闭）</span>
+      </label>
+      <label class="check">
+        <input id="doubleClickTranslate" type="checkbox">
+        <span data-i18n="fieldDoubleClick">双击翻译（双击单词/短句弹出翻译卡，默认关闭）</span>
+      </label>
+      <label class="check">
+        <input id="shortcutTranslate" type="checkbox">
+        <span data-i18n="fieldShortcut">快捷键翻译（默认关闭；选中文本按快捷键翻译选区，无选中则翻译整页）</span>
+      </label>
+      <p class="hint" data-i18n="hintShortcut">快捷键在浏览器扩展快捷键页自定义（建议 Command+K / Ctrl+K）：chrome://extensions/shortcuts</p>
+      <div class="row">
+        <button id="shortcutBtn" class="btn" type="button" data-i18n="btnShortcut">打开快捷键设置</button>
+      </div>
+      <label class="check">
+        <input id="followTranslation" type="checkbox">
+        <span data-i18n="fieldFollow">跟随翻译（翻译过的页面里点击链接，打开的新页面自动翻译）</span>
+      </label>
+      <label class="check">
+        <input id="showFloatingBall" type="checkbox">
+        <span data-i18n="fieldShowBall">显示悬浮球（可拖动；隐藏后可用右键菜单「dsh翻译 → 显示悬浮球」恢复）</span>
+      </label>
+      <label class="check">
+        <input id="hideBallSameLanguage" type="checkbox">
+        <span data-i18n="fieldHideSameLang">页面语言与目标语言一致时隐藏悬浮球（默认开启）</span>
+      </label>
+      <label class="field">
+        <span data-i18n="fieldUiLang">界面语言</span>
+        <select id="uiLang">
+          <option value="zh">简体中文</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <div class="row">
+        <button id="saveBtn" class="btn primary" type="button" data-i18n="btnSave">保存</button>
+        <button id="openDshBtn" class="btn" type="button" data-i18n="btnOpenDsh">打开 DSH 页面</button>
+        <span id="saveStatus" class="status" role="status" aria-live="polite"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="secUsage">使用与隐私</h2>
+      <ul class="tips">
+        <li data-i18n="tip1">在任意网页点击工具栏图标、按 Alt+T，或点击页面右下角悬浮球打开面板，点「翻译此页」。</li>
+        <li data-i18n="tip2">选中文本或双击单词会弹出查词卡，可发音、加入单词本（单词本在 DSH 设置页复习）。</li>
+        <li data-i18n="tip3">所有网络请求都由扩展后台发往本机 DSH；页面文本经 DSH 发送给你在 DSH 中配置的模型服务，扩展本身不保存页面内容。</li>
+        <li data-i18n="tip4">需要先安装并启用 DSH 插件「dsh翻译」，DSH Web 默认运行在 127.0.0.1:3080。</li>
+      </ul>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

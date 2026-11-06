@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "dsh翻译",
+  "version": "1.14.3",
+  "description": "dsh-web-translator：本地网页翻译扩展。调用本机 DSH 插件 API，支持原文/双语对照/仅译文、划词与双击查词、加入单词本；文本只发往本机 DSH 及你配置的模型服务。",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:3080/*",
+    "http://localhost:3080/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "dsh翻译（Alt+T）",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "toggle-translate": {
+      "suggested_key": {
+        "default": "Alt+T",
+        "mac": "Alt+T"
+      },
+      "description": "翻译 / 停止 / 还原当前页面"
+    },
+    "shortcut-translate": {
+      "suggested_key": {
+        "default": "Ctrl+K",
+        "mac": "Command+K"
+      },
+      "description": "翻译选中文本 / 当前页面（需在扩展选项页开启）"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "short_name": "dsh翻译"
+}

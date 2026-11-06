@@ -1,0 +1,7 @@
+# QA 截图 / live 证据 / 结果 JSON 可能包含真实浏览标题、会话名等个人信息：
+# 不入库，只在本地运行 harness 生成。
+*.png
+*.result.json
+evidence/
+live-evidence/
+live-conversations-evidence/
