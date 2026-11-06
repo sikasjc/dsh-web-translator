@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.14.5', manifest.version === '1.14.5', manifest.version);
+  check('manifest: version 1.14.6', manifest.version === '1.14.6', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.14.5', "EXT_VERSION = '1.14.5'"],
+  ['EXT 版本 1.14.6', "EXT_VERSION = '1.14.6'"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],
   ['翻译 run 起始 Turn', "state.runId = makeTurnId('tr')"],
   ['translate Turn 身份', 'turnId: state.runId'],
@@ -219,7 +219,7 @@ check(
 );
 check(
   'content.js 紧凑导航折行译注（chrome 区域内小字块级）',
-  content.includes('compactWrappedChromeInline') && content.includes('data-dsh-it-compact') && content.includes("'0.72em'")
+  content.includes('compactWrappedChromeInline') && content.includes('data-dsh-it-compact') && content.includes("'0.8em'")
 );
 check(
   'content.js 列表项块级译文（li 内部注入，不新增条目）',

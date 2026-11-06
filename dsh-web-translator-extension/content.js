@@ -22,7 +22,7 @@
   /* 常量                                                              */
   /* ================================================================ */
 
-  var EXT_VERSION = '1.14.5';
+  var EXT_VERSION = '1.14.6';
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
@@ -1726,8 +1726,8 @@
       trans.style.setProperty('display', 'block');
       trans.style.setProperty('margin-left', '0');
       trans.style.setProperty('margin-top', '1px');
-      trans.style.setProperty('font-size', '0.72em');
-      trans.style.setProperty('line-height', '1.15');
+      trans.style.setProperty('font-size', '0.8em');
+      trans.style.setProperty('line-height', '1.2');
       trans.style.setProperty('white-space', 'normal');
       trans.style.setProperty('word-break', 'keep-all');
       trans.style.setProperty('overflow-wrap', 'break-word');
