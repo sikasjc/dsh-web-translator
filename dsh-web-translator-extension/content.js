@@ -22,7 +22,7 @@
   /* 常量                                                              */
   /* ================================================================ */
 
-  var EXT_VERSION = '1.14.4';
+  var EXT_VERSION = '1.14.5';
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
@@ -1782,7 +1782,14 @@
       trans.style.setProperty('white-space', 'pre-wrap');
       trans.style.setProperty('word-break', 'break-word');
       trans.style.setProperty('overflow-wrap', 'anywhere');
-      host.appendChild(trans);
+      // 插在最后一个原文文字节点之后（而不是容器末尾），保证同一容器内
+      // “文字 + 链接 + 文字”时译文仍紧跟对应的原文，不被后面的元素隔开。
+      var insertAfter = wraps.length ? wraps[wraps.length - 1] : null;
+      if (insertAfter && insertAfter.parentNode) {
+        insertAfter.parentNode.insertBefore(trans, insertAfter.nextSibling);
+      } else {
+        host.appendChild(trans);
+      }
       unit.transNode = trans;
       unit.srcWraps = wraps;
       state.injectedNodes.add(trans);

@@ -60,6 +60,7 @@ const TEST_HTML = `<!doctype html>
     <pre><code>const x = 1; // should not be translated</code></pre>
     <button>Button label should not be translated</button>
     <div><span>Inline span text that is longer than twelve characters.</span></div>
+    <div><span id="interleaved-inline">Header label text <a href="#interleaved-link">link label</a></span></div>
     <div contenteditable="true">Editable text should not be translated.</div>
   </article>
   <nav><ul><li><a href="#login">Login</a></li><li><a href="#help">Help</a></li></ul></nav>
@@ -843,6 +844,24 @@ async function main() {
       structuredCellProbe.inlineCount >= 2 &&
       structuredCellProbe.anchors[0].indexOf('【译文】') !== -1,
     JSON.stringify(structuredCellProbe)
+  );
+
+  const interleavedProbe = await evalOn(page, `(() => {
+    const span = document.querySelector('#interleaved-inline');
+    const wrap = span && span.querySelector('[data-dsh-it="src-inline"]');
+    const trans = span && span.querySelector('[data-dsh-it="trans-inline"]');
+    const link = span && span.querySelector('a');
+    return {
+      hasTrans: !!trans,
+      afterWrap: !!(wrap && trans && wrap.nextElementSibling === trans),
+      beforeLink: !!(trans && link && (trans.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      text: trans ? trans.textContent.slice(0, 40) : null
+    };
+  })()`);
+  check(
+    '行内译文紧跟对应原文节点，不追加到容器末尾',
+    interleavedProbe.hasTrans === true && interleavedProbe.afterWrap === true && interleavedProbe.beforeLink === true,
+    JSON.stringify(interleavedProbe)
   );
 
   const sameSkipProbe = await evalOn(page, `(() => {
