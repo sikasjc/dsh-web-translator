@@ -59,6 +59,7 @@ const TEST_HTML = `<!doctype html>
     <table><tbody><tr><td id="structured-toc-cell"><dl><dt><a href="#section-a">Alpha section link</a></dt><dd><a href="#section-b">Beta section link</a></dd></dl></td></tr></tbody></table>
     <pre><code>const x = 1; // should not be translated</code></pre>
     <button>Button label should not be translated</button>
+    <button id="dynamic-color" style="color: rgb(10, 10, 10); background-color: rgb(0, 0, 0);">Dynamic color button label</button>
     <div><span>Inline span text that is longer than twelve characters.</span></div>
     <div><span id="interleaved-inline">Header label text <a href="#interleaved-link">link label</a></span></div>
     <div contenteditable="true">Editable text should not be translated.</div>
@@ -1155,6 +1156,18 @@ async function main() {
     JSON.stringify({ count: inlineProbe.count, nav: inlineProbe.navTexts.slice(0, 2), button: inlineProbe.buttonText.slice(0, 60) })
   );
   check('行内翻译：不复制列表项（标签列表 li 数量保持 2）', inlineProbe.tagLiCount === 2, inlineProbe.tagLiCount);
+  const dynamicColorProbe = await evalOn(page, `(() => {
+    const button = document.querySelector('#dynamic-color');
+    const trans = button && button.querySelector('[data-dsh-it="trans-inline"]');
+    if (!trans) return null;
+    button.style.color = 'rgb(255, 255, 255)';
+    return { hostColor: getComputedStyle(button).color, transColor: getComputedStyle(trans).color };
+  })()`);
+  check(
+    '行内译文颜色跟随宿主动态主题（黑底按钮变白字）',
+    !!dynamicColorProbe && dynamicColorProbe.hostColor === dynamicColorProbe.transColor,
+    JSON.stringify(dynamicColorProbe)
+  );
   const labelStyle = await evalOn(page, `(() => {
     const styleOf = (el) => {
       if (!el) return null;

@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.14.6', manifest.version === '1.14.6', manifest.version);
+  check('manifest: version 1.14.8', manifest.version === '1.14.8', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.14.6', "EXT_VERSION = '1.14.6'"],
+  ['EXT 版本 1.14.8', "EXT_VERSION = '1.14.8'"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],
   ['翻译 run 起始 Turn', "state.runId = makeTurnId('tr')"],
   ['translate Turn 身份', 'turnId: state.runId'],
@@ -212,6 +212,14 @@ check('content.js 翻译后自动收起面板', content.includes('closePanel();'
 check(
   'content.js 语言一致隐藏悬浮球（默认开启）',
   content.includes('hideBallSameLanguage') && content.includes('isCurrentLanguageSame') && content.includes('detectPageLanguage')
+);
+check(
+  'content.js 行内包裹 span 样式重置（避免站点 button span 命中）',
+  content.includes("wrap.style.setProperty('all', 'unset')") && content.includes("trans.style.setProperty('color', 'inherit', 'important')")
+);
+check(
+  'content.js 行内译文颜色继承宿主（跟随动态主题）',
+  content.includes("INLINE_STYLE_PROPS = TYPO_PROPS.filter") && content.includes("prop !== 'color'")
 );
 check(
   'content.js 行内译文紧跟对应原文节点（不追加到容器末尾）',

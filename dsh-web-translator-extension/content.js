@@ -22,7 +22,7 @@
   /* 常量                                                              */
   /* ================================================================ */
 
-  var EXT_VERSION = '1.14.6';
+  var EXT_VERSION = '1.14.8';
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
@@ -1367,8 +1367,13 @@
     'color', 'text-align'
   ];
 
-  /** 复制到译文的行内排版属性（保证“看起来和原文一样”） */
-  var INLINE_STYLE_PROPS = TYPO_PROPS.concat([
+  /** 复制到译文的行内排版属性（保证“看起来和原文一样”）
+   *  color 不复制：译文 span 作为宿主子元素自然继承 color，
+   *  这样站点异步换主题（如 OneTrust 深色按钮）时译文颜色会跟随，不会白字/黑字错配。
+   */
+  var INLINE_STYLE_PROPS = TYPO_PROPS.filter(function (prop) {
+    return prop !== 'color';
+  }).concat([
     'background-color', 'border-radius', 'text-decoration-color', 'text-shadow'
   ]);
 
@@ -1764,6 +1769,14 @@
         if (!target || !target.isConnected || !target.parentNode) continue;
         var wrap = document.createElement('span');
         wrap.setAttribute(MARK_ATTR, 'src-inline');
+        // 原文原本是 text node；包成 span 后可能被站点“button span”之类选择器命中，
+        // 样式重置后保持继承宿主排版（仅译文模式仍可隐藏）。
+        try {
+          wrap.style.setProperty('all', 'unset');
+          wrap.style.setProperty('color', 'inherit', 'important');
+        } catch (resetErr) {
+          /* ignore */
+        }
         try {
           target.parentNode.insertBefore(wrap, target);
           wrap.appendChild(target);
@@ -1782,6 +1795,11 @@
       trans.style.setProperty('white-space', 'pre-wrap');
       trans.style.setProperty('word-break', 'break-word');
       trans.style.setProperty('overflow-wrap', 'anywhere');
+      try {
+        trans.style.setProperty('color', 'inherit', 'important');
+      } catch (colorErr) {
+        /* ignore */
+      }
       // 插在最后一个原文文字节点之后（而不是容器末尾），保证同一容器内
       // “文字 + 链接 + 文字”时译文仍紧跟对应的原文，不被后面的元素隔开。
       var insertAfter = wraps.length ? wraps[wraps.length - 1] : null;
