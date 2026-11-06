@@ -386,6 +386,7 @@ async function main() {
           '<style>.compact-nav{width:56px}</style></head><body>' +
           '<h1>Compact nav test</h1><p>Body paragraph with enough English words for translation.</p>' +
           '<nav class="compact-nav"><ul><li><a id="compact-nav-link" href="#learn">Learn</a></li></ul></nav>' +
+          '<div role="tablist" style="display:flex;width:44px"><a id="compact-tab" role="tab" href="#preview" style="max-width:44px">Preview</a></div>' +
           '</body></html>'
       );
       return;
@@ -2058,6 +2059,21 @@ async function main() {
     '紧凑导航：折行的行内译文改为小字块级译注',
     !!compactNavProbe && compactNavProbe.compact === true && compactNavProbe.display === 'block',
     JSON.stringify(compactNavProbe)
+  );
+  const compactTabProbe = await evalOn(page, `(() => {
+    const tab = document.querySelector('#compact-tab');
+    const trans = tab && tab.querySelector('[data-dsh-it="trans-inline"]');
+    if (!trans) return null;
+    return {
+      compact: trans.hasAttribute('data-dsh-it-compact'),
+      display: getComputedStyle(trans).display,
+      hostHeight: Math.round(tab.getBoundingClientRect().height)
+    };
+  })()`);
+  check(
+    '紧凑 UI 控件：tab bar 标签折行时改为小字块级译注',
+    !!compactTabProbe && compactTabProbe.compact === true && compactTabProbe.display === 'block',
+    JSON.stringify(compactTabProbe)
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 

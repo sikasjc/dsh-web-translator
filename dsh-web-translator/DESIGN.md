@@ -265,6 +265,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - **视口懒加载（省 token，V1.1）**：开始翻译时只把「当前视口 + 下方一屏预载」的块入队；`IntersectionObserver`（`rootMargin: 0 0 100% 0`）在滚动时把新进入视口的块继续入队；队列调度保持 ≤2 批在途，空闲时等待滚动，**不再一次性翻译整页**；滚不到的段落不产生模型请求。
 - 翻译流水线：队列内按 ≤10 段、≤1600 字符切批 → 并发 2 调 background `translate` → 边到边注入；失败组拆半重试至单段；单段失败标红可点击重试；「停止」中止队列并保留已译。
 - **段落文本归一化（V1.5，可读性优先、无需配置）**：扩展抽取时把 `<br>`/`<wbr>`、HTML 格式化换行、连续空白、NBSP 还原为空格；Host 的 `normalizeSegmentText` 再归一一次，让模型看到完整句子；模型返回的段落译文异常换行压平为空格，不人为断行（由浏览器按容器宽度自然折行）。不提供换行相关配置，也不做按行数/长度的机械判断。
+- **紧凑 UI 控件与延迟复检（V1.14.9–V1.14.10）**：`isCompactUiHost()` 把可点击祖先（`button/a/summary/[role=tab|button|menuitem]`）+ flex/grid 容器或 `role=tablist/toolbar/menu` 的短标签（≤48 字符）也纳入 compact 范围（GitHub 的 `button > span(flex) > div` 分段控件）；注入后 150ms/600ms 各复检一次，捕获 React/异步 CSS 在注入后才改变宽度导致的折行。
 - **行内译文颜色继承/包裹重置（V1.14.8）**：`src-inline` 包裹 span 加 `all:unset` + `color:inherit!important`，译文 span 加 `color:inherit!important`，避免站点 CSS（如 OneTrust 的 `button span` 深色规则、异步深色主题）把原文/译文变成黑底黑字；E2E 用动态改色按钮覆盖。
 - **行内译文跟随源节点（V1.14.5）**：`injectInlineTranslation` 把译文 span 插在最后一个 `src-inline` 包裹节点之后（而不是 `host.appendChild` 到容器末尾），修复“文字 + 链接 + 文字”容器里译文被后面的链接/按钮隔开的问题（如 text.npr.org 顶栏 `Text-Only Version` 的译文跑到 `Go To Full Site` 之后）。
 - **紧凑导航折行译注（V1.14.4）**：行内注入后测量译文 span 高度，若超过宿主行高 1.45 倍且宿主在 chrome 区域（header/nav/aside/footer 等），改为宿主内小字块级译注（`display:block; font-size:.8em; line-height:1.2; word-break:keep-all`），避免窄导航栏拆词/横向溢出；未折行的短标签仍保持行内双语。

@@ -22,7 +22,7 @@
   /* 常量                                                              */
   /* ================================================================ */
 
-  var EXT_VERSION = '1.14.8';
+  var EXT_VERSION = '1.14.10';
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
@@ -1715,10 +1715,37 @@
    * 紧凑导航/侧栏里的行内译文如果被挤到换行（如 MDN 顶栏 "Learn 学/习"），
    * 改为宿主内的小字块级译注：原文保持一行，译文另起一行，避免拆词/横向溢出。
    */
-  function compactWrappedChromeInline(host, trans) {
+  /** 紧凑 UI 控件：flex/grid tab bar、工具条里的短标签（不限于 header/nav）
+   *  兼容 GitHub 这类 button > span(flex) > div(text) 的分段控件结构。 */
+  function isCompactUiHost(host, sourceText) {
+    try {
+      var text = String(sourceText == null ? host.textContent || '' : sourceText).replace(/\s+/g, ' ').trim();
+      if (text.length < 1 || text.length > 48) return false;
+      var control = host.closest
+        ? host.closest('button, a, summary, [role="tab"], [role="button"], [role="menuitem"], [role="tablist"], [role="toolbar"], [role="menubar"], [role="menu"]')
+        : null;
+      if (!control) return false;
+      if (control.matches && control.matches('button, summary, [role="tablist"], [role="toolbar"], [role="menubar"], [role="menu"]')) {
+        return true;
+      }
+      // 普通链接/role 控件：只有处于 flex/grid 紧凑容器里才按控件处理，避免正文行内链接被块级化
+      var el = host;
+      for (var depth = 0; el && depth < 4; depth++) {
+        var display = window.getComputedStyle(el).display || '';
+        if (display.indexOf('flex') !== -1 || display.indexOf('grid') !== -1) return true;
+        el = el.parentElement;
+      }
+      return false;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function compactWrappedChromeInline(host, trans, sourceText) {
     try {
       if (!host || !trans || !host.isConnected || !trans.isConnected) return;
-      if (!isChromeRegion(host)) return;
+      var chromeHost = isChromeRegion(host);
+      if (!chromeHost && !isCompactUiHost(host, sourceText)) return;
       var rect = trans.getBoundingClientRect();
       if (!rect.height) return;
       var hostStyle = window.getComputedStyle(host);
@@ -1738,6 +1765,30 @@
       trans.style.setProperty('overflow-wrap', 'break-word');
     } catch (err) {
       /* 紧凑化失败时保留普通行内译文 */
+    }
+  }
+
+  /** React/异步 CSS 可能在注入后改变宽度导致译文才折行；延迟复检一次 */
+  function scheduleCompactRecheck(host, trans, sourceText) {
+    try {
+      if (!host || !trans) return;
+      trans.__dshCompactScheduled = trans.__dshCompactScheduled || [];
+      var delays = [150, 600];
+      for (var i = 0; i < delays.length; i++) {
+        (function (delay) {
+          var timer = setTimeout(function () {
+            try {
+              if (!trans.isConnected || !host.isConnected) return;
+              compactWrappedChromeInline(host, trans, sourceText);
+            } catch (err) {
+              /* ignore */
+            }
+          }, delay);
+          trans.__dshCompactScheduled.push(timer);
+        })(delays[i]);
+      }
+    } catch (err) {
+      /* ignore */
     }
   }
 
@@ -1811,7 +1862,8 @@
       unit.transNode = trans;
       unit.srcWraps = wraps;
       state.injectedNodes.add(trans);
-      compactWrappedChromeInline(host, trans);
+      compactWrappedChromeInline(host, trans, unit.text);
+      if (!trans.hasAttribute('data-dsh-it-compact')) scheduleCompactRecheck(host, trans, unit.text);
       syncPageMode();
       return true;
     } catch (err) {
