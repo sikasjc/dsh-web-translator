@@ -22,7 +22,7 @@
   /* 常量                                                              */
   /* ================================================================ */
 
-  var EXT_VERSION = '1.14.10';
+  var EXT_VERSION = '1.14.11';
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
@@ -4050,6 +4050,8 @@
         updateProgressUi();
         refreshUi();
         state.starting = false;
+        // 懒加载未完成时也要监听 URL 变化（SPA 路由切换），否则状态会停在旧文案
+        startUrlWatch();
         // 视口懒加载：只翻译当前视口 + 预载一屏，滚动时继续；不再一次性翻译整页
         startLazy(session);
         // 跟随翻译：当前页翻译成功后，后续经由链接打开/跳转的页面自动翻译

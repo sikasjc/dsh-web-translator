@@ -2077,6 +2077,30 @@ async function main() {
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 
+  /* 7.96) SPA 路由变化：懒加载未完成也会提示重新翻译 */
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/test.html?spa=1' });
+  await wait(1600);
+  await fireToggle();
+  await wait(1800);
+  await evalOn(page, `history.pushState({}, '', '/test.html?spa=2')`);
+  await wait(2200);
+  const spaProbe = await evalOn(page, `(() => {
+    const host = document.getElementById('dsh-it-host');
+    const shadow = host && host.shadowRoot;
+    return {
+      url: location.search,
+      status: shadow ? shadow.querySelector('.dsh-status').textContent : null
+    };
+  })()`);
+  check(
+    'SPA 路由变化：懒加载未完成也会提示重新翻译',
+    /页面已跳转|Page navigated/.test(spaProbe.status || ''),
+    JSON.stringify(spaProbe)
+  );
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
+
   /* 8) options 页 */
   try {
     const created = await browser.send('Target.createTarget', { url: 'chrome-extension://' + extensionId + '/options.html' });
