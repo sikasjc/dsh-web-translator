@@ -581,6 +581,25 @@ export function createApi({
   });
   const catalog = createCatalogService({ ctx, logger: log, now: clock });
   const settingsService = createSettingsService({ store: settingsStore, logger: log, now: clock });
+  /** 是否记录翻译历史（token 统计/轨迹 + DSH 原生会话）；由 settings.recordHistory 控制。 */
+  let recordHistoryEnabled = true;
+  const recordHistoryReady = settingsService
+    .loadSaved()
+    .then((saved) => {
+      recordHistoryEnabled = saved.recordHistory !== false;
+    })
+    .catch(() => {
+      recordHistoryEnabled = true;
+    });
+  /** 等待启动时读取的记录开关（只读一次，保存设置时同步更新）。 */
+  async function recordingEnabled() {
+    try {
+      await recordHistoryReady;
+    } catch {
+      /* fall back to the current value */
+    }
+    return recordHistoryEnabled;
+  }
   const cache = createPersistentBatchCache({
     store: cacheStore,
     max: LIMITS.translationCacheEntries,
@@ -734,30 +753,37 @@ export function createApi({
    * @returns {Promise<object>}
    */
   async function withUsage(kind, body, run) {
+    const record = await recordingEnabled();
     const startedAt = Date.now();
     let meta;
     try {
       meta = normalizeRequestMeta(body);
     } catch (error) {
-      const selection = await bestEffortSelection();
-      const event = failureUsageEvent(kind, body, {}, selection, error, startedAt);
-      await recordConversation(kind, body, {}, null, error, selection, event, false);
-      await recordUsage(event);
+      if (record) {
+        const selection = await bestEffortSelection();
+        const event = failureUsageEvent(kind, body, {}, selection, error, startedAt);
+        await recordConversation(kind, body, {}, null, error, selection, event, false);
+        await recordUsage(event);
+      }
       throw error;
     }
     let result;
     try {
       result = await run();
     } catch (error) {
-      const selection = await bestEffortSelection();
-      const event = failureUsageEvent(kind, body, meta, selection, error, startedAt);
-      await recordConversation(kind, body, meta, null, error, selection, event, false);
-      await recordUsage(event);
+      if (record) {
+        const selection = await bestEffortSelection();
+        const event = failureUsageEvent(kind, body, meta, selection, error, startedAt);
+        await recordConversation(kind, body, meta, null, error, selection, event, false);
+        await recordUsage(event);
+      }
       throw error;
     }
-    const event = successUsageEvent(kind, body, meta, result, startedAt);
-    await recordConversation(kind, body, meta, result, null, null, event, true);
-    await recordUsage(event);
+    if (record) {
+      const event = successUsageEvent(kind, body, meta, result, startedAt);
+      await recordConversation(kind, body, meta, result, null, null, event, true);
+      await recordUsage(event);
+    }
     return result;
   }
 
@@ -924,6 +950,23 @@ export function createApi({
   }
 
   /**
+   * `DELETE /records`：清理全部翻译记录。
+   * 清空 usage 账本，并让 conversations 桥把「dsh翻译记录」里的会话从侧边栏
+   * 归档/移出分组、停止 live 会话（DSH 不提供删除会话 API）。
+   * @returns {Promise<{cleared: true, usage: object, conversations: object}>}
+   */
+  async function clearRecords() {
+    let conversationResult = { sessions: 0, archived: 0 };
+    try {
+      conversationResult = await conversations.clearRecords();
+    } catch (error) {
+      log.warn(`[dsh-web-translator] records: conversation cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const usage = await usageService.clear();
+    return { cleared: true, usage, conversations: conversationResult };
+  }
+
+  /**
    * `GET /health` (DESIGN §5.1): LLM counts never block the response.
    * @returns {Promise<object>}
    */
@@ -1033,7 +1076,8 @@ export function createApi({
       }
       await catalog.assertModelExists(provider, model);
     }
-    await settingsService.save(values);
+    const saved = await settingsService.save(values);
+    recordHistoryEnabled = saved.recordHistory !== false;
     return getSettings();
   }
 
@@ -1065,6 +1109,7 @@ export function createApi({
     listConversations,
     clearCache,
     clearUsage,
+    clearRecords,
     getBallSites: () => ballSites.list(),
     addBallSite: (body) => ballSites.add(body),
     removeBallSite: (body) => ballSites.remove(body),

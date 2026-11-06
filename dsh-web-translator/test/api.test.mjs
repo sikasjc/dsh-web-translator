@@ -772,6 +772,46 @@ test('clears the ledger and paginates usage events', async (t) => {
   assert.deepEqual((await api.listUsageEvents()).events, []);
 });
 
+test('recordHistory=false stops ledger/conversation recording until re-enabled', async (t) => {
+  const { api } = await setupApi(t, {
+    streams: [
+      jsonStream({ translations: ['你好'] }),
+      jsonStream({ translations: ['世界'] }),
+    ],
+  });
+  const disabled = await api.putSettings({ recordHistory: false });
+  assert.equal(disabled.settings.recordHistory, false);
+  await api.translate({ texts: ['hello'] });
+  assert.equal((await api.listUsageEvents()).events.length, 0, 'no usage event while recording is off');
+  assert.equal((await api.getUsage()).usage.totals.requests, 0);
+
+  await api.putSettings({ recordHistory: true });
+  await api.translate({ texts: ['world'] });
+  assert.equal((await api.listUsageEvents()).events.length, 1, 'recording resumes after re-enabling');
+});
+
+test('clearRecords clears the ledger and is idempotent', async (t) => {
+  const { api } = await setupApi(t, {
+    streams: [
+      jsonStream({ translations: ['a'] }),
+      jsonStream({ translations: ['b'] }),
+    ],
+  });
+  await api.translate({ texts: ['one'] });
+  await api.translate({ texts: ['two'] });
+  assert.equal((await api.getUsage()).usage.totals.requests, 2);
+
+  const first = await api.clearRecords();
+  assert.equal(first.cleared, true);
+  assert.equal(first.usage.totals.requests, 0);
+  assert.deepEqual((await api.listUsageEvents()).events, []);
+  assert.equal((await api.getUsage()).usage.totals.requests, 0);
+
+  const second = await api.clearRecords();
+  assert.equal(second.cleared, true);
+  assert.equal(second.usage.totals.requests, 0);
+});
+
 test('exposes avgLatencyMs from the persisted latency aggregation', async (t) => {
   const { api, dir } = await setupApi(t, {
     streams: [

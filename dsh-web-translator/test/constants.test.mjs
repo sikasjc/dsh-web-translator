@@ -82,7 +82,7 @@ test('document versions and settings keys are stable', () => {
   assert.equal(USAGE_VERSION, 1);
   assert.deepEqual([...SETTINGS_KEYS], [
     'provider', 'model', 'reasoningEffort', 'targetLanguage', 'systemPrompt',
-    'userTemplate', 'batchSegments', 'batchChars', 'concurrency',
+    'userTemplate', 'batchSegments', 'batchChars', 'concurrency', 'recordHistory',
   ]);
 });
 

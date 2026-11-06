@@ -26,6 +26,7 @@ const ROUTES = Object.freeze({
   '/models/resolve': Object.freeze(['GET']),
   '/settings': Object.freeze(['GET', 'PUT']),
   '/usage': Object.freeze(['GET', 'DELETE']),
+  '/records': Object.freeze(['DELETE']),
   '/usage/events': Object.freeze(['GET']),
   '/usage/turns': Object.freeze(['GET']),
   '/conversations': Object.freeze(['GET']),
@@ -273,6 +274,9 @@ async function dispatchWrite(path, body, api, signal) {
     case '/cache':
       // DELETE /cache clears the persistent translation cache (DESIGN-CACHE §3).
       return api.clearCache();
+    case '/records':
+      // DELETE /records clears the usage ledger and hides/archives translation conversations.
+      return api.clearRecords();
     case '/translate':
       return api.translate(body, { signal });
     case '/lookup':

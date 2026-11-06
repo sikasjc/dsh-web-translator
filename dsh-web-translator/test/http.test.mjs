@@ -50,6 +50,10 @@ function createStubApi(overrides = {}) {
       calls.push({ op: 'clearCache' });
       return { cleared: true, entries: 0 };
     },
+    clearRecords: async () => {
+      calls.push({ op: 'clearRecords' });
+      return { cleared: true, usage: { totals: { requests: 0 } }, conversations: { sessions: 0, archived: 0 } };
+    },
     putSettings: async (body) => {
       calls.push({ op: 'putSettings', body });
       return { settings: body };
@@ -324,6 +328,33 @@ test('DELETE /cache clears the persistent translation cache', async () => {
     assert.equal(response.json().error.code, 'METHOD_NOT_ALLOWED');
     assert.equal(response.headers.allow, 'DELETE');
   }
+});
+
+test('DELETE /records dispatches clearRecords', async () => {
+  const api = createStubApi();
+  const handler = createHttpHandler(api, {});
+  const response = await invokeHandler(handler, fakeRequest({
+    method: 'DELETE',
+    url: '/dsh-immersive/api/records',
+    host: '127.0.0.1:3080',
+  }));
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(api.calls.at(-1), { op: 'clearRecords' });
+  const body = response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.cleared, true);
+});
+
+test('DELETE /records rejects GET with 405', async () => {
+  const api = createStubApi();
+  const handler = createHttpHandler(api, {});
+  const response = await invokeHandler(handler, fakeRequest({
+    method: 'GET',
+    url: '/dsh-immersive/api/records',
+    host: '127.0.0.1:3080',
+  }));
+  assert.equal(response.statusCode, 405);
+  assert.equal(response.headers.allow, 'DELETE');
 });
 
 test('rejects non-JSON and malformed bodies', async () => {

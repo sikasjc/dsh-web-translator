@@ -601,6 +601,73 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
   }
 
   /**
+   * 清理「dsh翻译记录」：停止所有 live 会话，归档并移出分组中的翻译会话，
+   * 最后删除该 workspace（下一次翻译会重新创建）。DSH 没有删除会话的 API，
+   * 因此会话日志本身保留在磁盘上，但会从侧边栏/分组视图隐藏。
+   * @returns {Promise<{sessions: number, archived: number}>}
+   */
+  async function clearRecords() {
+    const { workspaces, persistence } = services();
+    const ids = new Set();
+    for (const conversation of conversations.values()) {
+      if (typeof conversation.sessionId === 'string' && conversation.sessionId.length > 0) ids.add(conversation.sessionId);
+    }
+    if (workspace !== null && Array.isArray(workspace.sessionIds)) {
+      for (const id of workspace.sessionIds) {
+        if (typeof id === 'string' && id.length > 0) ids.add(id);
+      }
+    }
+    try {
+      if (persistence !== null && typeof persistence?.list === 'function') {
+        const canonical = await canonicalPath(cwd);
+        const snapshots = await persistence.list();
+        for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+          const header = snapshot !== null && typeof snapshot === 'object' ? snapshot.header ?? snapshot : null;
+          if (header === null || typeof header.id !== 'string' || header.id.length === 0) continue;
+          const headerCwd = typeof header.cwd === 'string' ? await canonicalPath(header.cwd) : null;
+          if (canonical !== null && headerCwd === canonical) ids.add(header.id);
+        }
+      }
+    } catch (error) {
+      warn(`clear records list failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    for (const conversation of [...conversations.values()]) disposeConversation(conversation);
+    let archived = 0;
+    if (workspaces !== null && typeof workspaces?.archiveSession === 'function') {
+      for (const id of ids) {
+        try {
+          await workspaces.archiveSession(id, { stopActivity: true });
+          archived += 1;
+        } catch (error) {
+          warn(`archive session failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+    const entity = workspace;
+    if (entity !== null && typeof entity === 'object') {
+      if (typeof entity.detachSession === 'function') {
+        for (const id of ids) {
+          try {
+            await entity.detachSession(id);
+          } catch {
+            // Detaching is best-effort; archival already hid the session.
+          }
+        }
+      }
+      if (workspaces !== null && typeof workspaces?.delete === 'function' && typeof entity.id === 'string') {
+        try {
+          await workspaces.delete(entity.id);
+        } catch (error) {
+          warn(`workspace delete failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+    workspace = null;
+    workspacePromise = null;
+    return { sessions: ids.size, archived };
+  }
+
+  /**
    * List live translation conversations (newest first) for the plugin page.
    * @returns {object[]}
    */
@@ -629,6 +696,7 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
 
   return {
     recordTurn,
+    clearRecords,
     list,
     ensureWorkspace,
     dispose,

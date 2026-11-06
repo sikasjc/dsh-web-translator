@@ -118,6 +118,9 @@ export function normalizeSettingsPatch(raw) {
       values.batchChars = normalizeInteger(value, key, LIMITS.batchChars);
     } else if (key === 'concurrency') {
       values.concurrency = normalizeInteger(value, key, LIMITS.concurrency);
+    } else if (key === 'recordHistory') {
+      if (typeof value !== 'boolean') invalidSettings('recordHistory must be a boolean');
+      values.recordHistory = value;
     }
   }
 

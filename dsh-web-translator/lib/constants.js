@@ -127,6 +127,7 @@ export const DEFAULTS = Object.freeze({
   batchSegments: LIMITS.batchSegments.default,
   batchChars: LIMITS.batchChars.default,
   concurrency: LIMITS.concurrency.default,
+  recordHistory: true,
 });
 
 /** Keys a settings PUT may address (DESIGN §5.5). */
@@ -140,4 +141,5 @@ export const SETTINGS_KEYS = Object.freeze([
   'batchSegments',
   'batchChars',
   'concurrency',
+  'recordHistory',
 ]);

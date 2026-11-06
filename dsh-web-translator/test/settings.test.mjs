@@ -24,6 +24,12 @@ function assertInvalid(run, pattern) {
   });
 }
 
+test('recordHistory defaults to true and accepts booleans', () => {
+  assert.equal(DEFAULTS.recordHistory, true);
+  assert.equal(normalizeSettingsPatch({ recordHistory: true }).values.recordHistory, true);
+  assert.equal(normalizeSettingsPatch({ recordHistory: false }).values.recordHistory, false);
+});
+
 test('accepts a complete valid patch', () => {
   const { values, warnings } = normalizeSettingsPatch({
     provider: 'modelhub',
@@ -35,6 +41,7 @@ test('accepts a complete valid patch', () => {
     batchSegments: 5,
     batchChars: 2000,
     concurrency: 3,
+    recordHistory: false,
   });
   assert.deepEqual(warnings, []);
   assert.equal(values.provider, 'modelhub');
@@ -42,6 +49,7 @@ test('accepts a complete valid patch', () => {
   assert.equal(values.targetLanguage, 'ja');
   assert.equal(values.batchSegments, 5);
   assert.equal(values.concurrency, 3);
+  assert.equal(values.recordHistory, false);
 });
 
 test('blank prompts mean "restore default" (undefined patch value)', () => {
@@ -65,6 +73,7 @@ test('rejects type and range violations with INVALID_SETTINGS', () => {
   assertInvalid(() => normalizeSettingsPatch({ targetLanguage: 'xx-YY' }), /targetLanguage/);
   assertInvalid(() => normalizeSettingsPatch({ systemPrompt: 'x'.repeat(8001) }), /systemPrompt/);
   assertInvalid(() => normalizeSettingsPatch({ userTemplate: 'x'.repeat(4001) }), /userTemplate/);
+  assertInvalid(() => normalizeSettingsPatch({ recordHistory: 'yes' }), /recordHistory/);
   assertInvalid(() => normalizeSettingsPatch({}), /no settings fields/);
   assertInvalid(() => normalizeSettingsPatch({ unknownField: 1 }), /no settings fields/);
 });

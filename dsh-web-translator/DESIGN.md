@@ -189,6 +189,12 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 响应：`{ ok:true, result:{ text, translation, provider, model, dictionary?:{word,phonetic?,audio?,meanings:[{partOfSpeech,definitions:[...]}]} } }`
 词典：英文单词（`/^[A-Za-z][A-Za-z'-]{0,40}$/`）查 `dictionaryapi.dev`（5s 超时，失败静默降级）。
 
+### 5.6.1 `DELETE /records` 与 `recordHistory` 设置
+
+- `settings.recordHistory`（boolean，默认 `true`）控制是否记录翻译历史；关闭后 `withUsage()` 跳过 usage 账本与 DSH 原生翻译会话（`conversations.recordTurn`），翻译/查词本身不受影响。
+- `DELETE /records`：调用 `conversations.clearRecords()`（停止 live 会话、归档并把翻译会话移出「dsh翻译记录」workspace、删除该 workspace）后清空 usage 账本；因 DSH 没有删除会话的 API，会话日志本身保留在磁盘、从侧边栏隐藏。
+- Client 设置页新增「翻译记录」卡片：关闭记录开关（默认关闭 = 默认记录）与「清理所有记录」二次确认。
+
 ### 5.7.1 `GET /ball-sites` / `POST /ball-sites/add|remove`
 悬浮球域名隐藏列表：GET 返回 `{sites, updatedAt}`；add/remove 请求 `{domain}`，域名统一小写、去掉协议/路径/端口/`www.` 前缀，去重且最多 200 个。
 

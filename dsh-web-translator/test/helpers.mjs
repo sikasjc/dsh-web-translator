@@ -169,7 +169,7 @@ export function createFakeAgents({ create } = {}) {
  *   optional hooks: throw to simulate failures, or return a custom workspace.
  */
 export function createFakeWorkspaceRegistry({ create, attachSession, existing } = {}) {
-  const state = { createCalls: [], attached: [], reordered: [], resolveCalls: [], workspace: null };
+  const state = { createCalls: [], attached: [], reordered: [], resolveCalls: [], archived: [], deleted: [], detached: [], workspace: null };
   if (existing !== undefined) state.workspace = existing;
   const registry = {
     state,
@@ -191,7 +191,10 @@ export function createFakeWorkspaceRegistry({ create, attachSession, existing } 
         },
         async setTitle() {},
         async insertSessionBefore() {},
-        async detachSession() {},
+        async detachSession(sessionId) {
+          state.detached.push(sessionId);
+          workspace.sessionIds = workspace.sessionIds.filter((id) => id !== sessionId);
+        },
         async status() { return 'ok'; },
       };
       state.workspace = workspace;
@@ -204,6 +207,14 @@ export function createFakeWorkspaceRegistry({ create, attachSession, existing } 
     async insertBefore(id, beforeId) {
       state.reordered.push({ id, beforeId });
       return [];
+    },
+    async archiveSession(sessionId, options = {}) {
+      state.archived.push({ sessionId, options });
+    },
+    async delete(id) {
+      state.deleted.push(id);
+      state.workspace = null;
+      return true;
     },
     list() {
       return state.workspace === null ? [] : [state.workspace];

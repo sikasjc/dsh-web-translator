@@ -543,6 +543,41 @@ test('workspace creation attaches persisted translation sessions that predate th
   assert.deepEqual(workspaceRegistry.state.attached, ['translation-tr_old_1', 'translation-tr_old_2'], 'oldest attaches first so newest sits on top; foreign cwd is skipped');
 });
 
+test('clearRecords archives translation sessions, detaches and deletes the workspace', async (t) => {
+  const dir = await createTempDir();
+  t.after(() => removeTempDir(dir));
+  const workspaceRegistry = createFakeWorkspaceRegistry();
+  const bridge = createConversationBridge({
+    ctx: createFakeCtx({
+      agents: createFakeAgents(),
+      workspaceRegistry,
+      sessionPersistence: {
+        async list() {
+          return [{ header: { id: 'translation-tr_persisted', cwd: join(dir, 'conversations'), createdAt: 1 } }];
+        },
+      },
+    }),
+    dataDir: dir,
+    logger: createFakeLogger(),
+  });
+  t.after(() => bridge.dispose());
+  await bridge.recordTurn({ ...ROUND, turnId: 'tr_live' });
+
+  const result = await bridge.clearRecords();
+  assert.deepEqual(result, { sessions: 2, archived: 2 });
+  assert.deepEqual(
+    workspaceRegistry.state.archived.map((entry) => entry.sessionId).sort(),
+    ['translation-tr_live', 'translation-tr_persisted'],
+  );
+  assert.ok(workspaceRegistry.state.archived.every((entry) => entry.options.stopActivity === true));
+  assert.deepEqual(workspaceRegistry.state.deleted, ['ws-translations']);
+  assert.deepEqual(workspaceRegistry.state.detached.sort(), ['translation-tr_live', 'translation-tr_persisted']);
+  assert.equal(bridge.list().length, 0, 'live conversations are disposed');
+
+  await bridge.recordTurn({ ...ROUND, turnId: 'tr_after_clear' });
+  assert.equal(workspaceRegistry.state.createCalls.length, 2, 'the workspace is recreated on the next translation');
+});
+
 test('a failing workspace registry never blocks conversation recording', async (t) => {
   const workspaceRegistry = createFakeWorkspaceRegistry({
     async create() {

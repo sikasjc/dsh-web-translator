@@ -157,6 +157,15 @@ window.__ModuleLoader__.load({
       'settings.noChanges': '当前没有待保存的修改',
       'settings.saveFailed': '保存失败',
       'settings.privacy': '翻译文本会发送给 DSH 中配置的模型提供方；辅助翻译调用不会写入会话记录。',
+      'settings.records': '翻译记录',
+      'settings.recordsHint': '关闭后不再记录新的 token 统计、轨迹和 DSH「dsh翻译记录」会话；已有记录可用下方按钮清理。',
+      'settings.disableRecord': '关闭翻译记录',
+      'settings.disableRecordHint': '默认开启记录（此开关默认关闭）。开启后新的翻译/查词不会写入任何记录。',
+      'settings.clearRecords': '清理所有记录',
+      'settings.clearRecordsConfirmText': '将清空全部 token 统计/轨迹，并把「dsh翻译记录」分组中的 DSH 会话归档隐藏（DSH 不提供删除会话 API）。此操作不可恢复。',
+      'settings.clearRecordsConfirm': '确认清理',
+      'settings.clearRecordsDone': '翻译记录已清理',
+      'settings.clearRecordsFailed': '清理记录失败',
       'settings.test': '测试翻译',
       'settings.testHint': '测试使用已保存的设置；修改后请先保存。',
       'settings.testText': '测试文本',
@@ -483,6 +492,15 @@ window.__ModuleLoader__.load({
       'settings.noChanges': 'No pending changes',
       'settings.saveFailed': 'Save failed',
       'settings.privacy': 'Translated text is sent to the model provider configured in DSH; these auxiliary calls are not written to session logs.',
+      'settings.records': 'Translation records',
+      'settings.recordsHint': 'When disabled, new token stats, traces and「dsh翻译记录」DSH conversations are not recorded. Existing records can be cleared below.',
+      'settings.disableRecord': 'Disable translation recording',
+      'settings.disableRecordHint': 'Recording is on by default (this switch is off by default). When enabled, new translations/lookups write no records.',
+      'settings.clearRecords': 'Clear all records',
+      'settings.clearRecordsConfirmText': 'Clears all token stats/traces and archives the translation conversations out of the「dsh翻译记录」group (DSH has no session-delete API). This cannot be undone.',
+      'settings.clearRecordsConfirm': 'Clear records',
+      'settings.clearRecordsDone': 'Translation records cleared',
+      'settings.clearRecordsFailed': 'Could not clear records',
       'settings.test': 'Test translation',
       'settings.testHint': 'The test uses the saved settings; save your changes first.',
       'settings.testText': 'Test text',
@@ -1352,6 +1370,7 @@ window.__ModuleLoader__.load({
         targetLanguage: typeof settings.targetLanguage === 'string' && settings.targetLanguage ? settings.targetLanguage : 'zh-CN',
         systemPrompt: typeof settings.systemPrompt === 'string' ? settings.systemPrompt : '',
         userTemplate: typeof settings.userTemplate === 'string' ? settings.userTemplate : '',
+        recordHistory: settings.recordHistory !== false,
       };
     }
     /** Group the /models catalog by provider and keep the current selection visible. */
@@ -1424,6 +1443,9 @@ window.__ModuleLoader__.load({
       const [testing, setTesting] = useState(false);
       const [testResult, setTestResult] = useState(null);
       const [testError, setTestError] = useState(null);
+      const [clearRecordsConfirm, setClearRecordsConfirm] = useState(false);
+      const [clearingRecords, setClearingRecords] = useState(false);
+      const [recordsNotice, setRecordsNotice] = useState(null);
       const mountedRef = useRef(true);
       const resolveTicketRef = useRef(0);
 
@@ -1565,6 +1587,7 @@ window.__ModuleLoader__.load({
           targetLanguage: form.targetLanguage,
           systemPrompt: form.systemPrompt,
           userTemplate: form.userTemplate,
+          recordHistory: form.recordHistory,
         };
         try {
           const data = await api.put('settings', body);
@@ -1615,6 +1638,35 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /** 打开/取消清理确认。 */
+      function requestClearRecords() {
+        if (!clearingRecords) setClearRecordsConfirm(true);
+      }
+
+      function cancelClearRecords() {
+        if (!clearingRecords) setClearRecordsConfirm(false);
+      }
+
+      /** DELETE /records：清空账本并把翻译会话从 DSH 分组归档隐藏。 */
+      function confirmClearRecords() {
+        if (clearingRecords) return;
+        setClearingRecords(true);
+        setRecordsNotice(null);
+        request('records', { method: 'DELETE' })
+          .then(() => {
+            if (!mountedRef.current) return;
+            setClearRecordsConfirm(false);
+            setRecordsNotice({ kind: 'ok', text: t('settings.clearRecordsDone') });
+          })
+          .catch((error) => {
+            if (!mountedRef.current) return;
+            setRecordsNotice({ kind: 'error', text: describeError(error, t) });
+          })
+          .finally(() => {
+            if (mountedRef.current) setClearingRecords(false);
+          });
+      }
+
       if (phase === 'loading') return h('div', { className: 'dsh-it-panel' }, h(LoadingSkeleton, { label: t('common.loading') }));
       if (phase === 'error') {
         return h(
@@ -1645,7 +1697,8 @@ window.__ModuleLoader__.load({
           form.reasoningEffort !== baseline.reasoningEffort ||
           form.targetLanguage !== baseline.targetLanguage ||
           form.systemPrompt !== baseline.systemPrompt ||
-          form.userTemplate !== baseline.userTemplate);
+          form.userTemplate !== baseline.userTemplate ||
+          form.recordHistory !== baseline.recordHistory);
 
       const modelValue = form.provider && form.model ? form.provider + '::' + form.model : '';
       const effortIds = efforts.map((effort) => effort.id);
@@ -1792,6 +1845,51 @@ window.__ModuleLoader__.load({
             t('settings.placeholdersHint'),
             PROMPT_PLACEHOLDERS.map((placeholder) => h('code', { key: 'placeholder-' + placeholder, className: 'dsh-it-code' }, placeholder)),
           ),
+        ),
+        h(
+          'section',
+          { className: 'dsh-it-card', 'aria-labelledby': 'dsh-it-records-heading' },
+          h(
+            'div',
+            { className: 'dsh-it-card-header' },
+            h('h3', { className: 'dsh-it-card-title', id: 'dsh-it-records-heading' }, t('settings.records')),
+            form.recordHistory === false ? h('span', { className: 'dsh-it-chip dsh-it-chip-dirty' }, t('settings.disableRecord')) : null,
+          ),
+          h(
+            'label',
+            { className: 'dsh-it-check-row' },
+            h('input', {
+              type: 'checkbox',
+              checked: form.recordHistory === false,
+              onChange: (event) => updateForm({ recordHistory: !event.target.checked }),
+            }),
+            h('span', null, t('settings.disableRecord')),
+          ),
+          h('p', { className: 'dsh-it-hint' }, t('settings.disableRecordHint')),
+          h('p', { className: 'dsh-it-hint' }, t('settings.recordsHint')),
+          h(
+            'div',
+            { className: 'dsh-it-row' },
+            h(
+              'button',
+              { type: 'button', className: 'dsh-it-btn dsh-it-btn-danger', disabled: clearingRecords, onClick: requestClearRecords },
+              clearingRecords ? t('common.loading') : t('settings.clearRecords'),
+            ),
+            clearRecordsConfirm
+              ? h(
+                  'button',
+                  { type: 'button', className: 'dsh-it-btn dsh-it-btn-danger', disabled: clearingRecords, onClick: confirmClearRecords },
+                  t('settings.clearRecordsConfirm'),
+                )
+              : null,
+            clearRecordsConfirm
+              ? h('button', { type: 'button', className: 'dsh-it-btn', disabled: clearingRecords, onClick: cancelClearRecords }, t('common.cancel'))
+              : null,
+          ),
+          clearRecordsConfirm ? h('p', { className: 'dsh-it-hint dsh-it-hint-error' }, t('settings.clearRecordsConfirmText')) : null,
+          recordsNotice
+            ? h(InlineAlert, { kind: recordsNotice.kind === 'ok' ? 'ok' : 'error' }, recordsNotice.text)
+            : null,
         ),
         h(
           'div',
@@ -5223,6 +5321,8 @@ window.__ModuleLoader__.load({
 .dsh-it-input::placeholder,.dsh-it-textarea::placeholder{color:var(--dsw-alias-label-secondary)}
 .dsh-it-input:focus-visible,.dsh-it-select:focus-visible,.dsh-it-textarea:focus-visible,.dsh-it-btn:focus-visible,.dsh-it-icon-btn:focus-visible,.dsh-it-tab:focus-visible,.dsh-it-grade:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .dsh-it-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.dsh-it-check-row{display:flex;align-items:center;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer}
+.dsh-it-check-row input{width:15px;height:15px;margin:0;cursor:pointer}
 .dsh-it-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:13px;line-height:20px;font-weight:500;border-radius:8px;padding:6px 14px;cursor:pointer;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);white-space:nowrap}
 .dsh-it-btn:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
 .dsh-it-btn:disabled{opacity:.5;cursor:not-allowed}
