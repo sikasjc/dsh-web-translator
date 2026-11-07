@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS = {
   scheduleMode: 'screen',
   preload: 'one',
   autoTranslate: false,
+  autoTranslateSites: [],
   selectionTranslate: false,
   doubleClickTranslate: false,
   shortcutTranslate: false,
@@ -76,6 +77,14 @@ const I18N = {
     hintSchedule:
       '按屏触发：滚动停稳后整屏翻译（请求更少、译文更整齐）；按块懒加载：只翻进入视口的段落（最省 token）。预加载决定当前视口下方额外翻译多少，选项在新一次翻译时生效。',
     fieldAuto: '页面加载后自动翻译（默认关闭）',
+    fieldAutoSites: '自动翻译站点',
+    autoSiteAdd: '添加',
+    hintAutoSites: '添加后，该域名的页面加载时会自动开始翻译（按当前目标语言/模式）；无需和上面的全局自动翻译同时开启。添加/移除立即生效。',
+    autoSiteEmpty: '还没有添加自动翻译站点',
+    autoSiteInvalid: '请输入有效域名，例如 example.com',
+    autoSiteAdded: '已添加 {site}',
+    autoSiteRemoved: '已移除 {site}',
+    autoSiteRemove: '移除',
     fieldSelection: '划词翻译（选中文本后弹出翻译卡，默认关闭）',
     fieldDoubleClick: '双击翻译（双击单词/短句弹出翻译卡，默认关闭）',
     fieldShortcut: '快捷键翻译（默认关闭；选中文本按快捷键翻译选区，无选中则翻译整页）',
@@ -143,6 +152,14 @@ const I18N = {
     hintSchedule:
       'Screen: after scrolling stops, translate the whole screen (fewer requests, more consistent translation). Block lazy: translate only blocks entering the viewport (saves the most tokens). Preload controls how much below the viewport is translated; changes apply to the next translation run.',
     fieldAuto: 'Auto-translate on page load (off by default)',
+    fieldAutoSites: 'Auto-translate sites',
+    autoSiteAdd: 'Add',
+    hintAutoSites: 'Pages on these domains start translating automatically when loaded (using the current target language/mode); independent of the global auto-translate switch above. Add/remove takes effect immediately.',
+    autoSiteEmpty: 'No auto-translate sites yet',
+    autoSiteInvalid: 'Enter a valid domain, e.g. example.com',
+    autoSiteAdded: 'Added {site}',
+    autoSiteRemoved: 'Removed {site}',
+    autoSiteRemove: 'Remove',
     fieldSelection: 'Translate selection (show a translation card after selecting text; off by default)',
     fieldDoubleClick: 'Double-click translation (double-click a word/phrase to translate; off by default)',
     fieldShortcut: 'Shortcut translation (off by default; with a selection translates it, otherwise translates the page)',
@@ -300,6 +317,31 @@ function storageSet(patch) {
   });
 }
 
+function normalizeAutoSite(value) {
+  if (typeof value !== 'string') return '';
+  let raw = value.trim().toLowerCase();
+  if (!raw) return '';
+  try {
+    if (raw.indexOf('://') !== -1) raw = new URL(raw).hostname;
+    else raw = raw.split('/')[0].split('?')[0].split('#')[0].replace(/:\d+$/, '');
+  } catch (err) {
+    return '';
+  }
+  raw = raw.replace(/\.$/, '').replace(/^www\./, '');
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/.test(raw)) return '';
+  return raw;
+}
+
+function normalizeAutoSites(list) {
+  const result = [];
+  if (!Array.isArray(list)) return result;
+  for (const item of list) {
+    const site = normalizeAutoSite(item);
+    if (site && !result.includes(site) && result.length < 200) result.push(site);
+  }
+  return result;
+}
+
 function normalizeSettings(raw) {
   const result = Object.assign({}, DEFAULT_SETTINGS);
   if (!raw || typeof raw !== 'object') return result;
@@ -313,6 +355,7 @@ function normalizeSettings(raw) {
   if (raw.scheduleMode === 'screen' || raw.scheduleMode === 'block') result.scheduleMode = raw.scheduleMode;
   if (raw.preload === 'none' || raw.preload === 'half' || raw.preload === 'one') result.preload = raw.preload;
   if (typeof raw.autoTranslate === 'boolean') result.autoTranslate = raw.autoTranslate;
+  if (Array.isArray(raw.autoTranslateSites)) result.autoTranslateSites = normalizeAutoSites(raw.autoTranslateSites);
   if (typeof raw.selectionTranslate === 'boolean') result.selectionTranslate = raw.selectionTranslate;
   if (typeof raw.doubleClickTranslate === 'boolean') result.doubleClickTranslate = raw.doubleClickTranslate;
   if (typeof raw.shortcutTranslate === 'boolean') result.shortcutTranslate = raw.shortcutTranslate;
@@ -397,6 +440,7 @@ function fillForm() {
   $('scheduleMode').value = state.settings.scheduleMode === 'block' ? 'block' : 'screen';
   $('preload').value = ['none', 'half', 'one'].indexOf(state.settings.preload) !== -1 ? state.settings.preload : DEFAULT_SETTINGS.preload;
   $('autoTranslate').checked = !!state.settings.autoTranslate;
+  renderAutoSites();
   $('selectionTranslate').checked = state.settings.selectionTranslate === true;
   $('doubleClickTranslate').checked = state.settings.doubleClickTranslate === true;
   $('shortcutTranslate').checked = state.settings.shortcutTranslate === true;
@@ -433,6 +477,7 @@ function readForm() {
     scheduleMode: scheduleMode,
     preload: preload,
     autoTranslate: autoTranslate,
+    autoTranslateSites: normalizeAutoSites(state.settings.autoTranslateSites),
     selectionTranslate: selectionTranslate,
     doubleClickTranslate: doubleClickTranslate,
     shortcutTranslate: shortcutTranslate,
@@ -477,7 +522,7 @@ async function save(options) {
 
 function setBusy(busy) {
   state.busy = busy;
-  for (const id of ['testBtn', 'modelBtn', 'saveBtn', 'openDshBtn', 'baseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'uiLang']) {
+  for (const id of ['testBtn', 'modelBtn', 'saveBtn', 'openDshBtn', 'baseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'autoSiteInput', 'autoSiteAdd', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'uiLang']) {
     const el = $(id);
     if (el) el.disabled = busy;
   }
@@ -577,9 +622,72 @@ async function openDshPage() {
 /* 初始化                                                              */
 /* ------------------------------------------------------------------ */
 
+function renderAutoSites() {
+  const list = $('autoSiteList');
+  if (!list) return;
+  while (list.firstChild) list.removeChild(list.firstChild);
+  const sites = normalizeAutoSites(state.settings.autoTranslateSites);
+  state.settings.autoTranslateSites = sites;
+  if (sites.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'site-item';
+    empty.textContent = t('autoSiteEmpty');
+    list.appendChild(empty);
+    return;
+  }
+  for (const site of sites) {
+    const item = document.createElement('li');
+    item.className = 'site-item';
+    const label = document.createElement('span');
+    label.textContent = site;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = t('autoSiteRemove');
+    remove.addEventListener('click', () => {
+      removeAutoSite(site).catch(() => {});
+    });
+    item.appendChild(label);
+    item.appendChild(remove);
+    list.appendChild(item);
+  }
+}
+
+async function persistAutoSites(sites) {
+  state.settings.autoTranslateSites = normalizeAutoSites(sites);
+  await storageSet({ autoTranslateSites: state.settings.autoTranslateSites });
+  renderAutoSites();
+}
+
+async function addAutoSite() {
+  const input = $('autoSiteInput');
+  const status = $('autoSiteStatus');
+  const site = normalizeAutoSite(input ? input.value : '');
+  if (!site) {
+    if (status) setStatus(status, t('autoSiteInvalid'), 'err');
+    return;
+  }
+  const sites = normalizeAutoSites(state.settings.autoTranslateSites);
+  if (sites.includes(site)) {
+    if (status) setStatus(status, t('autoSiteAdded', { site }), 'ok');
+    input.value = '';
+    return;
+  }
+  sites.push(site);
+  await persistAutoSites(sites);
+  input.value = '';
+  if (status) setStatus(status, t('autoSiteAdded', { site }), 'ok');
+}
+
+async function removeAutoSite(site) {
+  const status = $('autoSiteStatus');
+  const sites = normalizeAutoSites(state.settings.autoTranslateSites).filter((item) => item !== site);
+  await persistAutoSites(sites);
+  if (status) setStatus(status, t('autoSiteRemoved', { site }), 'ok');
+}
+
 async function init() {
   try {
-    const raw = await storageGet(['dshBaseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'uiLang']);
+    const raw = await storageGet(['dshBaseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'autoTranslateSites', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'uiLang']);
     state.settings = normalizeSettings(raw);
     state.uiLang = state.settings.uiLang;
     applyLang();
@@ -598,6 +706,12 @@ async function init() {
   $('saveBtn').addEventListener('click', () => {
     save().catch(() => {});
   });
+  if ($('autoSiteAdd')) $('autoSiteAdd').addEventListener('click', () => { addAutoSite().catch(() => {}); });
+  if ($('autoSiteInput')) {
+    $('autoSiteInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); addAutoSite().catch(() => {}); }
+    });
+  }
   $('openDshBtn').addEventListener('click', () => {
     openDshPage().catch(() => {});
   });

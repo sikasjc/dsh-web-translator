@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.15.1', manifest.version === '1.15.1', manifest.version);
+  check('manifest: version 1.16.0', manifest.version === '1.16.0', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -100,7 +100,7 @@ const CONTENT_TOKENS = [
   ['译文标记', 'data-dsh-it="trans"'],
   ['原文标记', 'data-dsh-it="src"'],
   ['模式属性', 'data-dsh-it-mode'],
-  ['设置键', "'dshBaseUrl',\n    'targetLanguage',\n    'mode',\n    'scheduleMode',\n    'preload',\n    'autoTranslate',\n    'selectionTranslate',\n    'doubleClickTranslate',\n    'shortcutTranslate',\n    'followTranslation',\n    'hideBallSameLanguage',\n    'translateIframes',\n    'showFloatingBall',\n    'ballPosition',\n    'uiLang'"],
+  ['设置键', "'dshBaseUrl',\n    'targetLanguage',\n    'mode',\n    'scheduleMode',\n    'preload',\n    'autoTranslate',\n    'autoTranslateSites',\n    'selectionTranslate',\n    'doubleClickTranslate',\n    'shortcutTranslate',\n    'followTranslation',\n    'hideBallSameLanguage',\n    'translateIframes',\n    'showFloatingBall',\n    'ballPosition',\n    'uiLang'"],
   ['单页上限 800', 'MAX_BLOCKS = 800'],
   ['文本下限 2', 'MIN_TEXT = 2'],
   ['行内候选下限 12', 'INLINE_MIN_TEXT = 12'],
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.15.1', "EXT_VERSION = '1.15.1'"],
+  ['EXT 版本 1.16.0', "EXT_VERSION = '1.16.0'"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],
   ['翻译 run 起始 Turn', "state.runId = makeTurnId('tr')"],
   ['translate Turn 身份', 'turnId: state.runId'],
@@ -232,6 +232,10 @@ check(
 check(
   'content.js 行内包裹 span 样式重置（避免站点 button span 命中）',
   content.includes("wrap.style.setProperty('all', 'unset')") && content.includes("trans.style.setProperty('color', 'inherit', 'important')")
+);
+check(
+  'content.js 按站点自动翻译（列表/面板/菜单）',
+  content.includes('autoTranslateSites') && content.includes('isCurrentSiteAutoTranslate') && content.includes('toggleCurrentSiteAutoTranslate') && content.includes('dsh-it:toggle-auto-site')
 );
 check(
   'content.js DSH 插件页扩展检测标记',

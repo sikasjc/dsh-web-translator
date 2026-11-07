@@ -379,6 +379,15 @@ async function main() {
       response.end(TEST_HTML);
       return;
     }
+    if (request.url && request.url.startsWith('/autosite.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Auto site</title></head><body>' +
+          '<h1>Auto site heading</h1><p>Auto site paragraph with enough English text for automatic translation.</p>' +
+          '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/iframe-parent.html')) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
@@ -2176,6 +2185,48 @@ async function main() {
   check('iframe 翻译：还原时子框架译文一并清理', iframeRestoredProbe.trans === 0, JSON.stringify(iframeRestoredProbe));
   await evalOn(sw, `chrome.storage.local.set({ translateIframes: false, followTranslation: true })`);
 
+  /* 7.98) 按站点自动翻译：命中站点后页面加载即自动翻译；面板可关闭 */
+  await evalOn(sw, `chrome.storage.local.set({ autoTranslateSites: ['127.0.0.1'], autoTranslate: false, followTranslation: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/autosite.html' });
+  await wait(3600);
+  const autoSiteProbe = await evalOn(page, `(() => {
+    const host = document.getElementById('dsh-it-host');
+    const shadow = host && host.shadowRoot;
+    return {
+      trans: document.querySelectorAll('[data-dsh-it="trans"]').length,
+      inline: document.querySelectorAll('[data-dsh-it="trans-inline"]').length,
+      panelHidden: shadow ? shadow.querySelector('.dsh-panel').hidden : null,
+      autoButton: shadow ? (shadow.querySelector('[data-role="auto-site"]') || {}).textContent : null
+    };
+  })()`);
+  check(
+    '按站点自动翻译：站点命中后页面加载即自动翻译（面板不自动弹出）',
+    (autoSiteProbe.trans + autoSiteProbe.inline) > 0 && autoSiteProbe.panelHidden === true,
+    JSON.stringify(autoSiteProbe)
+  );
+  await evalOn(sw, `chrome.tabs.sendMessage(${tab.id}, { type: 'dsh-it:toggle-panel' })`);
+  await wait(400);
+  const autoSitePanelProbe = await evalOn(page, `(() => {
+    const shadow = document.getElementById('dsh-it-host').shadowRoot;
+    const button = shadow.querySelector('[data-role="auto-site"]');
+    return { text: button ? button.textContent : null, hidden: !!(button && button.hidden) };
+  })()`);
+  check(
+    '按站点自动翻译：功能面板显示“取消本站自动翻译”',
+    !!autoSitePanelProbe.text && /取消|Stop auto/.test(autoSitePanelProbe.text) && autoSitePanelProbe.hidden === false,
+    JSON.stringify(autoSitePanelProbe)
+  );
+  await evalOn(page, `(() => { document.getElementById('dsh-it-host').shadowRoot.querySelector('[data-role="auto-site"]').click(); })()`);
+  await wait(600);
+  const autoSiteResetProbe = await evalOn(sw, `(async () => (await chrome.storage.local.get(['autoTranslateSites'])).autoTranslateSites || [])()`);
+  check(
+    '按站点自动翻译：面板可关闭并写回 storage',
+    Array.isArray(autoSiteResetProbe) && autoSiteResetProbe.length === 0,
+    JSON.stringify(autoSiteResetProbe)
+  );
+  await evalOn(sw, `chrome.storage.local.set({ autoTranslateSites: [], followTranslation: true, autoTranslate: false })`);
+
   /* 8) options 页 */
   try {
     const created = await browser.send('Target.createTarget', { url: 'chrome-extension://' + extensionId + '/options.html' });
@@ -2201,6 +2252,7 @@ async function main() {
       follow: (document.getElementById('followTranslation') || {}).checked,
       showBall: (document.getElementById('showFloatingBall') || {}).checked,
       hideSameLang: (document.getElementById('hideBallSameLanguage') || {}).checked,
+      hasAutoSiteInput: !!document.getElementById('autoSiteInput'),
       translateIframes: (document.getElementById('translateIframes') || {}).checked,
       labels: document.querySelectorAll('[data-i18n]').length
     }))()`);
@@ -2223,6 +2275,7 @@ async function main() {
     check('options.js 运行：显示悬浮球默认开启', optionsProbe.showBall === true, String(optionsProbe.showBall));
     check('options.js 运行：语言一致隐藏悬浮球默认开启', optionsProbe.hideSameLang === true, String(optionsProbe.hideSameLang));
     check('options.js 运行：iframe 翻译默认关闭', optionsProbe.translateIframes === false, String(optionsProbe.translateIframes));
+    check('options.html 运行：自动翻译站点输入存在', optionsProbe.hasAutoSiteInput === true, String(optionsProbe.hasAutoSiteInput));
     optionsPage.close();
   } catch (err) {
     check('options.html 加载', false, errorText(err));

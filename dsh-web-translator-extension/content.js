@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.15.1';
+  var EXT_VERSION = '1.16.0';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -93,6 +93,7 @@
     scheduleMode: 'screen',
     preload: 'one',
     autoTranslate: false,
+    autoTranslateSites: [],
     selectionTranslate: false,
     doubleClickTranslate: false,
     shortcutTranslate: false,
@@ -110,6 +111,7 @@
     'scheduleMode',
     'preload',
     'autoTranslate',
+    'autoTranslateSites',
     'selectionTranslate',
     'doubleClickTranslate',
     'shortcutTranslate',
@@ -241,6 +243,10 @@
       ballHidden: '悬浮球已隐藏；右键菜单「dsh翻译 → 显示悬浮球」可恢复',
       ballShown: '悬浮球已恢复',
       ballDomainHide: '当前域名不展示悬浮球',
+      autoSiteEnable: '本站自动翻译',
+      autoSiteDisable: '取消本站自动翻译',
+      autoSiteEnabled: '已开启本站自动翻译',
+      autoSiteDisabled: '已关闭本站自动翻译',
       ballDomainShow: '恢复当前域名悬浮球',
       ballDomainHidden: '已设置当前域名不展示悬浮球；可在 DSH → 设置 → dsh翻译 中管理',
       ballDomainShown: '已恢复当前域名显示悬浮球',
@@ -322,6 +328,10 @@
       ballHidden: 'Floating ball hidden. Right-click → dsh翻译 → Show floating ball to restore.',
       ballShown: 'Floating ball restored.',
       ballDomainHide: 'Hide floating ball on this domain',
+      autoSiteEnable: 'Always translate this site',
+      autoSiteDisable: 'Stop auto-translating this site',
+      autoSiteEnabled: 'Auto-translate enabled for this site',
+      autoSiteDisabled: 'Auto-translate disabled for this site',
       ballDomainShow: 'Show floating ball on this domain',
       ballDomainHidden: 'Floating ball hidden on this domain; manage the list in DSH → Settings → dsh翻译.',
       ballDomainShown: 'Floating ball restored on this domain.',
@@ -680,6 +690,7 @@
     if (raw.scheduleMode === 'screen' || raw.scheduleMode === 'block') result.scheduleMode = raw.scheduleMode;
     if (raw.preload === 'none' || raw.preload === 'half' || raw.preload === 'one') result.preload = raw.preload;
     if (typeof raw.autoTranslate === 'boolean') result.autoTranslate = raw.autoTranslate;
+    if (Array.isArray(raw.autoTranslateSites)) result.autoTranslateSites = normalizeSiteList(raw.autoTranslateSites);
     if (typeof raw.selectionTranslate === 'boolean') result.selectionTranslate = raw.selectionTranslate;
     if (typeof raw.doubleClickTranslate === 'boolean') result.doubleClickTranslate = raw.doubleClickTranslate;
     if (typeof raw.shortcutTranslate === 'boolean') result.shortcutTranslate = raw.shortcutTranslate;
@@ -2580,6 +2591,58 @@
     return !!host && state.hiddenBallSites.indexOf(host) !== -1;
   }
 
+  function isCurrentSiteAutoTranslate() {
+    var host = currentSiteHost();
+    return !!host && normalizeSiteList(state.settings.autoTranslateSites).indexOf(host) !== -1;
+  }
+
+  /** 规范化自动翻译站点列表（去重、去协议/路径/端口/www）。 */
+  function normalizeSiteList(list) {
+    var result = [];
+    if (!Array.isArray(list)) return result;
+    for (var i = 0; i < list.length && result.length < 200; i++) {
+      var site = normalizeSiteHost(list[i]);
+      if (site && result.indexOf(site) === -1) result.push(site);
+    }
+    return result;
+  }
+
+  function updateAutoSiteButton() {
+    var button = state.ui && state.ui.autoSiteBtn;
+    if (!button) return;
+    var host = currentSiteHost();
+    button.hidden = !host;
+    if (!host) return;
+    button.textContent = isCurrentSiteAutoTranslate() ? t('autoSiteDisable') : t('autoSiteEnable');
+  }
+
+  function setAutoSiteSites(sites) {
+    state.settings.autoTranslateSites = normalizeSiteList(sites);
+    updateAutoSiteButton();
+    return storageSet({ autoTranslateSites: state.settings.autoTranslateSites });
+  }
+
+  function toggleCurrentSiteAutoTranslate() {
+    var host = currentSiteHost();
+    if (!host) return Promise.resolve();
+    var enabled = isCurrentSiteAutoTranslate();
+    var next = normalizeSiteList(state.settings.autoTranslateSites).filter(function (item) {
+      return item !== host;
+    });
+    if (!enabled) next.push(host);
+    return setAutoSiteSites(next)
+      .then(function () {
+        showToast(t(enabled ? 'autoSiteDisabled' : 'autoSiteEnabled'), 4200);
+        if (!enabled && !state.running && !state.lazyActive && !hasTranslations()) {
+          return startTranslate({ silent: true });
+        }
+        return null;
+      })
+      .catch(function (err) {
+        showToast(errorText(err), 4200);
+      });
+  }
+
   function isCurrentLanguageSame() {
     var page = detectPageLanguage();
     var target = state.effectiveTarget || state.settings.targetLanguage || '';
@@ -2843,7 +2906,16 @@
     var status = make('div', { class: 'dsh-status', role: 'status', 'aria-live': 'polite' });
     panel.appendChild(status);
 
-    // 当前域名悬浮球开关
+    // 本站自动翻译 + 当前域名悬浮球开关
+    var autoSiteBtn = make('button', {
+      type: 'button',
+      class: 'dsh-link',
+      'data-role': 'auto-site',
+      text: t('autoSiteEnable'),
+      onClick: function () {
+        safe(toggleCurrentSiteAutoTranslate);
+      }
+    });
     var domainBallBtn = make('button', {
       type: 'button',
       class: 'dsh-link',
@@ -2853,7 +2925,7 @@
         safe(toggleCurrentDomainBall);
       }
     });
-    panel.appendChild(make('div', { class: 'dsh-domain-row' }, [domainBallBtn]));
+    panel.appendChild(make('div', { class: 'dsh-domain-row' }, [autoSiteBtn, domainBallBtn]));
 
     // 隐私提示
     var privacy = make('div', { class: 'dsh-privacy', text: t('privacy') });
@@ -2888,7 +2960,9 @@
     state.root.appendChild(panel);
 
     ui.panel = panel;
+    ui.autoSiteBtn = autoSiteBtn;
     ui.domainBallBtn = domainBallBtn;
+    updateAutoSiteButton();
     updateDomainBallButton();
     ui.panelTitle = title;
     ui.modeButtons = modeButtons;
@@ -4842,6 +4916,10 @@
         next.hideBallSameLanguage = changes.hideBallSameLanguage.newValue;
         changed = true;
       }
+      if (changes.autoTranslateSites) {
+        next.autoTranslateSites = normalizeSiteList(changes.autoTranslateSites.newValue);
+        changed = true;
+      }
       if (changes.translateIframes) {
         next.translateIframes = changes.translateIframes.newValue === true;
         changed = true;
@@ -4882,6 +4960,7 @@
         }
       }
       if (changes.ballPosition) applyBallPosition(state.settings.ballPosition, false);
+      updateAutoSiteButton();
       applyBallSiteVisibility();
       refreshUi();
     } catch (err) {
@@ -4918,6 +4997,10 @@
       }
       if (message.type === 'dsh-it:hide-domain') {
         safe(hideCurrentDomainBall);
+        return;
+      }
+      if (message.type === 'dsh-it:toggle-auto-site') {
+        safe(toggleCurrentSiteAutoTranslate);
         return;
       }
       if (message.type === 'dsh-it:toggle-panel') {
@@ -5072,7 +5155,7 @@
         if (state.settings.followTranslation !== false) {
           maybeFollowTranslate();
         }
-        if (state.settings.autoTranslate) {
+        if (state.settings.autoTranslate || isCurrentSiteAutoTranslate()) {
           setTimeout(function () {
             safe(function () {
               return startTranslate({ silent: true });

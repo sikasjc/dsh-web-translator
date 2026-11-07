@@ -24,6 +24,7 @@ const MENU_MODE_BILINGUAL = 'dsh-it:mode-bilingual';
 const MENU_SHOW_BALL = 'dsh-it:show-ball';
 const MENU_HIDE_BALL = 'dsh-it:hide-ball';
 const MENU_HIDE_DOMAIN = 'dsh-it:hide-domain';
+const MENU_TOGGLE_AUTO_SITE = 'dsh-it:toggle-auto-site';
 const MENU_MODE_MAP = {
   [MENU_MODE_SOURCE]: 'source',
   [MENU_MODE_ONLY]: 'only',
@@ -379,6 +380,12 @@ function createContextMenus() {
           title: '当前域名不展示悬浮球',
           contexts: ['page']
         });
+        chrome.contextMenus.create({
+          id: MENU_TOGGLE_AUTO_SITE,
+          parentId: MENU_ROOT,
+          title: '当前域名自动翻译（开/关）',
+          contexts: ['page']
+        });
       } catch (err) {
         /* 创建失败不影响其他功能 */
       }
@@ -402,6 +409,10 @@ if (chrome.contextMenus && chrome.contextMenus.onClicked) {
       }
       if (info.menuItemId === MENU_HIDE_DOMAIN) {
         chrome.tabs.sendMessage(tab.id, { type: 'dsh-it:hide-domain' }).catch(function () {});
+        return;
+      }
+      if (info.menuItemId === MENU_TOGGLE_AUTO_SITE) {
+        chrome.tabs.sendMessage(tab.id, { type: 'dsh-it:toggle-auto-site' }).catch(function () {});
         return;
       }
       const mode = MENU_MODE_MAP[info.menuItemId];
@@ -580,6 +591,7 @@ chrome.runtime.onInstalled.addListener(function () {
         'targetLanguage',
         'mode',
         'autoTranslate',
+        'autoTranslateSites',
         'doubleClickLookup',
         'followTranslation',
         'uiLang'
@@ -593,6 +605,7 @@ chrome.runtime.onInstalled.addListener(function () {
         patch.mode = 'bilingual';
       }
       if (!stored || typeof stored.autoTranslate !== 'boolean') patch.autoTranslate = false;
+      if (!stored || !Array.isArray(stored.autoTranslateSites)) patch.autoTranslateSites = [];
       if (!stored || typeof stored.doubleClickLookup !== 'boolean') patch.doubleClickLookup = true;
       if (!stored || typeof stored.followTranslation !== 'boolean') patch.followTranslation = true;
       if (!stored || typeof stored.hideBallSameLanguage !== 'boolean') patch.hideBallSameLanguage = true;
