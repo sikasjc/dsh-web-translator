@@ -30,7 +30,16 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.15.0';
+  var EXT_VERSION = '1.15.1';
+  // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
+  if (!IS_SUBFRAME) {
+    try {
+      document.documentElement.setAttribute('data-dsh-it-extension', EXT_VERSION);
+      window.__dshItExtensionVersion = EXT_VERSION;
+    } catch (err) {
+      /* ignore */
+    }
+  }
   var HOST_ID = 'dsh-it-host';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +

@@ -4,4 +4,4 @@
  * Kept as a source constant so the host half imports no JSON module; a unit
  * test asserts it matches `package.json` so the two cannot drift.
  */
-export const VERSION = '1.9.0';
+export const VERSION = '1.9.1';

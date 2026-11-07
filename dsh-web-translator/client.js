@@ -166,6 +166,15 @@ window.__ModuleLoader__.load({
       'settings.clearRecordsConfirm': '确认清理',
       'settings.clearRecordsDone': '翻译记录已清理',
       'settings.clearRecordsFailed': '清理记录失败',
+      'extension.title': '未检测到浏览器扩展',
+      'extension.desc': 'DSH 插件只提供翻译后端。要翻译网页和使用划词/双击查词，还需要在浏览器中安装 dsh翻译 Chrome/Edge 扩展。',
+      'extension.step1': '打开 GitHub 仓库，下载或克隆项目，找到 dsh-web-translator-extension 目录。',
+      'extension.step2': 'Chrome 打开 chrome://extensions，Edge 打开 edge://extensions；开启「开发者模式」，点「加载已解压的扩展程序」，选择该目录。',
+      'extension.step3': '安装后刷新本页；检测到扩展后本提示会自动消失。',
+      'extension.openRepo': '打开安装说明',
+      'extension.recheck': '重新检测',
+      'extension.later': '稍后再说',
+      'extension.recheckFailed': '仍未检测到扩展，请确认扩展已启用且允许访问本页，然后刷新页面。',
       'settings.test': '测试翻译',
       'settings.testHint': '测试使用已保存的设置；修改后请先保存。',
       'settings.testText': '测试文本',
@@ -501,6 +510,15 @@ window.__ModuleLoader__.load({
       'settings.clearRecordsConfirm': 'Clear records',
       'settings.clearRecordsDone': 'Translation records cleared',
       'settings.clearRecordsFailed': 'Could not clear records',
+      'extension.title': 'Browser extension not detected',
+      'extension.desc': 'The DSH plugin only provides the translation backend. To translate pages and look up words in the browser, install the dsh翻译 Chrome/Edge extension.',
+      'extension.step1': 'Open the GitHub repository, download or clone it and locate the dsh-web-translator-extension directory.',
+      'extension.step2': 'Open chrome://extensions (Chrome) or edge://extensions (Edge), enable Developer mode, click “Load unpacked” and select that directory.',
+      'extension.step3': 'Reload this page after installing; this reminder disappears once the extension is detected.',
+      'extension.openRepo': 'Open install guide',
+      'extension.recheck': 'Check again',
+      'extension.later': 'Later',
+      'extension.recheckFailed': 'Extension still not detected. Make sure it is enabled and allowed on this page, then reload.',
       'settings.test': 'Test translation',
       'settings.testHint': 'The test uses the saved settings; save your changes first.',
       'settings.testText': 'Test text',
@@ -4872,6 +4890,7 @@ window.__ModuleLoader__.load({
         'div',
         { className: 'dsh-it-page' },
         h('style', { dangerouslySetInnerHTML: { __html: CSS_TEXT } }),
+        h(ExtensionReminder),
         h(
           'div',
           { className: 'dsh-it-page-scroll' },
@@ -5165,6 +5184,122 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** DSH 插件页扩展检测：未安装/未启用时弹出安装引导。 */
+    function ExtensionReminder() {
+      const t = useT();
+      const [phase, setPhase] = useState('checking');
+      const [version, setVersion] = useState('');
+      const [notice, setNotice] = useState('');
+
+      const EXTENSION_MODAL_CSS =
+        '.dsh-it-ext-mask{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,23,42,.5)}' +
+        '.dsh-it-ext-modal{width:min(560px,100%);max-height:calc(100vh - 48px);overflow:auto;display:flex;flex-direction:column;gap:14px;padding:20px;border-radius:14px;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);box-shadow:0 18px 48px rgba(15,23,42,.28)}' +
+        '.dsh-it-ext-title{margin:0;font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary)}' +
+        '.dsh-it-ext-desc{margin:0;font-size:13px;line-height:21px;color:var(--dsw-alias-label-secondary)}' +
+        '.dsh-it-ext-steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary)}' +
+        '.dsh-it-ext-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}' +
+        '.dsh-it-ext-notice{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-primary)}';
+
+      function detect() {
+        try {
+          const value = document.documentElement.getAttribute('data-dsh-it-extension');
+          if (typeof value === 'string' && value.length > 0) return value;
+          if (typeof window.__dshItExtensionVersion === 'string' && window.__dshItExtensionVersion.length > 0) return window.__dshItExtensionVersion;
+        } catch (err) {
+          /* ignore */
+        }
+        return '';
+      }
+
+      useEffect(() => {
+        let cancelled = false;
+        const initial = detect();
+        if (initial) {
+          setVersion(initial);
+          setPhase('installed');
+          return undefined;
+        }
+        const poll = setInterval(() => {
+          const value = detect();
+          if (value) {
+            clearInterval(poll);
+            if (!cancelled) {
+              setVersion(value);
+              setPhase('installed');
+            }
+          }
+        }, 250);
+        const timeout = setTimeout(() => {
+          if (!cancelled) setPhase((current) => (current === 'checking' ? 'missing' : current));
+        }, 1600);
+        return () => {
+          cancelled = true;
+          clearInterval(poll);
+          clearTimeout(timeout);
+        };
+      }, []);
+
+      function recheck() {
+        const value = detect();
+        if (value) {
+          setVersion(value);
+          setNotice('');
+          setPhase('installed');
+        } else {
+          setNotice(t('extension.recheckFailed'));
+        }
+      }
+
+      if (phase !== 'missing') return null;
+      return h(
+        React.Fragment,
+        null,
+        h('style', { dangerouslySetInnerHTML: { __html: EXTENSION_MODAL_CSS } }),
+        h(
+          'div',
+          { className: 'dsh-it-ext-mask', role: 'presentation' },
+          h(
+            'div',
+            { className: 'dsh-it-ext-modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-it-ext-title' },
+            h('h3', { className: 'dsh-it-ext-title', id: 'dsh-it-ext-title' }, t('extension.title')),
+            h('p', { className: 'dsh-it-ext-desc' }, t('extension.desc')),
+            h(
+              'ol',
+              { className: 'dsh-it-ext-steps' },
+              h('li', null, t('extension.step1')),
+              h('li', null, t('extension.step2')),
+              h('li', null, t('extension.step3')),
+            ),
+            notice ? h('p', { className: 'dsh-it-ext-notice', role: 'status' }, notice) : null,
+            h(
+              'div',
+              { className: 'dsh-it-ext-actions' },
+              h(
+                'a',
+                {
+                  className: 'dsh-it-btn dsh-it-btn-primary',
+                  href: 'https://github.com/sikasjc/dsh-web-translator/blob/main/dsh-web-translator-extension/README.md',
+                  target: '_blank',
+                  rel: 'noreferrer',
+                },
+                t('extension.openRepo'),
+              ),
+              h('button', { type: 'button', className: 'dsh-it-btn', onClick: recheck }, t('extension.recheck')),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsh-it-btn dsh-it-btn-ghost',
+                  onClick: () => setPhase('dismissed'),
+                },
+                t('extension.later'),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     function SettingsSection() {
       const t = useT();
       const layoutService = useLayoutService();
@@ -5210,6 +5345,7 @@ window.__ModuleLoader__.load({
         'div',
         { className: 'dsh-it-root' },
         h('style', { dangerouslySetInnerHTML: { __html: CSS_TEXT } }),
+        h(ExtensionReminder),
         h(
           'div',
           { className: 'dsh-it-usage-hint-row' },

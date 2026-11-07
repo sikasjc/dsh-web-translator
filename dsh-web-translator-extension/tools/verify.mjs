@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.15.0', manifest.version === '1.15.0', manifest.version);
+  check('manifest: version 1.15.1', manifest.version === '1.15.1', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.15.0', "EXT_VERSION = '1.15.0'"],
+  ['EXT 版本 1.15.1', "EXT_VERSION = '1.15.1'"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],
   ['翻译 run 起始 Turn', "state.runId = makeTurnId('tr')"],
   ['translate Turn 身份', 'turnId: state.runId'],
@@ -232,6 +232,10 @@ check(
 check(
   'content.js 行内包裹 span 样式重置（避免站点 button span 命中）',
   content.includes("wrap.style.setProperty('all', 'unset')") && content.includes("trans.style.setProperty('color', 'inherit', 'important')")
+);
+check(
+  'content.js DSH 插件页扩展检测标记',
+  content.includes("data-dsh-it-extension") && content.includes('__dshItExtensionVersion')
 );
 check(
   'content.js 行内译文颜色继承宿主（跟随动态主题）',

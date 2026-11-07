@@ -189,6 +189,12 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 响应：`{ ok:true, result:{ text, translation, provider, model, dictionary?:{word,phonetic?,audio?,meanings:[{partOfSpeech,definitions:[...]}]} } }`
 词典：英文单词（`/^[A-Za-z][A-Za-z'-]{0,40}$/`）查 `dictionaryapi.dev`（5s 超时，失败静默降级）。
 
+### 5.6.2 浏览器扩展检测与引导
+
+- 扩展 `content.js` 在顶层页面写 `document.documentElement[data-dsh-it-extension=<version>]`（以及 `window.__dshItExtensionVersion`），不含业务数据。
+- 插件客户端 `ExtensionReminder` 在设置页/左侧页挂载后轮询该标记约 1.6s；未检测到则以模态框提示安装 Chrome/Edge 扩展，包含 GitHub 安装说明、三步操作与「重新检测」。扩展已安装/已允许访问本页时标记存在，不弹窗。
+- 只做引导，不拦截 Host API：插件仍可作为翻译后端被其他客户端调用。
+
 ### 5.6.1 `DELETE /records` 与 `recordHistory` 设置
 
 - `settings.recordHistory`（boolean，默认 `true`）控制是否记录翻译历史；关闭后 `withUsage()` 跳过 usage 账本与 DSH 原生翻译会话（`conversations.recordTurn`），翻译/查词本身不受影响。
