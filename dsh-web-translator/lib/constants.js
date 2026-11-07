@@ -25,6 +25,9 @@ export const TARGET_LANGUAGES = Object.freeze([
 /** Default target language (DESIGN §4.1 / §5.5). */
 export const DEFAULT_TARGET_LANGUAGE = 'zh-CN';
 
+/** Supported translation styles/domains (auto uses page heuristics). */
+export const TRANSLATION_STYLES = Object.freeze(['auto', 'general', 'programming', 'tech', 'finance']);
+
 /** On-disk `settings.json` schema version. */
 export const SETTINGS_VERSION = 1;
 
@@ -122,6 +125,7 @@ export const DEFAULTS = Object.freeze({
   model: '',
   reasoningEffort: 'auto',
   targetLanguage: DEFAULT_TARGET_LANGUAGE,
+  translationStyle: 'auto',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   userTemplate: DEFAULT_USER_TEMPLATE,
   batchSegments: LIMITS.batchSegments.default,
@@ -136,6 +140,7 @@ export const SETTINGS_KEYS = Object.freeze([
   'model',
   'reasoningEffort',
   'targetLanguage',
+  'translationStyle',
   'systemPrompt',
   'userTemplate',
   'batchSegments',

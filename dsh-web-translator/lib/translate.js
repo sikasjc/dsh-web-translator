@@ -8,11 +8,12 @@
  */
 import { chunkSegments, countBatchChars, runPool } from './batch.js';
 import { createBatchCacheKey } from './cache.js';
-import { LIMITS, TARGET_LANGUAGES } from './constants.js';
+import { LIMITS, TARGET_LANGUAGES, TRANSLATION_STYLES } from './constants.js';
 import { apiError } from './errors.js';
 import { BATCH_TIMEOUT_MS, callModel, estimateMaxTokens, userMessage } from './llm.js';
 import { plainTextTranslation, parseTranslations } from './parse.js';
-import { CORRECTION_MESSAGE, renderLookupPrompts, renderTranslatePrompts } from './prompts.js';
+import { CORRECTION_MESSAGE, looksLikeTechnicalContent, renderLookupPrompts, renderTranslatePrompts } from './prompts.js';
+import { applyTechnicalFallback, protectTechnicalTerms, restoreTechnicalTerms } from './terms.js';
 import {
   isPlainObject,
   normalizeHttpUrl,
@@ -178,7 +179,8 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         allowAuto: true,
       }) ?? 'auto';
       const texts = body.texts.map((text) => normalizeSegmentText(typeof text === 'string' ? text : ''));
-
+      const sourceTitle = typeof body.sourceTitle === 'string' ? body.sourceTitle.slice(0, LIMITS.sourceTitleChars) : '';
+      const sourceUrl = typeof body.sourceUrl === 'string' ? body.sourceUrl.slice(0, LIMITS.urlChars) : '';
       const selection = await resolveSelection();
       const llm = selection.llm;
       const provider = selection.provider;
@@ -190,6 +192,15 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       if (typeof targetLanguage !== 'string' || targetLanguage.length === 0) {
         throw apiError('INTERNAL', 'the effective target language is missing');
       }
+
+      const style = TRANSLATION_STYLES.includes(settings.translationStyle) ? settings.translationStyle : 'auto';
+      const pageContext = {
+        title: sourceTitle,
+        url: sourceUrl,
+        style,
+        technical: style === 'programming'
+          || (style === 'auto' && looksLikeTechnicalContent({ title: sourceTitle, url: sourceUrl, texts })),
+      };
 
       const entries = [];
       texts.forEach((text, index) => {
@@ -214,12 +225,16 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       });
       const plans = batches.map((batch) => {
         const segments = batch.map((entry) => entry.text);
+        const protection = pageContext.technical
+          ? protectTechnicalTerms(segments)
+          : { texts: segments, tokens: [] };
         const rendered = renderTranslatePrompts({
           systemPrompt: settings.systemPrompt,
           userTemplate: settings.userTemplate,
-          texts: segments,
+          texts: protection.texts,
           targetLanguage,
           sourceLanguage,
+          pageContext,
         });
         const key = createBatchCacheKey({
           provider,
@@ -234,6 +249,7 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         return {
           batch,
           segments,
+          protection,
           rendered,
           key,
           cached: Array.isArray(cached) ? cached : undefined,
@@ -245,11 +261,15 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       const misses = plans.filter((plan) => plan.cached === undefined);
       await runPool(misses, clampConcurrency(settings.concurrency), async (plan) => {
         const result = await translateBatch(plan, { llm, provider, model, reasoningEffort, modelInfo }, signal);
-        plan.translations = result.translations;
+        const finalized = result.translations.map((value, index) => applyTechnicalFallback(
+          plan.segments[index] ?? '',
+          restoreTechnicalTerms(value, plan.protection.tokens),
+        ));
+        plan.translations = finalized;
         plan.usage = result.usage;
         plan.retries = result.retries;
         try {
-          cache?.set?.(plan.key, result.translations);
+          cache?.set?.(plan.key, finalized);
         } catch {
           // A cache failure must never fail a paid-for translation.
         }
@@ -300,6 +320,8 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         throw apiError('BAD_REQUEST', `context exceeds ${LIMITS.lookupContextChars} characters`);
       }
       normalizeHttpUrl(body.sourceUrl, { field: 'sourceUrl' });
+      const sourceTitle = typeof body.sourceTitle === 'string' ? body.sourceTitle.slice(0, LIMITS.sourceTitleChars) : '';
+      const sourceUrl = typeof body.sourceUrl === 'string' ? body.sourceUrl.slice(0, LIMITS.urlChars) : '';
       const requestTarget = normalizeLanguageTag(body.targetLanguage, {
         field: 'targetLanguage',
         allowed: TARGET_LANGUAGES,
@@ -311,8 +333,19 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       if (typeof targetLanguage !== 'string' || targetLanguage.length === 0) {
         throw apiError('INTERNAL', 'the effective target language is missing');
       }
+      const style = TRANSLATION_STYLES.includes(settings.translationStyle) ? settings.translationStyle : 'auto';
+      const pageContext = {
+        title: sourceTitle,
+        url: sourceUrl,
+        style,
+        technical: style === 'programming'
+          || (style === 'auto' && looksLikeTechnicalContent({ title: sourceTitle, url: sourceUrl, texts: [text, context ?? ''] })),
+      };
 
-      const rendered = renderLookupPrompts({ text, context, targetLanguage });
+      const lookupProtection = pageContext.technical
+        ? protectTechnicalTerms([text])
+        : { texts: [text], tokens: [] };
+      const rendered = renderLookupPrompts({ text: lookupProtection.texts[0], context, targetLanguage, pageContext });
       const options = buildGenerateOptions({
         provider: selection.provider,
         model: selection.model,
@@ -330,7 +363,8 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       ]);
 
       const rawTranslation = plainTextTranslation(generated.text);
-      const translation = rawTranslation === null ? null : normalizeSegmentText(rawTranslation);
+      const restoredTranslation = rawTranslation === null ? null : restoreTechnicalTerms(rawTranslation, lookupProtection.tokens);
+      const translation = restoredTranslation === null ? null : normalizeSegmentText(applyTechnicalFallback(text, restoredTranslation));
       if (translation === null) {
         logInvalidOutput(generated.text);
         throw apiError('INVALID_MODEL_OUTPUT', 'the model returned an empty translation');

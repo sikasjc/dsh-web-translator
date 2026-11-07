@@ -189,6 +189,20 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 响应：`{ ok:true, result:{ text, translation, provider, model, dictionary?:{word,phonetic?,audio?,meanings:[{partOfSpeech,definitions:[...]}]} } }`
 词典：英文单词（`/^[A-Za-z][A-Za-z'-]{0,40}$/`）查 `dictionaryapi.dev`（5s 超时，失败静默降级）。
 
+### 5.6.2.1 翻译风格（`translationStyle`）
+
+- `settings.translationStyle ∈ {auto,general,programming,tech,finance}`，默认 `auto`；`PUT /settings` 校验枚举。
+- `auto`：按页面标题/URL/文本做技术页面检测，命中时附加术语规则并保护 `trait` 等词；`general`：不注入领域规则；`programming`：始终启用编程术语规则与保护；`tech`：科技/工程术语、保留产品/API/命令名；`finance`：正式金融术语并保留数字/币种/代码/日期，附 yield/position/liquidity/drawdown 等示例。
+- 风格指令与页面 context 一起 prepend 到 system prompt；缓存 key 包含最终 system，因此切换风格会自然 miss 旧缓存。
+- DSH 设置页新增「翻译风格」下拉；扩展继承 Host 设置，不需要单独配置。
+
+### 5.6.3 页面上下文与编程术语保护
+
+- 扩展在 `POST /translate`、`POST /lookup` 中已带 `sourceUrl`/`sourceTitle`；Host 现在把它们作为**不可翻译的页面上下文** prepend 到 system prompt（标题/URL 仅用于消歧）。
+- 技术页面检测：URL 命中 GitHub/StackOverflow/docs/rust-lang 等，或标题/文本命中 ≥2 个编程词（rust/trait/compiler/api…）时，附加术语规则；普通新闻/港口类页面不加技术规则。
+- 强制术语：技术页面上 `trait`/`traits` 在送模前替换为 `[[DSH_KEEP_n_m]]` 占位符，模型被要求原样保留，返回后还原为原词；若模型仍译成「特征/特质」，兜底替换回原词。`port` 在技术页面按「端口」处理（模型提示 + 兜底）。
+- 缓存 key 已包含带上下文/占位符的 system 与 segments，避免不同页面复用同一译文。
+
 ### 5.6.2 浏览器扩展检测与引导
 
 - 扩展 `content.js` 在顶层页面写 `document.documentElement[data-dsh-it-extension=<version>]`（以及 `window.__dshItExtensionVersion`），不含业务数据。

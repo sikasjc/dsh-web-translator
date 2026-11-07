@@ -27,6 +27,7 @@ test('target language whitelist is the Lead-approved fixed list', () => {
   ]);
   assert.equal(DEFAULT_TARGET_LANGUAGE, 'zh-CN');
   assert.equal(DEFAULTS.targetLanguage, 'zh-CN');
+  assert.equal(DEFAULTS.translationStyle, 'auto');
 });
 
 test('factory defaults match DESIGN §4.1 / §4.2', () => {
@@ -81,7 +82,7 @@ test('document versions and settings keys are stable', () => {
   assert.equal(WORDBOOK_VERSION, 1);
   assert.equal(USAGE_VERSION, 1);
   assert.deepEqual([...SETTINGS_KEYS], [
-    'provider', 'model', 'reasoningEffort', 'targetLanguage', 'systemPrompt',
+    'provider', 'model', 'reasoningEffort', 'targetLanguage', 'translationStyle', 'systemPrompt',
     'userTemplate', 'batchSegments', 'batchChars', 'concurrency', 'recordHistory',
   ]);
 });

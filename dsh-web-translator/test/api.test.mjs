@@ -725,6 +725,55 @@ test('validates sourceUrl/sourceTitle/client metadata and defaults client', asyn
   assert.equal(defaultEvents[0].client, 'dsh');
 });
 
+test('translate passes page title/url and technical terminology context to the model', async (t) => {
+  const { api, llm } = await setupApi(t, {
+    streams: [jsonStream({ translations: ['Rust trait 定义共享行为。'] })],
+  });
+  await api.translate({
+    texts: ['Rust traits define shared behavior; configure the port.'],
+    sourceTitle: 'Traits: Defining Shared Behavior - The Rust Programming Language',
+    sourceUrl: 'https://doc.rust-lang.org/book/ch10-02-traits.html',
+    client: 'extension',
+  });
+  assert.equal(llm.state.streamCalls.length, 1);
+  const system = llm.state.streamCalls[0].system;
+  assert.ok(system.includes('Page context'));
+  assert.ok(system.includes('doc.rust-lang.org'));
+  assert.ok(system.includes('trait'));
+  assert.ok(system.includes('端口'));
+});
+
+test('technical pages keep trait tokens and fix port terminology deterministically', async (t) => {
+  const technicalStream = (options) => {
+    const userText = options.messages[0].content[0].text;
+    const tokenMatch = userText.match(/\[\[DSH_KEEP_\d+_\d+\]\]/);
+    assert.ok(tokenMatch, 'protected token must appear in the prompt');
+    return textStream(JSON.stringify({ translations: [`使用 ${tokenMatch[0]} 定义共享行为`, '配置港口。'] }));
+  };
+  const { api } = await setupApi(t, { streams: [technicalStream] });
+  const result = await api.translate({
+    texts: ['Traits define shared behavior', 'Configure the port.'],
+    sourceTitle: 'Traits: Defining Shared Behavior - The Rust Programming Language',
+    sourceUrl: 'https://doc.rust-lang.org/book/ch10-02-traits.html',
+    client: 'extension',
+  });
+  assert.deepEqual(result.translations, ['使用 Traits 定义共享行为', '配置端口。']);
+});
+
+test('PUT settings translationStyle is applied to the next translation prompt', async (t) => {
+  const { api, llm } = await setupApi(t, {
+    streams: [jsonStream({ translations: ['收益率与流动性'] })],
+  });
+  await api.putSettings({ translationStyle: 'finance' });
+  await api.translate({
+    texts: ['Yield and liquidity'],
+    sourceTitle: 'Markets',
+    sourceUrl: 'https://example.com/markets',
+  });
+  assert.ok(llm.state.streamCalls[0].system.includes('finance/markets'));
+  assert.ok(llm.state.streamCalls[0].system.includes('收益率'));
+});
+
 test('a broken usage ledger never fails a translation', async (t) => {
   const dir = await createTempDir();
   t.after(() => removeTempDir(dir));

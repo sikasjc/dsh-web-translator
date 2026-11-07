@@ -14,6 +14,8 @@ import {
   renderNumberedSegments,
   renderTemplate,
   renderTranslatePrompts,
+  looksLikeTechnicalContent,
+  renderPageContext,
 } from '../lib/prompts.js';
 
 test('renderTemplate substitutes known placeholders and keeps unknown ones', () => {
@@ -73,6 +75,75 @@ test('lookup prompts are plain-text oriented and include context when present', 
   const withoutContext = renderLookupPrompts({ text: 'immersive', targetLanguage: 'zh-CN' });
   assert.equal(withoutContext.user.includes('Context:'), false);
   assert.equal(LOOKUP_SYSTEM_PROMPT.includes('{{targetLanguage}}'), true);
+});
+
+test('page context is prepended for technical pages and not for generic pages', () => {
+  const technical = renderTranslatePrompts({
+    texts: ['Rust traits define shared behavior; the port is configurable.'],
+    targetLanguage: 'zh-CN',
+    pageContext: {
+      title: 'Traits: Defining Shared Behavior - The Rust Programming Language',
+      url: 'https://doc.rust-lang.org/book/ch10-02-traits.html',
+      technical: true,
+    },
+  });
+  assert.ok(technical.system.includes('Page context'));
+  assert.ok(technical.system.includes('doc.rust-lang.org'));
+  assert.ok(technical.system.includes('trait'));
+  assert.ok(technical.system.includes('端口'));
+  assert.ok(technical.system.indexOf('Page context') < technical.system.indexOf('You are a professional translator'));
+
+  const generic = renderTranslatePrompts({
+    texts: ['The port of Rotterdam is busy.'],
+    targetLanguage: 'zh-CN',
+    pageContext: { title: 'Rotterdam news', url: 'https://news.example.com/port', technical: false },
+  });
+  assert.ok(generic.system.includes('Rotterdam news'));
+  assert.equal(generic.system.includes('software/programming'), false);
+  assert.equal(generic.system.includes('端口'), false);
+});
+
+test('explicit translation styles inject domain rules instead of auto detection', () => {
+  const programming = renderTranslatePrompts({
+    texts: ['A plain sentence'],
+    targetLanguage: 'zh-CN',
+    pageContext: { title: 'A generic page', url: 'https://example.com/a', style: 'programming', technical: true },
+  });
+  assert.ok(programming.system.includes('trait'));
+  assert.ok(programming.system.includes('programming documentation'));
+
+  const finance = renderTranslatePrompts({
+    texts: ['Yield and liquidity'],
+    targetLanguage: 'zh-CN',
+    pageContext: { title: 'Markets', url: 'https://example.com/markets', style: 'finance' },
+  });
+  assert.ok(finance.system.includes('finance/markets'));
+  assert.ok(finance.system.includes('收益率'));
+  assert.ok(finance.system.includes('回撤'));
+  assert.equal(finance.system.includes('DSH_KEEP'), false);
+
+  const tech = renderTranslatePrompts({
+    texts: ['The API returns a port.'],
+    targetLanguage: 'zh-CN',
+    pageContext: { title: 'Tech', url: 'https://example.com/tech', style: 'tech' },
+  });
+  assert.ok(tech.system.includes('technology/engineering'));
+  assert.ok(tech.system.includes('product names'));
+
+  const general = renderTranslatePrompts({
+    texts: ['Rust traits and ports'],
+    targetLanguage: 'zh-CN',
+    pageContext: { title: 'Rust', url: 'https://doc.rust-lang.org', style: 'general', technical: true },
+  });
+  assert.equal(general.system.includes('DSH_KEEP'), false);
+  assert.equal(general.system.includes('编程'), false);
+});
+
+test('looksLikeTechnicalContent detects docs hosts and repeated technical terms', () => {
+  assert.equal(looksLikeTechnicalContent({ url: 'https://doc.rust-lang.org/book/ch10-02-traits.html' }), true);
+  assert.equal(looksLikeTechnicalContent({ title: 'Rust traits', texts: ['trait and struct'] }), true);
+  assert.equal(looksLikeTechnicalContent({ title: 'Port of Rotterdam news', texts: ['The port is busy today.'] }), false);
+  assert.equal(renderPageContext({ title: 'x' }), 'Page context (do not translate this metadata; use it only to disambiguate terminology):\n- Page title: x');
 });
 
 test('effectivePrompts falls back to defaults for missing or blank values', () => {

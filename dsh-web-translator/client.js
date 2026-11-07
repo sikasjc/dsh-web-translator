@@ -142,6 +142,13 @@ window.__ModuleLoader__.load({
       'settings.effortUnsupported': '该模型未声明可调推理强度，将使用自动。',
       'settings.effortLoading': '正在读取推理强度…',
       'settings.targetLanguage': '目标语言',
+      'settings.translationStyle': '翻译风格',
+      'settings.translationStyleHint': 'auto 会根据页面标题/URL/文本自动识别编程等技术页面；通用不做领域改写；编程/科技/金融使用对应术语规范。',
+      'settings.style.auto': '自动（推荐）',
+      'settings.style.general': '通用',
+      'settings.style.programming': '编程',
+      'settings.style.tech': '科技',
+      'settings.style.finance': '金融',
       'settings.prompts': '提示词',
       'settings.systemPrompt': '系统提示词',
       'settings.userTemplate': '用户模板',
@@ -486,6 +493,13 @@ window.__ModuleLoader__.load({
       'settings.effortUnsupported': 'This model declares no reasoning efforts; auto is used.',
       'settings.effortLoading': 'Loading reasoning efforts…',
       'settings.targetLanguage': 'Target language',
+      'settings.translationStyle': 'Translation style',
+      'settings.translationStyleHint': 'Auto detects programming/technical pages from the title, URL and text; General applies no domain rules; Programming/Tech/Finance use domain-specific terminology.',
+      'settings.style.auto': 'Auto (recommended)',
+      'settings.style.general': 'General',
+      'settings.style.programming': 'Programming',
+      'settings.style.tech': 'Technology',
+      'settings.style.finance': 'Finance',
       'settings.prompts': 'Prompts',
       'settings.systemPrompt': 'System prompt',
       'settings.userTemplate': 'User template',
@@ -1386,6 +1400,7 @@ window.__ModuleLoader__.load({
         model: model,
         reasoningEffort: typeof settings.reasoningEffort === 'string' && settings.reasoningEffort ? settings.reasoningEffort : 'auto',
         targetLanguage: typeof settings.targetLanguage === 'string' && settings.targetLanguage ? settings.targetLanguage : 'zh-CN',
+        translationStyle: ['auto', 'general', 'programming', 'tech', 'finance'].includes(settings.translationStyle) ? settings.translationStyle : 'auto',
         systemPrompt: typeof settings.systemPrompt === 'string' ? settings.systemPrompt : '',
         userTemplate: typeof settings.userTemplate === 'string' ? settings.userTemplate : '',
         recordHistory: settings.recordHistory !== false,
@@ -1603,6 +1618,7 @@ window.__ModuleLoader__.load({
           model: form.model,
           reasoningEffort: form.reasoningEffort,
           targetLanguage: form.targetLanguage,
+          translationStyle: form.translationStyle,
           systemPrompt: form.systemPrompt,
           userTemplate: form.userTemplate,
           recordHistory: form.recordHistory,
@@ -1714,6 +1730,7 @@ window.__ModuleLoader__.load({
           form.model !== baseline.model ||
           form.reasoningEffort !== baseline.reasoningEffort ||
           form.targetLanguage !== baseline.targetLanguage ||
+          form.translationStyle !== baseline.translationStyle ||
           form.systemPrompt !== baseline.systemPrompt ||
           form.userTemplate !== baseline.userTemplate ||
           form.recordHistory !== baseline.recordHistory);
@@ -1803,8 +1820,28 @@ window.__ModuleLoader__.load({
                 languageOptions.map((id) => h('option', { key: 'lang-' + id, value: id }, languageLabel(t, id))),
               ),
             ),
+            h(
+              'label',
+              { className: 'dsh-it-field' },
+              h('span', { className: 'dsh-it-label' }, t('settings.translationStyle')),
+              h(
+                'select',
+                {
+                  className: 'dsh-it-select',
+                  value: form.translationStyle,
+                  'aria-label': t('settings.translationStyle'),
+                  onChange: (event) => updateForm({ translationStyle: event.target.value }),
+                },
+                ['auto', 'general', 'programming', 'tech', 'finance'].map((style) => h(
+                  'option',
+                  { key: 'style-' + style, value: style },
+                  t('settings.style.' + style),
+                )),
+              ),
+            ),
           ),
           h('p', { className: 'dsh-it-hint' }, t('settings.modelHint')),
+          h('p', { className: 'dsh-it-hint' }, t('settings.translationStyleHint')),
           effortHint ? h('p', { className: 'dsh-it-hint' }, effortHint) : null,
         ),
         h(

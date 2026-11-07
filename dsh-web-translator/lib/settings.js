@@ -12,6 +12,7 @@ import {
   SETTINGS_KEYS,
   SETTINGS_VERSION,
   TARGET_LANGUAGES,
+  TRANSLATION_STYLES,
 } from './constants.js';
 import { apiError } from './errors.js';
 import { effectivePrompts, findUnknownPlaceholders } from './prompts.js';
@@ -108,6 +109,11 @@ export function normalizeSettingsPatch(raw) {
         invalidSettings(`targetLanguage must be one of: ${TARGET_LANGUAGES.join(', ')}`);
       }
       values.targetLanguage = value.trim();
+    } else if (key === 'translationStyle') {
+      if (typeof value !== 'string' || !TRANSLATION_STYLES.includes(value.trim())) {
+        invalidSettings(`translationStyle must be one of: ${TRANSLATION_STYLES.join(', ')}`);
+      }
+      values.translationStyle = value.trim();
     } else if (key === 'systemPrompt') {
       values.systemPrompt = normalizePromptValue(value, key, LIMITS.systemPromptChars, warnings);
     } else if (key === 'userTemplate') {

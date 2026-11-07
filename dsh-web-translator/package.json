@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-web-translator",
-  "version": "1.9.1",
+  "version": "1.10.0",
   "private": true,
   "description": "LLM translation backend with token-usage accounting for the dsh-web-translator browser extension; left-toolbar page with stats, traces, prompts and wordbook review",
   "type": "module",

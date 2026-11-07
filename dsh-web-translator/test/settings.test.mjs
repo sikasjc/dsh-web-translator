@@ -24,6 +24,15 @@ function assertInvalid(run, pattern) {
   });
 }
 
+test('translationStyle defaults to auto and accepts the supported styles', () => {
+  assert.equal(DEFAULTS.translationStyle, 'auto');
+  for (const style of ['auto', 'general', 'programming', 'tech', 'finance']) {
+    assert.equal(normalizeSettingsPatch({ translationStyle: style }).values.translationStyle, style);
+  }
+  assertInvalid(() => normalizeSettingsPatch({ translationStyle: 'poetry' }), /translationStyle/);
+  assertInvalid(() => normalizeSettingsPatch({ translationStyle: 1 }), /translationStyle/);
+});
+
 test('recordHistory defaults to true and accepts booleans', () => {
   assert.equal(DEFAULTS.recordHistory, true);
   assert.equal(normalizeSettingsPatch({ recordHistory: true }).values.recordHistory, true);
@@ -41,6 +50,7 @@ test('accepts a complete valid patch', () => {
     batchSegments: 5,
     batchChars: 2000,
     concurrency: 3,
+    translationStyle: 'tech',
     recordHistory: false,
   });
   assert.deepEqual(warnings, []);
@@ -50,6 +60,7 @@ test('accepts a complete valid patch', () => {
   assert.equal(values.batchSegments, 5);
   assert.equal(values.concurrency, 3);
   assert.equal(values.recordHistory, false);
+  assert.equal(values.translationStyle, 'tech');
 });
 
 test('blank prompts mean "restore default" (undefined patch value)', () => {
