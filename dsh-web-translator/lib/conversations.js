@@ -33,7 +33,7 @@ export const TRANSLATION_WORKSPACE_TITLE = 'dsh翻译记录';
 /** Session title cap (readable in the DSH sidebar). */
 const TITLE_MAX = 60;
 /** Prefix of the session title, per conversation kind (DESIGN-CONVERSATIONS §1). */
-const TITLE_PREFIX = Object.freeze({ translate: '翻译', lookup: '翻译查词' });
+const TITLE_PREFIX = Object.freeze({ translate: '翻译', lookup: '翻译查词', image: '图片翻译' });
 
 /** @returns {string} a fresh message id. */
 function newMessageId() {
@@ -90,6 +90,11 @@ export function composeUserText(input) {
   const source = input !== null && typeof input === 'object' ? input : {};
   const language = nonEmptyText(source.targetLanguage) ?? '目标语言';
   const texts = Array.isArray(source.texts) ? source.texts.filter((text) => typeof text === 'string' && text.length > 0) : [];
+  if (source.kind === 'image') {
+    const title = nonEmptyText(source.sourceTitle) ?? nonEmptyText(source.site);
+    const where = title === undefined ? '' : `\n来源：${title}`;
+    return `图片翻译（${language}）${where}`;
+  }
   if (source.kind === 'lookup') {
     const text = typeof source.text === 'string' ? source.text : texts[0] ?? '';
     const context = nonEmptyText(source.context);
@@ -126,7 +131,7 @@ export function composeAssistantText(input) {
  */
 export function composeTitle(input) {
   const source = input !== null && typeof input === 'object' ? input : {};
-  const kind = source.kind === 'lookup' ? 'lookup' : 'translate';
+  const kind = source.kind === 'lookup' ? 'lookup' : source.kind === 'image' ? 'image' : 'translate';
   const base = nonEmptyText(source.sourceTitle) ?? nonEmptyText(source.site);
   const prefix = TITLE_PREFIX[kind];
   return (base === undefined ? prefix : `${prefix} · ${base}`).slice(0, TITLE_MAX);

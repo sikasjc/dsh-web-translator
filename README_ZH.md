@@ -5,7 +5,7 @@
 把 **DSH（DeepSeek Harness）配置的模型**变成一套本地沉浸式网页翻译：DSH 插件提供翻译后端、Token 统计与单词本，Chrome/Edge 扩展负责在网页上翻译与查词。
 **不需要任何第三方翻译 API Key**，文本只在本机 DSH 与你在 DSH 中配置的模型服务之间流动（可选的英文单词词典查词除外，见「数据与隐私」）。
 
-> 当前版本：**DSH 插件 1.11.0** · **浏览器扩展 1.16.0**。最近更新：英文单词查词可选第三方词典（dictionaryapi.dev / 英文 Wiktionary / 关闭）（插件 1.11.0）；翻译风格与页面上下文/术语保护（插件 1.10.0）；按站点自动翻译（扩展 1.16.0）、可选 iframe 翻译（扩展 1.15.0）；扩展打包、隐私政策与商店上架材料（扩展 1.15.0）；按屏翻译调度与块边界修复（扩展 1.14.x）；悬浮球左键快捷翻译、翻译进度环、按域名隐藏、页面语言一致检测（扩展 1.10–1.13）；翻译结果缓存持久化（插件 1.7.0）；翻译会话自动归入侧边栏「**dsh翻译记录**」分组（1.6.0）；每次翻译动作 = 一条真实 DSH 会话、每个模型请求 = 一轮对话，可直接查看 DSH 原生「对话 / 轨迹 / 统计」（1.5.0）。
+> 当前版本：**DSH 插件 1.12.0** · **浏览器扩展 1.17.0**。最近更新：右键图片翻译文字、译文原位覆盖、图片用完即删（插件 1.12.0 / 扩展 1.17.0）；英文单词查词可选第三方词典（dictionaryapi.dev / 英文 Wiktionary / 关闭）（插件 1.11.0）；翻译风格与页面上下文/术语保护（插件 1.10.0）；按站点自动翻译（扩展 1.16.0）、可选 iframe 翻译（扩展 1.15.0）；扩展打包、隐私政策与商店上架材料（扩展 1.15.0）；按屏翻译调度与块边界修复（扩展 1.14.x）；悬浮球左键快捷翻译、翻译进度环、按域名隐藏、页面语言一致检测（扩展 1.10–1.13）；翻译结果缓存持久化（插件 1.7.0）；翻译会话自动归入侧边栏「**dsh翻译记录**」分组（1.6.0）；每次翻译动作 = 一条真实 DSH 会话、每个模型请求 = 一轮对话，可直接查看 DSH 原生「对话 / 轨迹 / 统计」（1.5.0）。
 > 说明：为避免包含真实浏览数据、会话标题等个人信息，仓库**不附带 UI 截图与 QA live 证据**；本地安装运行后即可直接查看界面，QA 截图可用 `dsh-web-translator/qa/*.mjs` 在本机重新生成（默认被 `qa/.gitignore` 忽略）。
 
 ---
@@ -29,6 +29,7 @@
 - **按屏翻译调度（默认）**：点翻译时把当前屏幕可见内容（+ 可配置预加载：无 / 半屏 / 一屏）一次性触发；滚动后等滚动停止再翻新一屏，快速滚过的中间屏不补翻（省 token）。可选 **逐块模式**：保留按视口懒加载 + 微批合并，最省 token；可随时「停止 / 还原」；
 - **跟随翻译**（默认开启）：页面 A 翻译后，点链接打开的同站/新标签页面 B 自动开始翻译；
 - 右键菜单「dsh翻译」：三种模式直达 + 翻译选中文本；
+- **右键图片翻译**：右键图片 →「翻译图片文字」，只截取该图片当前可见区域，经本机 DSH 发给所选视觉模型；译文**原位覆盖**在图片原文字位置（可切双语/仅译文、复制、关闭；模型无法给出坐标时回退为图片旁卡片）；页面翻译不会自动扫描图片；图片在请求完成后立即删除；
 - **划词 / 双击 / 快捷键翻译**（三个开关默认关闭，选项页开启）：弹出翻译/查词卡（译文、音标、词典释义、发音、加入单词本）；
 - **悬浮球**：**左键**按当前模式快速翻译（再点停止、再点还原），**右键**打开功能面板；可拖动、翻译中显示进度环与百分比；面板底部或右键菜单可「隐藏 / 显示悬浮球」；**按域名隐藏**（面板/右键菜单添加，在 DSH → 设置 → dsh翻译 → 悬浮球 里管理列表）；
 - **页面语言一致检测**：页面语言与目标语言一致时不发起翻译请求，默认同时隐藏悬浮球（可关闭）；
@@ -36,13 +37,13 @@
 - **浮窗实时显示 Token 消耗**：本页消耗（输入/输出，逐次累加）、今日累计（来自 DSH 账本）。
 
 **DSH 插件（Web profile）**
-- 使用 DSH 已配置的模型（provider/model、推理强度可选），**模型 / 提示词都可在 DSH 内调整**；
+- 使用 DSH 已配置的模型（provider/model、推理强度可选），**模型 / 提示词都可在 DSH 内调整**；**图片翻译后端**：接收扩展截图、调用可选的图片模型（默认跟随当前翻译模型），返回带归一化坐标的 OCR 块，图片 Token 进入账本并生成一条 DSH 会话/轮次，随后立即删除临时图片附件；
 - **Token 账本**：从模型返回的真实 usage 记录 输入 / 输出 / 缓存读 / 缓存写、时延，按日 / 按模型 / 按类型聚合；
 - **翻译结果缓存（持久化）**：相同原文 / 提示词 / 模型再次翻译时直接复用译文（0 token 调用）；缓存写入本机 `cache.json`，保留 7 天、最多 1000 批，跨 DSH 重启仍有效；「概览」页可一键清空；
 - **左侧工具栏「dsh翻译」页面**：
   - **概览**：今日请求数、Token、缓存命中、失败数、平均时延、近 14 天趋势、模型与类型分布、翻译结果缓存管理；
   - **轨迹**：以**翻译会话**为单位（对齐 DSH 的「会话 → 轨迹」层级）—— 每次「翻译此页 / 重新翻译 / 查词」= 一条真实的 DSH 会话，会话内每个模型请求 = **一轮对话（Turn：user → assistant）**；会话卡片显示标题 / 站点 / 模型 / 轮数 / Token / 状态，展开可看每轮摘要，点「**打开 DSH 轨迹**」直接进入 DSH 原生「对话 / 轨迹 / 统计」查看每轮的完整原文、译文与 Token；旧版请求（无 DSH 会话）保留内联分组；支持过滤、加载更早、清空统计；
-  - **设置**：模型、推理强度、目标语言、翻译风格、system 提示词、user 模板、批次参数、**第三方词典来源**、测试翻译；另有「**悬浮球**」页：查看/移除/手动添加「不展示悬浮球的域名」；
+  - **设置**：模型、推理强度、目标语言、翻译风格、system 提示词、user 模板、批次参数、**第三方词典来源**、**图片模型**、测试翻译；另有「**悬浮球**」页：查看/移除/手动添加「不展示悬浮球的域名」；
   - **可选第三方词典**：英文单词查词时可选择 `dictionaryapi.dev`（音标/释义/发音，默认）、英文 `Wiktionary`（英文释义，无发音）或**关闭**（仅模型翻译）；词典请求由 Host 内部完成，不写入 DSH 会话记录；
   - **单词本**：复习（SRS）、发音 / 跟读练习；
   - **侧边栏分组**：每个翻译动作/查词 = 一条真实 DSH 会话，自动归入「**dsh翻译记录**」分组（历史会话首次启动自动回填），点开即可看 DSH 原生「对话 / 轨迹 / 统计」。
@@ -64,6 +65,7 @@ dsh-web-translator/            # DSH 插件（本地 bundle，可安装到 DSH p
 ├── DESIGN-TURN-TRACE.md       # v3.1 增量：Turn 轨迹（会话内每轮对话）
 ├── DESIGN-CONVERSATIONS.md    # v4 增量：翻译会话桥接 DSH 原生轨迹 +「dsh翻译记录」分组
 ├── DESIGN-CACHE.md            # v5 增量：翻译结果缓存持久化（磁盘 + TTL + DELETE /cache）
+├── DESIGN-IMAGE.md            # v6 增量：右键图片翻译、原位覆盖与图片即用即删
 └── qa/                        # 独立 QA 脚本与报告（截图 / live 证据不入库）
 
 dsh-web-translator-extension/  # Chrome / Edge MV3 扩展（加载已解压）
@@ -167,6 +169,7 @@ DSH 地址（默认 `http://127.0.0.1:3080`）、目标语言、默认显示模�
 
 - 翻译 / 查词文本会经本机 DSH 发送到**你在 DSH 中配置的模型服务**（例如 modelhub），不发送到其它第三方翻译服务；
 - **英文单词查词**可按 DSH → dsh翻译 → 设置 → 第三方词典 中选择的来源请求公共词典：[`dictionaryapi.dev`](https://dictionaryapi.dev/)（音标/释义/发音，默认）、英文 Wiktionary（英文释义，无发音）或**关闭**（完全不发起第三方词典请求）；只发送该单词（不含页面正文），失败静默降级为「无词典」。该词典请求由 Host 内部完成，**不会写入 DSH 会话/对话记录**（会话记录只含模型请求与译文）；
+- **图片翻译**只在右键图片并选择「翻译图片文字」时发生：图片当前可见区域经本机 DSH 发给所选图片模型（默认跟随当前翻译模型，如 DeepSeek），临时图片附件在请求完成后**立即删除**；本地只缓存 OCR 文本与译文，图片不写入 DSH 会话记录、也不写入扩展存储；
 - 扩展只保存自己的 UI 偏好（`chrome.storage.local`），**不保存页面内容**；扩展不直连模型、不保存任何密钥；
 - 插件数据只写入 `$DSH_HOME/immersive-translate/`：
   - `settings.json`（模型 / 提示词 / 语言等设置）
@@ -192,18 +195,18 @@ DSH 地址（默认 `http://127.0.0.1:3080`）、目标语言、默认显示模�
 ## 开发与测试
 
 ```bash
-# DSH 插件（Host + 单测）— 当前 266/266
+# DSH 插件（Host + 单测）— 当前 281/281
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/
 
 # 浏览器扩展（静态校验 + headless Chrome E2E，不触发真实模型调用）
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 193 项静态检查
+node tools/verify.mjs        # 205 项静态检查
 node tools/e2e-chrome.mjs    # 132/132 E2E 检查（mock DSH）
 ```
 
-- 设计契约：[`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md)
+- 设计契约：[`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md) / [`DESIGN-IMAGE.md`](dsh-web-translator/DESIGN-IMAGE.md)
 - 独立 QA 报告：[`TOKEN-STATS-QA.md`](dsh-web-translator/qa/TOKEN-STATS-QA.md) / [`TURN-TRACE-QA.md`](dsh-web-translator/qa/TURN-TRACE-QA.md) / [`CONVERSATION-QA.md`](dsh-web-translator/qa/CONVERSATION-QA.md)（含 harness 使用方式与断言结论）
 - Live 证据：不入库（含真实页面/会话信息）；本地运行 `node qa/conversation-shot.mjs` 生成到 `qa/live-conversations-evidence/`
 

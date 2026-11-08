@@ -97,6 +97,7 @@ const ALLOWED_ROUTES = Object.freeze({
   'ball-sites/remove': 'POST',
   translate: 'POST',
   lookup: 'POST',
+  'image-translate': 'POST',
   'wordbook/add': 'POST'
 });
 
@@ -203,19 +204,17 @@ function buildQuery(payload) {
 /* RPC 主流程                                                          */
 /* ------------------------------------------------------------------ */
 
-async function handleRpc(message) {
-  const method = typeof message.method === 'string' ? message.method.trim() : '';
+async function requestHost(method, payload, options) {
   const verb = Object.prototype.hasOwnProperty.call(ALLOWED_ROUTES, method)
     ? ALLOWED_ROUTES[method]
     : null;
   if (!verb) {
     return fail('UNKNOWN_METHOD', '不支持的 API 方法：' + (method || '(空)'));
   }
-
-  const payload =
-    message.payload && typeof message.payload === 'object' && !Array.isArray(message.payload)
-      ? message.payload
-      : {};
+  const timeoutMs = options && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? Math.trunc(options.timeoutMs)
+    : REQUEST_TIMEOUT_MS;
+  const bodyPayload = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
 
   const base = await getBaseUrl();
   let url = base + API_PREFIX + method;
@@ -227,24 +226,24 @@ async function handleRpc(message) {
   };
 
   if (verb === 'GET') {
-    const query = buildQuery(payload);
+    const query = buildQuery(bodyPayload);
     if (query) url += '?' + query;
   } else {
     try {
-      init.body = JSON.stringify(payload);
+      init.body = JSON.stringify(bodyPayload);
     } catch (err) {
       return fail('BAD_REQUEST', '请求参数无法序列化');
     }
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => {
+  const timer = setTimeout(function () {
     try {
       controller.abort();
     } catch (err) {
       /* ignore */
     }
-  }, REQUEST_TIMEOUT_MS);
+  }, timeoutMs);
 
   let response;
   try {
@@ -252,7 +251,7 @@ async function handleRpc(message) {
   } catch (err) {
     clearTimeout(timer);
     if (err && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
-      return fail('TIMEOUT', '请求 DSH 超时（' + Math.round(REQUEST_TIMEOUT_MS / 1000) + ' 秒）');
+      return fail('TIMEOUT', '请求 DSH 超时（' + Math.round(timeoutMs / 1000) + ' 秒）');
     }
     return fail(
       'DSH_UNREACHABLE',
@@ -296,6 +295,196 @@ async function handleRpc(message) {
   }
 
   return { ok: true, data: body };
+}
+
+async function handleRpc(message) {
+  const method = typeof message.method === 'string' ? message.method.trim() : '';
+  const payload =
+    message.payload && typeof message.payload === 'object' && !Array.isArray(message.payload)
+      ? message.payload
+      : {};
+  return requestHost(method, payload);
+}
+
+/* ------------------------------------------------------------------ */
+/* 图片文字翻译：右键图片 → 截图裁剪 → Host OCR/翻译 → 覆盖层          */
+/* ------------------------------------------------------------------ */
+
+/** 右键「翻译图片文字」菜单 id */
+const MENU_TRANSLATE_IMAGE = 'dsh-it:translate-image';
+/** 截图长边上限（像素）；只影响发送给模型的图片，不影响页面 */
+const IMAGE_MAX_SIDE = 1600;
+/** 图片翻译请求超时（Host 侧视觉模型 120s + 网络余量） */
+const IMAGE_REQUEST_TIMEOUT_MS = 200000;
+/** 同一时间只处理一张图片，避免多个截图请求互相覆盖 */
+let imageTranslatePending = false;
+
+/** Blob -> base64（不带 data URL 前缀）。 */
+async function blobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
+}
+
+/** data URL -> Blob（手动 base64 解码，避免 service worker 对 data: fetch 的差异）。 */
+function dataUrlToBlob(dataUrl) {
+  const text = typeof dataUrl === 'string' ? dataUrl : '';
+  const comma = text.indexOf(',');
+  if (comma < 0) throw new Error('截图数据格式异常');
+  const header = text.slice(5, comma);
+  const mimeMatch = /^([^;]+)/.exec(header);
+  const mime = mimeMatch && mimeMatch[1] ? mimeMatch[1] : 'image/jpeg';
+  const binary = atob(text.slice(comma + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index) & 0xff;
+  return new Blob([bytes], { type: mime });
+}
+
+/** 从裁剪后的画布上按 bbox 采样背景色，返回每块的 #rrggbb。 */
+function sampleImageColors(context, width, height, blocks) {
+  const colors = [];
+  let pixels;
+  try {
+    pixels = context.getImageData(0, 0, width, height).data;
+  } catch (err) {
+    pixels = null;
+  }
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+    const block = blocks[blockIndex];
+    const bbox = Array.isArray(block && block.bbox) ? block.bbox : null;
+    if (!pixels || !bbox) {
+      colors.push('#ffffff');
+      continue;
+    }
+    const x0 = Math.max(0, Math.round(bbox[0] * width));
+    const y0 = Math.max(0, Math.round(bbox[1] * height));
+    const x1 = Math.min(width, Math.round(bbox[2] * width));
+    const y1 = Math.min(height, Math.round(bbox[3] * height));
+    const inset = Math.max(1, Math.round(Math.min(x1 - x0, y1 - y0) * 0.08));
+    const samples = [];
+    for (let step = 0; step <= 8; step += 1) {
+      const ratio = step / 8;
+      const points = [
+        [x0 + Math.round((x1 - x0) * ratio), Math.min(y1 - 1, y0 + inset)],
+        [x0 + Math.round((x1 - x0) * ratio), Math.max(y0, y1 - inset - 1)],
+        [Math.min(x1 - 1, x0 + inset), y0 + Math.round((y1 - y0) * ratio)],
+        [Math.max(x0, x1 - inset - 1), y0 + Math.round((y1 - y0) * ratio)]
+      ];
+      for (const point of points) {
+        const px = Math.min(width - 1, Math.max(0, point[0]));
+        const py = Math.min(height - 1, Math.max(0, point[1]));
+        const offset = (py * width + px) * 4;
+        samples.push([pixels[offset], pixels[offset + 1], pixels[offset + 2]]);
+      }
+    }
+    const sum = [0, 0, 0];
+    for (const sample of samples) {
+      sum[0] += sample[0];
+      sum[1] += sample[1];
+      sum[2] += sample[2];
+    }
+    const count = Math.max(1, samples.length);
+    const hex = [0, 1, 2].map(function (index) {
+      return Math.round(sum[index] / count).toString(16).padStart(2, '0');
+    }).join('');
+    colors.push('#' + hex);
+  }
+  return colors;
+}
+
+/** 抓取并裁剪当前视口中的图片区域，返回画布与 base64。 */
+async function captureImageRegion(message, tab) {
+  const viewportWidth = Math.max(1, Number(message.viewportWidth) || 1);
+  const viewportHeight = Math.max(1, Number(message.viewportHeight) || 1);
+  const rect = message.rect && typeof message.rect === 'object' ? message.rect : {};
+  const left = Math.max(0, Number(rect.left) || 0);
+  const top = Math.max(0, Number(rect.top) || 0);
+  const rectWidth = Math.max(1, Number(rect.width) || 1);
+  const rectHeight = Math.max(1, Number(rect.height) || 1);
+
+  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
+  const blob = await dataUrlToBlob(dataUrl);
+  const bitmap = await createImageBitmap(blob);
+  const scaleX = bitmap.width / viewportWidth;
+  const scaleY = bitmap.height / viewportHeight;
+  let sx = Math.max(0, Math.min(bitmap.width - 1, Math.round(left * scaleX)));
+  let sy = Math.max(0, Math.min(bitmap.height - 1, Math.round(top * scaleY)));
+  let sw = Math.max(1, Math.min(bitmap.width - sx, Math.round(rectWidth * scaleX)));
+  let sh = Math.max(1, Math.min(bitmap.height - sy, Math.round(rectHeight * scaleY)));
+  const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(sw, sh));
+  const width = Math.max(1, Math.round(sw * scale));
+  const height = Math.max(1, Math.round(sh * scale));
+  const canvas = new OffscreenCanvas(width, height);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('无法创建图片画布');
+  context.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
+  const cropped = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+  const base64 = await blobToBase64(cropped);
+  return { canvas, context, width, height, base64, bytes: cropped.size };
+}
+
+/** 处理 content 的图片翻译请求；返回 true 表示异步 sendResponse。 */
+async function handleImageTranslate(message, sender, sendResponse) {
+  if (imageTranslatePending) {
+    sendResponse(fail('IMAGE_BUSY', '正在翻译上一张图片，请稍候'));
+    return;
+  }
+  imageTranslatePending = true;
+  try {
+    const tab = sender && sender.tab;
+    if (!tab || typeof tab.id !== 'number') {
+      sendResponse(fail('IMAGE_FAILED', '找不到当前标签页'));
+      return;
+    }
+    if (!chrome.tabs || typeof chrome.tabs.captureVisibleTab !== 'function') {
+      sendResponse(fail('IMAGE_FAILED', '当前浏览器不支持截图翻译'));
+      return;
+    }
+    const capture = await captureImageRegion(message, tab);
+    const turnId = 'img_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    const payload = {
+      image: { mediaType: 'image/jpeg', data: capture.base64 },
+      sourceUrl: typeof message.sourceUrl === 'string' ? message.sourceUrl : '',
+      sourceTitle: typeof message.sourceTitle === 'string' ? message.sourceTitle : '',
+      client: 'extension',
+      turnId: turnId,
+      stepIndex: 0,
+      mode: 'image'
+    };
+    const response = await requestHost('image-translate', payload, { timeoutMs: IMAGE_REQUEST_TIMEOUT_MS });
+    if (!response || response.ok !== true) {
+      sendResponse(response || fail('IMAGE_FAILED', '图片翻译失败'));
+      return;
+    }
+    const data = response.data && typeof response.data === 'object' ? response.data : {};
+    const result = data.result && typeof data.result === 'object' ? data.result : {};
+    const blocks = Array.isArray(result.blocks) ? result.blocks : [];
+    const colors = sampleImageColors(capture.context, capture.width, capture.height, blocks);
+    sendResponse({
+      ok: true,
+      data: {
+        result: Object.assign({}, result, { blocks: blocks, colors: colors }),
+        usage: data.usage || {},
+        capture: {
+          rect: message.rect,
+          elementRect: message.elementRect,
+          viewportWidth: message.viewportWidth,
+          viewportHeight: message.viewportHeight
+        }
+      }
+    });
+  } catch (err) {
+    const normalized = normalizeError(err);
+    const code = normalized.code === 'UNKNOWN' ? 'IMAGE_FAILED' : normalized.code;
+    const hint = code === 'IMAGE_FAILED' ? '无法截图或翻译图片：' + normalized.message : normalized.message;
+    sendResponse(fail(code, hint));
+  } finally {
+    imageTranslatePending = false;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -343,6 +532,11 @@ function createContextMenus() {
           id: MENU_ROOT,
           title: 'dsh翻译',
           contexts: ['page']
+        });
+        chrome.contextMenus.create({
+          id: MENU_TRANSLATE_IMAGE,
+          title: '翻译图片文字',
+          contexts: ['image']
         });
         chrome.contextMenus.create({
           id: MENU_MODE_SOURCE,
@@ -413,6 +607,16 @@ if (chrome.contextMenus && chrome.contextMenus.onClicked) {
       }
       if (info.menuItemId === MENU_TOGGLE_AUTO_SITE) {
         chrome.tabs.sendMessage(tab.id, { type: 'dsh-it:toggle-auto-site' }).catch(function () {});
+        return;
+      }
+      if (info.menuItemId === MENU_TRANSLATE_IMAGE) {
+        if (typeof info.srcUrl === 'string' && info.srcUrl) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            { type: 'dsh-it:translate-image', srcUrl: info.srcUrl },
+            { frameId: 0 }
+          ).catch(function () {});
+        }
         return;
       }
       const mode = MENU_MODE_MAP[info.menuItemId];
@@ -498,6 +702,17 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         return true;
       }
       return false;
+    }
+
+    if (message.type === 'dsh-it:image-translate') {
+      handleImageTranslate(message, sender, sendResponse).catch(function (err) {
+        try {
+          sendResponse(fail('IMAGE_FAILED', normalizeError(err).message));
+        } catch (e) {
+          /* page closed */
+        }
+      });
+      return true;
     }
 
     if (message.type === 'dsh-it:rpc') {

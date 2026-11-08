@@ -158,7 +158,9 @@ Origin fence（不要用 `ctx.connection.requestRejection`，扩展 Origin 会�
 ```json
 { "ok": true,
   "settings": { "provider":"modelhub", "model":"deepseek-flash", "reasoningEffort":"auto",
-                "targetLanguage":"zh-CN", "systemPrompt":"...", "userTemplate":"...",
+                "targetLanguage":"zh-CN", "translationStyle":"auto",
+                "dictionaryProvider":"dictionaryapi.dev", "imageModel":"auto",
+                "systemPrompt":"...", "userTemplate":"...",
                 "batchSegments":10, "batchChars":1600, "concurrency":2 },
   "defaults": { "...": "同上默认值" },
   "selected": { "provider":"...", "model":"...", "reasoningEffort":"off", "source":"settings|default" },
@@ -171,7 +173,7 @@ Origin fence（不要用 `ctx.connection.requestRejection`，扩展 Origin 会�
 **单词本列表**：`GET /wordbook` 的 `limit` 默认 200、上限 500；复习队列用 `filter=due&limit=50`。
 
 ### 5.5 `PUT /settings`
-Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchChars 200..4000、concurrency 1..4、targetLanguage 白名单）、provider/model 必须存在；非法 → 400 `INVALID_SETTINGS`。保存后返回同 GET /settings。
+Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchChars 200..4000、concurrency 1..4、targetLanguage 白名单）、provider/model 必须存在、`imageModel` 为 `auto` 或 `provider::model` 且该模型声明支持图片；非法 → 400 `INVALID_SETTINGS`。保存后返回同 GET /settings。
 持久化 JSON：`{ version:1, settings:{...}, updatedAt }`。
 
 ### 5.6 `POST /translate`
@@ -194,6 +196,29 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - `off`：不发起任何第三方请求，响应不带 `dictionary`。
 
 词典请求由 Host 内部完成，**不写入 DSH 会话/对话记录**；宿主把第三方数据当不可信输入裁剪后再返回。
+
+### 5.7.2 `POST /image-translate`（右键图片翻译，DESIGN-IMAGE.md）
+
+请求：
+```json
+{ "image": { "mediaType":"image/jpeg", "data":"<canonical base64>" },
+  "targetLanguage":"zh-CN"?, "sourceUrl":"...", "sourceTitle":"...",
+  "client":"extension", "turnId":"img_…", "stepIndex":0, "mode":"image" }
+```
+响应：
+```json
+{ "ok": true, "result": {
+    "blocks": [ { "text":"原文", "translation":"译文", "bbox":[x0,y0,x1,y1] } ],
+    "provider":"modelhub", "model":"deepseek-flash", "cached":false,
+    "imageHash":"sha256…", "targetLanguage":"zh-CN" },
+  "usage": { "inputTokens":0, "outputTokens":0 } }
+```
+- 图片模型：`settings.imageModel`（默认 `auto` 跟随当前翻译模型；显式 `provider::model` 必须声明 `inputModalities` 包含 `image`）；`auto` 下当前模型不支持图片时回退到目录里第一个图片模型，都没有则 `MODEL_NO_VISION`(502)；
+- 图片校验：PNG/JPEG/WebP/GIF、canonical base64、解码后 ≤3 MiB；`/image-translate` 的 JSON body 上限 8 MiB；错误 `IMAGE_INVALID`(400) `IMAGE_TOO_LARGE`(413) `IMAGE_UNSUPPORTED`(415)；
+- 单次视觉调用完成 OCR + 翻译 + bbox，temperature 0.2、输出上限 4096、超时 120s；
+- 解析：严格 JSON `{blocks:[...]}`，支持 fenced/数组；bbox 归一化 0..1 并裁剪；最多 100 块、每块 2000 字符；解析失败降级为单块纯文本（无 bbox，扩展回退卡片）；无文字返回 `blocks:[]`；
+- 图片丢弃：调用结束（成功/失败）后在 `finally` 中删除本次新建的归一化附件对象与 request-image 变体缓存；图片不写入 DSH 会话事件与插件翻译缓存；只有 OCR/译文结果按 `sha256(image)+provider/model+targetLanguage+style+promptVersion` 缓存（复用 `cache.json`）；
+- 账本/会话：usage kind=`image`（segments=OCR 块数、chars=OCR 字符数、sample=首块原文、outputPreview=首块译文），每次图片动作 = 一条 DSH 会话，单次模型请求 = 一个 Turn（kind=`image`，标题 `图片翻译 · …`）。
 
 ### 5.6.2.1 翻译风格（`translationStyle`）
 

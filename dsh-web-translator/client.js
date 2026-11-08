@@ -146,6 +146,9 @@ window.__ModuleLoader__.load({
       'settings.translationStyleHint': 'auto 会根据页面标题/URL/文本自动识别编程等技术页面；通用不做领域改写；编程/科技/金融使用对应术语规范。',
       'settings.dictionaryProvider': '第三方词典',
       'settings.dictionaryProviderHint': '英文单词查词时的在线词典来源：dictionaryapi.dev（音标/释义/发音）、Wiktionary（英文释义，无发音）或关闭（只用模型翻译，不发起第三方词典请求）。词典请求由本机 DSH 插件发出，不会写入 DSH 会话记录。',
+      'settings.imageModel': '图片模型',
+      'settings.imageModelAuto': '跟随当前翻译模型（若支持图片）',
+      'settings.imageModelHint': '右键图片「翻译图片文字」时使用的视觉模型；只列出声明支持图片输入的模型。默认跟随当前翻译模型（DeepSeek 默认模型已声明支持图片）。图片只在本次请求中使用，翻译完成后立即删除。',
       'settings.dictionaryApiDev': 'dictionaryapi.dev（音标/释义/发音）',
       'settings.dictionaryWiktionary': 'Wiktionary（英文释义）',
       'settings.dictionaryOff': '关闭（仅模型翻译）',
@@ -352,6 +355,7 @@ window.__ModuleLoader__.load({
       'usage.kindTitle': '类型分布',
       'usage.kind.translate': '翻译',
       'usage.kind.lookup': '查词',
+      'usage.kind.image': '图片翻译',
       'usage.kindRequests': '{count} 次请求',
       'usage.kindTokens': '输入 {input} · 输出 {output}',
       'usage.empty': '暂无统计数据',
@@ -430,6 +434,7 @@ window.__ModuleLoader__.load({
       'trace.turnAria': '{turn}：{kind}，{steps}，{status}',
       'trace.kind.translate': '翻译',
       'trace.kind.lookup': '查词',
+      'trace.kind.image': '图片翻译',
       'trace.kind.mixed': '混合',
       'trace.mode.bilingual': '双语对照',
       'trace.mode.only': '仅译文',
@@ -502,6 +507,9 @@ window.__ModuleLoader__.load({
       'settings.translationStyleHint': 'Auto detects programming/technical pages from the title, URL and text; General applies no domain rules; Programming/Tech/Finance use domain-specific terminology.',
       'settings.dictionaryProvider': 'Third-party dictionary',
       'settings.dictionaryProviderHint': 'Dictionary source for English single-word lookups: dictionaryapi.dev (phonetics/definitions/audio), Wiktionary (English definitions, no audio), or off (model translation only; no third-party dictionary request). The request is made by the local DSH plugin and is never written into DSH session records.',
+      'settings.imageModel': 'Image model',
+      'settings.imageModelAuto': 'Follow the current translation model (if it accepts images)',
+      'settings.imageModelHint': 'Vision model used when right-clicking an image and choosing “Translate image text”; only models declaring image input are listed. The default follows the current translation model (the default DeepSeek model declares image support). The image is used for this request only and deleted right after translation.',
       'settings.dictionaryApiDev': 'dictionaryapi.dev (phonetics/definitions/audio)',
       'settings.dictionaryWiktionary': 'Wiktionary (English definitions)',
       'settings.dictionaryOff': 'Off (model translation only)',
@@ -708,6 +716,7 @@ window.__ModuleLoader__.load({
       'usage.kindTitle': 'By kind',
       'usage.kind.translate': 'Translate',
       'usage.kind.lookup': 'Lookup',
+      'usage.kind.image': 'Image translation',
       'usage.kindRequests': '{count} requests',
       'usage.kindTokens': 'Input {input} · output {output}',
       'usage.empty': 'No stats yet',
@@ -786,6 +795,7 @@ window.__ModuleLoader__.load({
       'trace.turnAria': '{turn}: {kind}, {steps}, {status}',
       'trace.kind.translate': 'Translate',
       'trace.kind.lookup': 'Lookup',
+      'trace.kind.image': 'Image translation',
       'trace.kind.mixed': 'Mixed',
       'trace.mode.bilingual': 'Bilingual',
       'trace.mode.only': 'Translation only',
@@ -1412,6 +1422,9 @@ window.__ModuleLoader__.load({
         targetLanguage: typeof settings.targetLanguage === 'string' && settings.targetLanguage ? settings.targetLanguage : 'zh-CN',
         translationStyle: ['auto', 'general', 'programming', 'tech', 'finance'].includes(settings.translationStyle) ? settings.translationStyle : 'auto',
         dictionaryProvider: ['dictionaryapi.dev', 'wiktionary', 'off'].includes(settings.dictionaryProvider) ? settings.dictionaryProvider : 'dictionaryapi.dev',
+        imageModel: typeof settings.imageModel === 'string' && (settings.imageModel === 'auto' || settings.imageModel.includes('::'))
+          ? settings.imageModel
+          : 'auto',
         systemPrompt: typeof settings.systemPrompt === 'string' ? settings.systemPrompt : '',
         userTemplate: typeof settings.userTemplate === 'string' ? settings.userTemplate : '',
         recordHistory: settings.recordHistory !== false,
@@ -1430,10 +1443,12 @@ window.__ModuleLoader__.load({
           for (let modelIndex = 0; modelIndex < sourceModels.length; modelIndex += 1) {
             const model = sourceModels[modelIndex];
             if (!model || typeof model.id !== 'string' || !model.id) continue;
-            models.push({
+            const entry = {
               id: model.id,
               name: typeof model.name === 'string' && model.name ? model.name : model.id,
-            });
+            };
+            if (Array.isArray(model.inputModalities) && model.inputModalities.includes('image')) entry.vision = true;
+            models.push(entry);
             seen.add(provider.provider + '::' + model.id);
           }
           if (models.length === 0) continue;
@@ -1631,6 +1646,7 @@ window.__ModuleLoader__.load({
           targetLanguage: form.targetLanguage,
           translationStyle: form.translationStyle,
           dictionaryProvider: form.dictionaryProvider,
+          imageModel: form.imageModel,
           systemPrompt: form.systemPrompt,
           userTemplate: form.userTemplate,
           recordHistory: form.recordHistory,
@@ -1744,6 +1760,7 @@ window.__ModuleLoader__.load({
           form.targetLanguage !== baseline.targetLanguage ||
           form.translationStyle !== baseline.translationStyle ||
           form.dictionaryProvider !== baseline.dictionaryProvider ||
+          form.imageModel !== baseline.imageModel ||
           form.systemPrompt !== baseline.systemPrompt ||
           form.userTemplate !== baseline.userTemplate ||
           form.recordHistory !== baseline.recordHistory);
@@ -1759,6 +1776,22 @@ window.__ModuleLoader__.load({
         effortHint = t('settings.effortAutoResolved', { effort: String(selected.reasoningEffort) });
       }
       const languageOptions = languages.indexOf(form.targetLanguage) < 0 ? [form.targetLanguage].concat(languages) : languages.slice();
+      const imageModelOptions = [];
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        const group = groups[groupIndex];
+        for (let modelIndex = 0; modelIndex < group.models.length; modelIndex += 1) {
+          const imageModel = group.models[modelIndex];
+          if (imageModel.vision) {
+            imageModelOptions.push({
+              value: group.provider + '::' + imageModel.id,
+              label: group.name + ' · ' + imageModel.name,
+            });
+          }
+        }
+      }
+      if (form.imageModel !== 'auto' && !imageModelOptions.some((option) => option.value === form.imageModel)) {
+        imageModelOptions.unshift({ value: form.imageModel, label: form.imageModel });
+      }
 
       return h(
         'div',
@@ -1871,10 +1904,27 @@ window.__ModuleLoader__.load({
                 )),
               ),
             ),
+            h(
+              'label',
+              { className: 'dsh-it-field' },
+              h('span', { className: 'dsh-it-label' }, t('settings.imageModel')),
+              h(
+                'select',
+                {
+                  className: 'dsh-it-select',
+                  value: form.imageModel,
+                  'aria-label': t('settings.imageModel'),
+                  onChange: (event) => updateForm({ imageModel: event.target.value }),
+                },
+                h('option', { value: 'auto' }, t('settings.imageModelAuto')),
+                imageModelOptions.map((option) => h('option', { key: 'image-' + option.value, value: option.value }, option.label)),
+              ),
+            ),
           ),
           h('p', { className: 'dsh-it-hint' }, t('settings.modelHint')),
           h('p', { className: 'dsh-it-hint' }, t('settings.translationStyleHint')),
           h('p', { className: 'dsh-it-hint' }, t('settings.dictionaryProviderHint')),
+          h('p', { className: 'dsh-it-hint' }, t('settings.imageModelHint')),
           effortHint ? h('p', { className: 'dsh-it-hint' }, effortHint) : null,
         ),
         h(
@@ -3006,7 +3056,11 @@ window.__ModuleLoader__.load({
         today: normalizeUsageBucket(null),
         days: days,
         byModel: [],
-        byKind: { translate: normalizeUsageBucket(null), lookup: normalizeUsageBucket(null) },
+        byKind: {
+          translate: normalizeUsageBucket(null),
+          lookup: normalizeUsageBucket(null),
+          image: normalizeUsageBucket(null),
+        },
         recent: [],
         avgLatencyMs: 0,
       };
@@ -3018,7 +3072,7 @@ window.__ModuleLoader__.load({
       return {
         id: typeof raw.id === 'string' && raw.id ? raw.id : 'evt-fallback-' + String(index || 0) + '-' + String(at),
         at: at,
-        kind: raw.kind === 'lookup' ? 'lookup' : 'translate',
+        kind: raw.kind === 'lookup' ? 'lookup' : raw.kind === 'image' ? 'image' : 'translate',
         ok: raw.ok !== false,
         errorCode: typeof raw.errorCode === 'string' ? raw.errorCode : '',
         provider: typeof raw.provider === 'string' ? raw.provider : '',
@@ -3096,6 +3150,7 @@ window.__ModuleLoader__.load({
         byKind: {
           translate: normalizeUsageBucket(kindSource.translate),
           lookup: normalizeUsageBucket(kindSource.lookup),
+          image: normalizeUsageBucket(kindSource.image),
         },
         recent: recent,
         avgLatencyMs: firstPositiveNumber(raw.avgLatencyMs, raw.today && raw.today.avgLatencyMs, totals.avgLatencyMs),
@@ -3128,7 +3183,7 @@ window.__ModuleLoader__.load({
         stepIndex: explicitIndex ? Math.floor(raw.stepIndex) : fallbackIndex,
         id: typeof raw.id === 'string' ? raw.id : '',
         at: toFiniteNumber(raw.at),
-        kind: raw.kind === 'lookup' ? 'lookup' : 'translate',
+        kind: raw.kind === 'lookup' ? 'lookup' : raw.kind === 'image' ? 'image' : 'translate',
         provider: typeof raw.provider === 'string' ? raw.provider : '',
         model: typeof raw.model === 'string' ? raw.model : '',
         segments: toFiniteNumber(raw.segments),
@@ -3211,11 +3266,11 @@ window.__ModuleLoader__.load({
       const validStatus = raw.status === 'ok' || raw.status === 'partial' || raw.status === 'error';
       const status = validStatus ? raw.status : errors === 0 ? 'ok' : okCount > 0 ? 'partial' : 'error';
       let kind = 'translate';
-      if (raw.kind === 'lookup' || raw.kind === 'mixed' || raw.kind === 'translate') {
+      if (raw.kind === 'lookup' || raw.kind === 'image' || raw.kind === 'mixed' || raw.kind === 'translate') {
         kind = raw.kind;
       } else if (steps.length > 0) {
-        const lookupSteps = steps.filter((step) => step.kind === 'lookup').length;
-        kind = lookupSteps === steps.length ? 'lookup' : lookupSteps > 0 ? 'mixed' : 'translate';
+        const stepKinds = new Set(steps.map((step) => step.kind));
+        kind = stepKinds.size === 1 ? steps[0].kind : 'mixed';
       }
       return {
         id: typeof raw.id === 'string' && raw.id ? raw.id : 'turn-fallback-' + String(index || 0) + '-' + String(startedAt),
@@ -4084,6 +4139,7 @@ window.__ModuleLoader__.load({
         const kinds = [
           { id: 'translate', key: 'usage.kind.translate', bucket: summary.byKind.translate },
           { id: 'lookup', key: 'usage.kind.lookup', bucket: summary.byKind.lookup },
+          { id: 'image', key: 'usage.kind.image', bucket: summary.byKind.image },
         ];
         return h(
           'div',
@@ -4198,7 +4254,7 @@ window.__ModuleLoader__.load({
 
       /** Expanded trace detail grid. */
       function renderEventDetail(item) {
-        const kindKey = item.kind === 'lookup' ? 'usage.kind.lookup' : 'usage.kind.translate';
+        const kindKey = item.kind === 'lookup' ? 'usage.kind.lookup' : item.kind === 'image' ? 'usage.kind.image' : 'usage.kind.translate';
         const modelLabel = formatModelLabel(item.provider, item.model);
         const entries = [];
         entries.push({ label: t('trace.detail.time'), value: formatFullTime(item.at) || t('usage.noValue') });
@@ -4252,7 +4308,7 @@ window.__ModuleLoader__.load({
 
       /** One trace row plus its expandable detail. */
       function renderEventRow(item) {
-        const kindKey = item.kind === 'lookup' ? 'usage.kind.lookup' : 'usage.kind.translate';
+        const kindKey = item.kind === 'lookup' ? 'usage.kind.lookup' : item.kind === 'image' ? 'usage.kind.image' : 'usage.kind.translate';
         const expanded = expandedId === item.id;
         const modelLabel = formatModelLabel(item.provider, item.model);
         const siteLabel = item.sourceTitle || item.site || t('trace.siteUnknown');
@@ -4306,6 +4362,7 @@ window.__ModuleLoader__.load({
       /** i18n key for one Turn kind badge. */
       function turnKindKey(kind) {
         if (kind === 'lookup') return 'trace.kind.lookup';
+        if (kind === 'image') return 'trace.kind.image';
         if (kind === 'mixed') return 'trace.kind.mixed';
         return 'trace.kind.translate';
       }
@@ -4639,7 +4696,8 @@ window.__ModuleLoader__.load({
               });
             }
           }
-          row.kind = kinds.mixed || (kinds.lookup && kinds.translate) ? 'mixed' : kinds.lookup ? 'lookup' : 'translate';
+          const rowKindCount = Object.keys(kinds).length;
+          row.kind = kinds.mixed || rowKindCount > 1 ? 'mixed' : kinds.lookup ? 'lookup' : kinds.image ? 'image' : 'translate';
           row.status = row.errorCount === 0 ? 'ok' : row.okCount > 0 ? 'partial' : 'error';
           const meta = metaIndex[row.sessionId];
           row.live = !!(meta && meta.live);
@@ -5643,6 +5701,7 @@ window.__ModuleLoader__.load({
 .dsh-it-usage-badge{display:inline-flex;align-items:center;font-size:11px;line-height:16px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);white-space:nowrap}
 .dsh-it-usage-badge-translate{color:var(--dsw-alias-brand-primary)}
 .dsh-it-usage-badge-lookup{color:var(--dsw-alias-state-success-primary)}
+.dsh-it-usage-badge-image{color:var(--dsw-alias-state-warning-primary, #b45309)}
 .dsh-it-usage-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .dsh-it-usage-toolbar-label{font-size:12px;line-height:18px;font-weight:500;color:var(--dsw-alias-label-secondary)}
 .dsh-it-usage-filter-wrap{display:inline-flex;align-items:center;gap:6px;min-width:0}

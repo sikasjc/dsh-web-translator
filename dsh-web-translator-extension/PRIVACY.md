@@ -9,6 +9,7 @@ dsh翻译（Chrome/Edge 扩展，以下简称“本扩展”）是 DSH（DeepSee
 - **处理的数据**：在你主动点击翻译、划词/双击查词或使用快捷键时，本扩展读取当前网页的可见文本，并附带页面 URL/标题等最小元数据。
 - **发送目的地**：页面数据只发送到你自己电脑上的 DSH 插件 API（默认 `http://127.0.0.1:3080/dsh-immersive/api`）。DSH 插件随后使用**你在 DSH 中配置的模型提供方**完成翻译；具体第三方模型由你选择，其数据处理受该提供方政策约束。
 - **可选第三方词典**：仅当你查词的文本是英文单词时，DSH 插件会按你在 DSH 设置页「第三方词典」中选择的来源（`dictionaryapi.dev` / 英文 `Wiktionary` / 关闭）决定是否把**该单词**（不含页面正文）发送给对应公共词典；默认 `dictionaryapi.dev`，选择「关闭」后不会发起任何第三方词典请求。该请求由本机 DSH 插件发出，不经过开发者服务器。
+- **可选图片翻译**：仅当你在图片上右键选择「翻译图片文字」时，本扩展才截取该图片当前可见区域并发送到本机 DSH；DSH 使用你选择的图片模型（默认跟随当前翻译模型）识别并翻译，并在请求结束后删除临时图片；扩展不保存图片、不上传浏览历史。
 - **不在开发者服务器收集**：开发者不运营任何接收页面内容、账号、浏览历史或遥测的服务器；本扩展不含统计/广告 SDK。
 - **本地存储**：扩展使用 `chrome.storage.local` 保存设置（DSH 地址、目标语言、模式、悬浮球位置等）；单词本与翻译记录由你的本地 DSH 插件存储。
 - **不出售/不共享**：不将数据出售、出租或用于与本扩展核心功能无关的用途。
@@ -23,6 +24,7 @@ dsh翻译 is a local front-end for web page translation backed by DSH (DeepSeek 
 - **What is processed**: when you explicitly translate a page, select/double-click a word, or use the shortcut, the extension reads the visible text of the current page plus minimal metadata (URL/title).
 - **Where it goes**: page data is sent only to the DSH plugin API running on your own computer (default `http://127.0.0.1:3080/dsh-immersive/api`). The DSH plugin then calls the model provider **you configured in DSH**; that provider's own policy applies.
 - **Optional third-party dictionary**: only for English single-word lookups, the DSH plugin may send **that word** (never the page text) to the public dictionary selected in DSH → Settings → Third-party dictionary (`dictionaryapi.dev` / English Wiktionary / off). The default is `dictionaryapi.dev`; choosing **off** disables all third-party dictionary requests. The request is made by your local DSH plugin and never goes through a developer server.
+- **Optional image translation**: only when you right-click an image and choose “Translate image text” does the extension capture that image's visible area and send it to your local DSH; DSH uses the image model you selected (defaults to your current translation model), translates the text, and deletes the temporary image after the request. The extension stores no images and sends no browsing history.
 - **No developer collection**: there is no developer-operated server receiving page content, accounts, browsing history or telemetry; the extension contains no analytics or advertising SDKs.
 - **Local storage**: the extension stores settings (DSH URL, target language, mode, floating-ball position) in `chrome.storage.local`; the wordbook and translation records are stored by your local DSH plugin.
 - **No sale/share**: data is not sold, rented, or used for purposes unrelated to the extension's core function.

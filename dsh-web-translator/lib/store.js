@@ -16,6 +16,17 @@ import { dirname, join } from 'node:path';
 export const DATA_SUBDIR = 'immersive-translate';
 
 /**
+ * Resolve the DSH home directory: `$DSH_HOME`, falling back to `~/.dsh`.
+ * @param {Record<string, string | undefined>} [env] - environment to inspect.
+ * @param {string} [home] - home directory used when `DSH_HOME` is absent.
+ * @returns {string} absolute DSH home path.
+ */
+export function resolveDshHome(env = process.env, home = homedir()) {
+  const configured = typeof env?.DSH_HOME === 'string' ? env.DSH_HOME.trim() : '';
+  return configured.length > 0 ? configured : join(home, '.dsh');
+}
+
+/**
  * Resolve the data directory: `$DSH_HOME/immersive-translate`, falling back to
  * `~/.dsh/immersive-translate` when `DSH_HOME` is absent or blank.
  * @param {Record<string, string | undefined>} [env] - environment to inspect.
@@ -23,9 +34,7 @@ export const DATA_SUBDIR = 'immersive-translate';
  * @returns {string} absolute data directory (not created until the first write).
  */
 export function resolveDataDir(env = process.env, home = homedir()) {
-  const configured = typeof env?.DSH_HOME === 'string' ? env.DSH_HOME.trim() : '';
-  const base = configured.length > 0 ? configured : join(home, '.dsh');
-  return join(base, DATA_SUBDIR);
+  return join(resolveDshHome(env, home), DATA_SUBDIR);
 }
 
 /**

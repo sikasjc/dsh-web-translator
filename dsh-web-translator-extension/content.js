@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.16.0';
+  var EXT_VERSION = '1.17.0';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -41,6 +41,7 @@
     }
   }
   var HOST_ID = 'dsh-it-host';
+  var IMAGE_OVERLAY_ID = 'dsh-it-image-overlay';
   var HOST_STYLE =
     'position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;' +
     'overflow:visible!important;z-index:2147483647!important;pointer-events:none!important;' +
@@ -51,6 +52,12 @@
   var LAYOUT_ATTR = 'data-dsh-it-layout';
   /** 右键菜单触发“翻译选中文本”时，记录 contextmenu 时的选区与位置 */
   var lastContextSelection = null;
+  /** 右键图片时记录元素，供“翻译图片文字”消息到达后定位（srcUrl 冲突时兜底） */
+  var lastContextImage = null;
+  /** 图片翻译进行中标记（同一时间只允许一张） */
+  var imageTranslatePending = false;
+  /** 当前图片翻译覆盖层（含 host / shadow / 原图信息） */
+  var imageOverlay = null;
   var PAGE_STYLE_ID = 'dsh-it-page-style';
 
   var MODES = ['source', 'bilingual', 'only'];
@@ -275,7 +282,19 @@
       cardAddFail: '加入失败：{msg}',
       cardNeedTranslation: '没有译文，暂不能加入单词本',
       cardLookupFail: '查询失败：{msg}',
-      cardAddHint: '仅单个英文单词或 1~4 个汉字可加入单词本'
+      cardAddHint: '仅单个英文单词或 1~4 个汉字可加入单词本',
+      imageTranslating: '正在识别并翻译图片中的文字…',
+      imageDone: '图片翻译完成，译文已覆盖在原文字位置',
+      imageNoText: '未在图片中识别到文字',
+      imageNotFound: '未找到要翻译的图片，请直接右键图片重试',
+      imageFailed: '图片翻译失败：{msg}',
+      imageClose: '关闭',
+      imageBilingual: '双语',
+      imageOnly: '仅译文',
+      imageCopy: '复制译文',
+      imageCopied: '已复制译文',
+      imageTitle: '图片翻译',
+      imagePartial: '只翻译了图片当前可见的部分'
     },
     en: {
       appName: 'dsh-web-translator',
@@ -360,7 +379,19 @@
       cardAddFail: 'Add failed: {msg}',
       cardNeedTranslation: 'No translation available to save',
       cardLookupFail: 'Lookup failed: {msg}',
-      cardAddHint: 'Only a single English word or 1~4 CJK characters can be added'
+      cardAddHint: 'Only a single English word or 1~4 CJK characters can be added',
+      imageTranslating: 'Reading and translating the text in this image…',
+      imageDone: 'Image translated; the translation now covers the original text',
+      imageNoText: 'No readable text was found in the image',
+      imageNotFound: 'Could not locate the image; right-click the image and try again',
+      imageFailed: 'Image translation failed: {msg}',
+      imageClose: 'Close',
+      imageBilingual: 'Bilingual',
+      imageOnly: 'Translation only',
+      imageCopy: 'Copy translation',
+      imageCopied: 'Translation copied',
+      imageTitle: 'Image translation',
+      imagePartial: 'Only the visible part of the image was translated'
     }
   };
 
@@ -930,6 +961,7 @@
       if (el.closest && el.closest('[contenteditable]:not([contenteditable="false"])')) return true;
       if (el.closest && el.closest('[aria-hidden="true"]')) return true;
       if (el.closest && el.closest('#' + HOST_ID)) return true;
+      if (el.closest && el.closest('#' + IMAGE_OVERLAY_ID)) return true;
     } catch (err) {
       return true;
     }
@@ -4253,6 +4285,7 @@
     endTurn();
     stopUrlWatch();
     closeCard();
+    removeImageTranslation();
     clearTranslations();
     postToChildFrames({ __dshItFrame: true, action: 'restore' });
     resetPageTokenStats();
@@ -4676,14 +4709,16 @@
 
   function isFromOurUi(event) {
     try {
-      if (!state.host) return false;
+      if (!state.host && !imageOverlay) return false;
       if (event.composedPath) {
         var path = event.composedPath();
         for (var i = 0; i < path.length; i++) {
           if (path[i] === state.host) return true;
+          if (imageOverlay && path[i] === imageOverlay.host) return true;
         }
       }
-      return event.target === state.host;
+      if (event.target === state.host) return true;
+      return !!(imageOverlay && event.target === imageOverlay.host);
     } catch (err) {
       return false;
     }
@@ -4739,6 +4774,17 @@
   /** 右键菜单打开前记录选区，供“翻译选中文本”使用（菜单点击后选区可能已变化） */
   function onDocumentContextMenu(event) {
     if (isFromOurUi(event)) return;
+    try {
+      var target = event && event.target ? event.target : null;
+      if (target && typeof target.closest === 'function') {
+        var candidate = target.closest('img');
+        lastContextImage = candidate && candidate.tagName === 'IMG' ? candidate : null;
+      } else {
+        lastContextImage = null;
+      }
+    } catch (err) {
+      lastContextImage = null;
+    }
     try {
       var selection = window.getSelection();
       var text = selection && !selection.isCollapsed ? normalizeText(selection.toString()) : '';
@@ -4826,6 +4872,10 @@
 
   function onDocumentKeyDown(event) {
     if (event.key !== 'Escape') return;
+    if (imageOverlay) {
+      removeImageTranslation();
+      return;
+    }
     if (state.cardState) {
       closeCard();
       return;
@@ -5012,10 +5062,417 @@
       }
       if (message.type === 'dsh-it:shortcut-translate') {
         safe(handleShortcutTranslate);
+        return;
+      }
+      if (message.type === 'dsh-it:translate-image') {
+        safe(function () {
+          startImageTranslation(message.srcUrl);
+        });
+        return;
       }
     } catch (err) {
       /* ignore */
     }
+  }
+
+  /* ================================================================ */
+  /* 图片文字翻译：右键图片 → 截图 → 视觉模型 → 原位覆盖                */
+  /* ================================================================ */
+
+  var IMAGE_OVERLAY_CSS = [
+    '.dsh-img-layer{position:absolute;pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}',
+    '.dsh-img-block{position:absolute;box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;border-radius:2px;padding:1px 3px;cursor:pointer;pointer-events:auto;line-height:1.18;word-break:break-word;white-space:pre-wrap;}',
+    '.dsh-img-block .dsh-img-orig{display:none;font-size:.76em;opacity:.72;margin-bottom:1px;}',
+    '.dsh-img-layer.dsh-img-bilingual .dsh-img-block .dsh-img-orig{display:block;}',
+    '.dsh-img-toolbar{position:absolute;right:2px;top:2px;display:flex;gap:3px;pointer-events:auto;z-index:3;}',
+    '.dsh-img-btn{appearance:none;border:0;border-radius:4px;padding:2px 6px;font:inherit;font-size:11px;line-height:1.4;cursor:pointer;color:#fff;background:rgba(28,30,34,.86);white-space:nowrap;}',
+    '.dsh-img-btn:hover{background:rgba(28,30,34,1);}',
+    '.dsh-img-card{position:absolute;left:0;top:0;box-sizing:border-box;max-height:70vh;overflow:auto;padding:10px 12px;border-radius:8px;background:#fff;color:#1f2328;box-shadow:0 8px 28px rgba(0,0,0,.22);pointer-events:auto;font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}',
+    '.dsh-img-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-weight:600;}',
+    '.dsh-img-card-row{margin:6px 0;padding:6px 0;border-top:1px solid rgba(0,0,0,.08);}',
+    '.dsh-img-card-orig{display:block;font-size:11px;color:#6a737d;margin-bottom:2px;white-space:pre-wrap;}',
+    '.dsh-img-card-trans{display:block;white-space:pre-wrap;}',
+    '.dsh-img-card-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:8px;}',
+    '.dsh-img-hint{position:absolute;left:2px;bottom:2px;font-size:10px;color:rgba(255,255,255,.9);background:rgba(0,0,0,.5);border-radius:3px;padding:1px 4px;pointer-events:none;}'
+  ].join('');
+
+  function imageTextColor(background) {
+    var hex = String(background || '#ffffff').replace('#', '');
+    if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+    var r = parseInt(hex.slice(0, 2), 16) || 255;
+    var g = parseInt(hex.slice(2, 4), 16) || 255;
+    var b = parseInt(hex.slice(4, 6), 16) || 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#111111' : '#ffffff';
+  }
+
+  function findImageBySrc(srcUrl) {
+    try {
+      var last = lastContextImage;
+      if (last && last.tagName === 'IMG' && last.isConnected) {
+        if (!srcUrl || last.currentSrc === srcUrl || last.src === srcUrl) return last;
+      }
+      var images = document.querySelectorAll('img');
+      for (var i = 0; i < images.length; i += 1) {
+        var img = images[i];
+        if (img.currentSrc === srcUrl || img.src === srcUrl) return img;
+      }
+      if (last && last.tagName === 'IMG' && last.isConnected) return last;
+    } catch (err) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  function waitForImageReady(img, callback) {
+    if (img.complete) {
+      callback();
+      return;
+    }
+    var settled = false;
+    var finish = function () {
+      if (settled) return;
+      settled = true;
+      img.removeEventListener('load', finish);
+      img.removeEventListener('error', finish);
+      callback();
+    };
+    img.addEventListener('load', finish);
+    img.addEventListener('error', finish);
+    setTimeout(finish, 3000);
+  }
+
+  function removeImageTranslation() {
+    if (!imageOverlay) return;
+    try {
+      if (imageOverlay.host && imageOverlay.host.parentNode) imageOverlay.host.parentNode.removeChild(imageOverlay.host);
+    } catch (err) {
+      /* ignore */
+    }
+    imageOverlay = null;
+  }
+
+  function copyImageText(text) {
+    var value = String(text || '');
+    if (!value) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(function () {
+          showToast(t('imageCopied'), 1800);
+        }, function () {
+          showToast(t('imageFailed', { msg: 'clipboard unavailable' }), 2200);
+        });
+        return;
+      }
+    } catch (err) {
+      /* fall through */
+    }
+    try {
+      var textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+      showToast(t('imageCopied'), 1800);
+    } catch (err) {
+      showToast(t('imageFailed', { msg: 'clipboard unavailable' }), 2200);
+    }
+  }
+
+  function imageOverlayText(blocks) {
+    var parts = [];
+    for (var i = 0; i < blocks.length; i += 1) {
+      if (blocks[i] && typeof blocks[i].translation === 'string' && blocks[i].translation) parts.push(blocks[i].translation);
+    }
+    return parts.join('\n\n');
+  }
+
+  function renderImageCard(result, pageRect) {
+    var blocks = Array.isArray(result.blocks) ? result.blocks : [];
+    var host = document.createElement('div');
+    host.id = IMAGE_OVERLAY_ID;
+    host.setAttribute('data-dsh-it-ui', 'image-card');
+    host.style.cssText = 'position:absolute;z-index:2147483645;pointer-events:none;left:' + pageRect.left + 'px;top:' + pageRect.top + 'px;width:' + Math.max(240, Math.min(440, pageRect.width || 320)) + 'px;';
+    var shadow;
+    try {
+      shadow = host.attachShadow({ mode: 'open' });
+    } catch (err) {
+      showToast(t('imageFailed', { msg: 'shadow dom unavailable' }), 2600);
+      return;
+    }
+    var style = document.createElement('style');
+    style.textContent = IMAGE_OVERLAY_CSS;
+    shadow.appendChild(style);
+    var card = document.createElement('div');
+    card.className = 'dsh-img-card';
+    card.style.pointerEvents = 'auto';
+    var head = document.createElement('div');
+    head.className = 'dsh-img-card-head';
+    var title = document.createElement('span');
+    title.textContent = t('imageTitle');
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'dsh-img-btn';
+    close.textContent = t('imageClose');
+    close.addEventListener('click', function (event) {
+      event.stopPropagation();
+      removeImageTranslation();
+    });
+    head.appendChild(title);
+    head.appendChild(close);
+    card.appendChild(head);
+    for (var i = 0; i < blocks.length; i += 1) {
+      var block = blocks[i] || {};
+      var row = document.createElement('div');
+      row.className = 'dsh-img-card-row';
+      if (block.text) {
+        var orig = document.createElement('span');
+        orig.className = 'dsh-img-card-orig';
+        orig.textContent = block.text;
+        row.appendChild(orig);
+      }
+      var trans = document.createElement('span');
+      trans.className = 'dsh-img-card-trans';
+      trans.textContent = block.translation || '';
+      row.appendChild(trans);
+      card.appendChild(row);
+    }
+    var actions = document.createElement('div');
+    actions.className = 'dsh-img-card-actions';
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'dsh-img-btn';
+    copy.textContent = t('imageCopy');
+    copy.addEventListener('click', function (event) {
+      event.stopPropagation();
+      copyImageText(imageOverlayText(blocks));
+    });
+    actions.appendChild(copy);
+    card.appendChild(actions);
+    shadow.appendChild(card);
+    host.addEventListener('mousedown', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('mouseup', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('click', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('dblclick', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('contextmenu', function (event) { event.stopPropagation(); }, true);
+    document.body.appendChild(host);
+    imageOverlay = { host: host, shadow: shadow, kind: 'card' };
+  }
+
+  function renderImageTranslation(responseData, pageRect) {
+    removeImageTranslation();
+    var data = responseData && typeof responseData === 'object' ? responseData : {};
+    var result = data.result && typeof data.result === 'object' ? data.result : {};
+    var blocks = Array.isArray(result.blocks) ? result.blocks : [];
+    var colors = Array.isArray(result.colors) ? result.colors : [];
+    var withBoxes = [];
+    for (var i = 0; i < blocks.length; i += 1) {
+      var block = blocks[i];
+      if (!block || !Array.isArray(block.bbox) || block.bbox.length !== 4) continue;
+      var box = block.bbox.map(Number);
+      if (box.some(function (value) { return !isFinite(value); })) continue;
+      if (box[2] - box[0] < 0.002 || box[3] - box[1] < 0.002) continue;
+      withBoxes.push({ block: block, index: i, bbox: box });
+    }
+    if (withBoxes.length === 0) {
+      if (blocks.length === 0) {
+        showToast(t('imageNoText'), 2800);
+        return;
+      }
+      renderImageCard(result, pageRect);
+      return;
+    }
+
+    var host = document.createElement('div');
+    host.id = IMAGE_OVERLAY_ID;
+    host.setAttribute('data-dsh-it-ui', 'image-overlay');
+    host.style.cssText = 'position:absolute;z-index:2147483645;pointer-events:none;left:' + pageRect.left + 'px;top:' + pageRect.top + 'px;width:' + pageRect.width + 'px;height:' + pageRect.height + 'px;';
+    var shadow;
+    try {
+      shadow = host.attachShadow({ mode: 'open' });
+    } catch (err) {
+      showToast(t('imageFailed', { msg: 'shadow dom unavailable' }), 2600);
+      return;
+    }
+    var style = document.createElement('style');
+    style.textContent = IMAGE_OVERLAY_CSS;
+    shadow.appendChild(style);
+    var layer = document.createElement('div');
+    layer.className = 'dsh-img-layer';
+    layer.style.width = '100%';
+    layer.style.height = '100%';
+    shadow.appendChild(layer);
+
+    for (var j = 0; j < withBoxes.length; j += 1) {
+      var item = withBoxes[j];
+      var box = item.bbox;
+      var block = item.block;
+      var boxWidth = Math.max(1, (box[2] - box[0]) * pageRect.width);
+      var boxHeight = Math.max(1, (box[3] - box[1]) * pageRect.height);
+      var background = typeof colors[item.index] === 'string' ? colors[item.index] : '#ffffff';
+      var element = document.createElement('div');
+      element.className = 'dsh-img-block';
+      element.style.left = (box[0] * 100) + '%';
+      element.style.top = (box[1] * 100) + '%';
+      element.style.width = Math.max(1, (box[2] - box[0]) * 100) + '%';
+      element.style.height = Math.max(1, (box[3] - box[1]) * 100) + '%';
+      element.style.background = background;
+      element.style.color = imageTextColor(background);
+      element.style.fontSize = Math.max(9, Math.min(26, Math.round(boxHeight * 0.42))) + 'px';
+      if (block.text) {
+        var orig = document.createElement('span');
+        orig.className = 'dsh-img-orig';
+        orig.textContent = block.text;
+        element.appendChild(orig);
+      }
+      var trans = document.createElement('span');
+      trans.className = 'dsh-img-trans';
+      trans.textContent = block.translation || '';
+      element.appendChild(trans);
+      element.title = block.text ? block.text : (block.translation || '');
+      layer.appendChild(element);
+    }
+
+    var toolbar = document.createElement('div');
+    toolbar.className = 'dsh-img-toolbar';
+    var bilingual = document.createElement('button');
+    bilingual.type = 'button';
+    bilingual.className = 'dsh-img-btn';
+    bilingual.textContent = t('imageBilingual');
+    bilingual.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var next = !layer.classList.contains('dsh-img-bilingual');
+      if (next) layer.classList.add('dsh-img-bilingual');
+      else layer.classList.remove('dsh-img-bilingual');
+      bilingual.textContent = next ? t('imageOnly') : t('imageBilingual');
+    });
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'dsh-img-btn';
+    copy.textContent = t('imageCopy');
+    copy.addEventListener('click', function (event) {
+      event.stopPropagation();
+      copyImageText(imageOverlayText(blocks));
+    });
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'dsh-img-btn';
+    close.textContent = t('imageClose');
+    close.addEventListener('click', function (event) {
+      event.stopPropagation();
+      removeImageTranslation();
+    });
+    toolbar.appendChild(bilingual);
+    toolbar.appendChild(copy);
+    toolbar.appendChild(close);
+    layer.appendChild(toolbar);
+
+    var capture = data.capture && typeof data.capture === 'object' ? data.capture : {};
+    var elementRect = capture.elementRect && typeof capture.elementRect === 'object' ? capture.elementRect : null;
+    if (elementRect && (elementRect.width > pageRect.width + 2 || elementRect.height > pageRect.height + 2)) {
+      var hint = document.createElement('div');
+      hint.className = 'dsh-img-hint';
+      hint.textContent = t('imagePartial');
+      layer.appendChild(hint);
+    }
+
+    host.addEventListener('mousedown', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('mouseup', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('click', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('dblclick', function (event) { event.stopPropagation(); }, true);
+    host.addEventListener('contextmenu', function (event) { event.stopPropagation(); }, true);
+    document.body.appendChild(host);
+    imageOverlay = { host: host, shadow: shadow, kind: 'overlay' };
+    showToast(t('imageDone'), 2200);
+  }
+
+  function startImageTranslation(srcUrl) {
+    if (imageTranslatePending) {
+      showToast(t('imageTranslating'), 1800);
+      return;
+    }
+    var img = findImageBySrc(srcUrl);
+    if (!img) {
+      showToast(t('imageNotFound'), 3200);
+      return;
+    }
+    imageTranslatePending = true;
+    showToast(t('imageTranslating'), 8000);
+    var finish = function (message) {
+      imageTranslatePending = false;
+      if (message) showToast(message, 3200);
+    };
+    waitForImageReady(img, function () {
+      safe(function () {
+        var initial = img.getBoundingClientRect();
+        var needScroll = initial.top < 0 || initial.bottom > window.innerHeight || initial.left < 0 || initial.right > window.innerWidth;
+        if (needScroll) {
+          try {
+            img.scrollIntoView({ block: 'center', inline: 'center' });
+          } catch (err) {
+            try { img.scrollIntoView(); } catch (e) { /* ignore */ }
+          }
+        }
+        setTimeout(function () {
+          safe(function () {
+            var rect = img.getBoundingClientRect();
+            var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+            var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+            var left = Math.max(0, rect.left);
+            var top = Math.max(0, rect.top);
+            var right = Math.min(vw, rect.right);
+            var bottom = Math.min(vh, rect.bottom);
+            var width = right - left;
+            var height = bottom - top;
+            if (width < 8 || height < 8) {
+              finish(t('imageNotFound'));
+              return;
+            }
+            var pageRect = {
+              left: left + (window.scrollX || window.pageXOffset || 0),
+              top: top + (window.scrollY || window.pageYOffset || 0),
+              width: width,
+              height: height
+            };
+            try {
+              chrome.runtime.sendMessage({
+                type: 'dsh-it:image-translate',
+                srcUrl: srcUrl,
+                rect: { left: left, top: top, width: width, height: height },
+                elementRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+                viewportWidth: vw,
+                viewportHeight: vh,
+                sourceUrl: location.href,
+                sourceTitle: document.title
+              }, function (response) {
+                var lastError = null;
+                try {
+                  lastError = chrome.runtime.lastError;
+                } catch (err) {
+                  lastError = null;
+                }
+                if (lastError) {
+                  finish(t('imageFailed', { msg: '扩展后台不可用，请刷新页面' }));
+                  return;
+                }
+                if (!response || response.ok !== true) {
+                  var message = response && response.error && response.error.message ? response.error.message : '未知错误';
+                  finish(t('imageFailed', { msg: message }));
+                  return;
+                }
+                finish('');
+                safe(function () {
+                  renderImageTranslation(response.data, pageRect);
+                });
+              });
+            } catch (err) {
+              finish(t('imageFailed', { msg: err && err.message ? err.message : String(err) }));
+            }
+          });
+        }, needScroll ? 180 : 40);
+      });
+    });
   }
 
   /* ================================================================ */

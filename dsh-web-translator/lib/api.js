@@ -20,13 +20,21 @@ import {
 import { createConversationBridge, composeTitle } from './conversations.js';
 import { createDictionaryLookup } from './dictionary.js';
 import { apiError, isApiError } from './errors.js';
-import { resolveReasoningEffort } from './llm.js';
+import {
+  buildImagePrompt,
+  cleanupImageAttachment,
+  imageCacheKey,
+  imageHash,
+  normalizeImagePayload,
+  parseImageTranslation,
+} from './image.js';
+import { callModel, resolveReasoningEffort } from './llm.js';
 import {
   createSettingsService,
   effectiveSettings,
   normalizeSettingsPatch,
 } from './settings.js';
-import { createJsonStore, resolveDataDir } from './store.js';
+import { createJsonStore, resolveDataDir, resolveDshHome } from './store.js';
 import { createTranslateService } from './translate.js';
 import { createUsageService } from './usage.js';
 import { VERSION } from './version.js';
@@ -44,7 +52,7 @@ import { createWordbookService } from './wordbook.js';
 const USAGE_KEYS = Object.freeze(['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens']);
 
 /** Deterministic `kinds` order of one `/conversations` row. */
-const CONVERSATION_KIND_ORDER = Object.freeze(['translate', 'lookup']);
+const CONVERSATION_KIND_ORDER = Object.freeze(['translate', 'lookup', 'image']);
 
 /** Default `GET /usage?days=` window. */
 const DEFAULT_USAGE_DAYS = 14;
@@ -500,7 +508,7 @@ function conversationRow(sessionId, events, liveRow) {
     else errors += 1;
     if (event.cached === true) cached += 1;
     for (const key of USAGE_KEYS) buckets[key] += toCount(event[key]);
-    kindSet.add(event.kind === 'lookup' ? 'lookup' : 'translate');
+    kindSet.add(event.kind === 'lookup' ? 'lookup' : event.kind === 'image' ? 'image' : 'translate');
     const at = toCount(event.at);
     if (at > 0 && (firstAt === 0 || at < firstAt)) firstAt = at;
     if (at > lastAt) lastAt = at;
@@ -541,7 +549,8 @@ function conversationRow(sessionId, events, liveRow) {
  * Build the host API facade.
  * @param {{ctx?: object, config?: object, logger?: object, dataDir?: string,
  *   fetchImpl?: typeof fetch, now?: () => number, timeoutMs?: number,
- *   dictionaryTimeoutMs?: number}} [options] - host context and test seams.
+ *   dictionaryTimeoutMs?: number, attachments?: object,
+ *   imageCacheDir?: string}} [options] - host context and test seams.
  * @returns {object} API facade consumed by `createHttpHandler`.
  */
 export function createApi({
@@ -553,10 +562,15 @@ export function createApi({
   now = Date.now,
   timeoutMs,
   dictionaryTimeoutMs,
+  attachments,
+  imageCacheDir,
 } = {}) {
   const log = normalizeLogger(logger ?? ctx?.logger);
   const clock = typeof now === 'function' ? now : () => Number(now) || Date.now();
   const directory = typeof dataDir === 'string' && dataDir.length > 0 ? dataDir : resolveDataDir();
+  const imageVariantCacheDir = typeof imageCacheDir === 'string' && imageCacheDir.length > 0
+    ? imageCacheDir
+    : join(resolveDshHome(), 'cache', 'attachments', 'request-images');
   const startedAt = Date.now();
 
   const settingsStore = createJsonStore(join(directory, 'settings.json'), {
@@ -736,6 +750,197 @@ export function createApi({
     } catch {
       return { provider: '', model: '', reasoningEffort: undefined, targetLanguage: undefined };
     }
+  }
+
+  /**
+   * Image-attachment service (optional host capability).
+   * @returns {object | null}
+   */
+  function getAttachments() {
+    if (attachments !== undefined && attachments !== null) return attachments;
+    try {
+      if (ctx && typeof ctx.get === 'function') return ctx.get('attachments') ?? null;
+      return ctx?.attachments ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheWriteTokens: number}} */
+  function zeroUsage() {
+    return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  }
+
+  /**
+   * First catalog model declaring image input (used when the translation model
+   * is text-only and the user left `imageModel` on "auto").
+   * @returns {Promise<{provider: string, model: string} | null>}
+   */
+  async function findImageCapableModel() {
+    try {
+      const tree = await catalog.getCatalog();
+      for (const provider of Array.isArray(tree?.providers) ? tree.providers : []) {
+        for (const model of Array.isArray(provider?.models) ? provider.models : []) {
+          if (Array.isArray(model?.inputModalities) && model.inputModalities.includes('image')) {
+            return { provider: provider.provider, model: model.id };
+          }
+        }
+      }
+    } catch {
+      // Fall through to the explicit MODEL_NO_VISION failure.
+    }
+    return null;
+  }
+
+  /**
+   * Resolve the model used for one image translation: settings.imageModel
+   * ("auto" follows the current translation model) must accept image input.
+   * @returns {Promise<{llm: object, provider: string, model: string,
+   *   reasoningEffort?: string, modelInfo: object, settings: object}>}
+   */
+  async function resolveImageSelection() {
+    const effective = await getEffective();
+    const settings = effective.settings;
+    const configured = typeof settings.imageModel === 'string' && settings.imageModel !== 'auto'
+      ? settings.imageModel
+      : '';
+    let provider = '';
+    let model = '';
+    if (configured.length > 0) {
+      const separator = configured.indexOf('::');
+      provider = configured.slice(0, separator);
+      model = configured.slice(separator + 2);
+    } else {
+      provider = typeof settings.provider === 'string' ? settings.provider : '';
+      model = typeof settings.model === 'string' ? settings.model : '';
+    }
+
+    const imageInfo = async (candidateProvider, candidateModel) => {
+      if (candidateProvider.length === 0 || candidateModel.length === 0) return null;
+      const resolved = await catalog.resolveModelInfoSafe(candidateProvider, candidateModel);
+      const info = resolved.info ?? null;
+      return info !== null && Array.isArray(info.inputModalities) && info.inputModalities.includes('image')
+        ? info
+        : null;
+    };
+
+    let info = await imageInfo(provider, model);
+    if (info === null) {
+      if (configured.length > 0) {
+        throw apiError('MODEL_NO_VISION', `the configured image model does not accept image input`);
+      }
+      const candidate = await findImageCapableModel();
+      if (candidate === null) {
+        throw apiError('MODEL_NO_VISION', 'no image-capable model is configured; pick one in Settings');
+      }
+      provider = candidate.provider;
+      model = candidate.model;
+      info = await imageInfo(provider, model);
+      if (info === null) throw apiError('MODEL_UNAVAILABLE', 'the image-capable model could not be resolved');
+    }
+    const llm = catalog.requireLlm();
+    const planned = resolveReasoningEffort(settings.reasoningEffort, info.reasoningEfforts ?? []);
+    return { llm, provider, model, reasoningEffort: planned.effort, modelInfo: info, settings };
+  }
+
+  /**
+   * Map one attachment-service failure to the image API envelope.
+   * @param {unknown} error - caught value.
+   * @returns {import('./errors.js').ApiError}
+   */
+  function mapImageAttachmentError(error) {
+    if (isApiError(error)) return error;
+    const detail = error instanceof Error && error.message.length > 0 ? error.message.slice(0, 300) : 'image attachment rejected';
+    if (/TOO_LARGE|EXCEED|MAX_BYTES|MAX_PIXEL/iu.test(detail)) return apiError('IMAGE_TOO_LARGE', detail);
+    if (/FORMAT|TYPE|UNSUPPORTED|DECODE/iu.test(detail)) return apiError('IMAGE_UNSUPPORTED', detail);
+    return apiError('IMAGE_INVALID', detail);
+  }
+
+  /**
+   * Build the success usage event for one image translation.
+   * @returns {object}
+   */
+  function imageSuccessUsageEvent(body, meta, result, usage, cached, startedAt) {
+    const event = baseUsageEvent('image', body, meta ?? {}, startedAt);
+    event.ok = true;
+    event.provider = asString(result?.provider);
+    event.model = asString(result?.model);
+    event.cached = cached === true;
+    const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
+    event.segments = blocks.length;
+    let chars = 0;
+    let sample;
+    let preview;
+    for (const block of blocks) {
+      const text = typeof block?.text === 'string' ? block.text : '';
+      chars += text.length;
+      if (sample === undefined && text.length > 0) sample = text;
+      if (preview === undefined && typeof block?.translation === 'string' && block.translation.length > 0) {
+        preview = block.translation;
+      }
+    }
+    event.chars = chars;
+    if (sample !== undefined) event.sample = sample.slice(0, LIMITS.eventSampleChars);
+    if (preview !== undefined) event.outputPreview = previewText(preview, LIMITS.outputPreviewChars);
+    if (typeof result?.targetLanguage === 'string' && result.targetLanguage.length > 0) {
+      event.targetLanguage = result.targetLanguage;
+    }
+    event.retries = 0;
+    for (const key of USAGE_KEYS) event[key] = toCount(usage?.[key]);
+    return event;
+  }
+
+  /**
+   * Build the failure usage event for one image translation.
+   * @returns {object}
+   */
+  function imageFailureUsageEvent(body, meta, selection, error, startedAt) {
+    const event = baseUsageEvent('image', body, meta ?? {}, startedAt);
+    event.ok = false;
+    event.errorCode = errorCodeOf(error);
+    event.provider = asString(selection?.provider);
+    event.model = asString(selection?.model);
+    return event;
+  }
+
+  /**
+   * Build the conversation round of one image translation.
+   * @returns {object | null}
+   */
+  function imageConversationRound(body, meta, selection, result, error, ok, usage) {
+    const plain = isPlainObject(body) ? body : {};
+    const turnId = meta?.turnId ?? (typeof plain.turnId === 'string' ? plain.turnId : undefined);
+    if (typeof turnId !== 'string' || turnId.trim().length === 0) return null;
+    const round = {
+      turnId,
+      kind: 'image',
+      ok,
+      client: meta?.client,
+      sourceUrl: meta?.sourceUrl,
+      sourceTitle: meta?.sourceTitle,
+      site: meta?.site,
+    };
+    if (ok) {
+      const blocks = Array.isArray(result?.blocks) ? result.blocks : [];
+      round.provider = asString(result?.provider);
+      round.model = asString(result?.model);
+      round.usage = usage;
+      round.translations = blocks.map((block) => (typeof block?.translation === 'string' ? block.translation : ''));
+      if (typeof result?.targetLanguage === 'string' && result.targetLanguage.length > 0) {
+        round.targetLanguage = result.targetLanguage;
+      }
+    } else {
+      round.provider = asString(selection?.provider);
+      round.model = asString(selection?.model);
+      const failure = error !== null && typeof error === 'object' ? error : {};
+      round.error = {
+        code: typeof failure.code === 'string' ? failure.code : 'INTERNAL',
+        message: typeof failure.message === 'string' ? failure.message : 'image translation failed',
+      };
+    }
+    const effort = selection?.reasoningEffort;
+    if (typeof effort === 'string' && effort.length > 0 && effort !== 'auto') round.reasoningEffort = effort;
+    return round;
   }
 
   /**
@@ -1084,9 +1289,207 @@ export function createApi({
       }
       await catalog.assertModelExists(provider, model);
     }
+    if (Object.hasOwn(values, 'imageModel') && typeof values.imageModel === 'string' && values.imageModel !== 'auto') {
+      const separator = values.imageModel.indexOf('::');
+      const imageProvider = values.imageModel.slice(0, separator);
+      const imageModel = values.imageModel.slice(separator + 2);
+      try {
+        await catalog.assertModelExists(imageProvider, imageModel);
+        const info = await catalog.resolveModelInfo(imageProvider, imageModel);
+        if (!Array.isArray(info.inputModalities) || !info.inputModalities.includes('image')) {
+          throw apiError('INVALID_SETTINGS', 'imageModel must accept image input');
+        }
+      } catch (error) {
+        if (isApiError(error) && error.code === 'INVALID_SETTINGS') throw error;
+        throw apiError('INVALID_SETTINGS', error instanceof Error ? error.message.slice(0, 300) : 'invalid imageModel');
+      }
+    }
     const saved = await settingsService.save(values);
     recordHistoryEnabled = saved.recordHistory !== false;
     return getSettings();
+  }
+
+  /**
+   * `POST /image-translate`: OCR + translate one image and discard the image.
+   *
+   * The image is saved only to build one model request; the durable attachment
+   * and its request variants are deleted after the call (DESIGN-IMAGE §4).
+   * Results are cached by image digest + model + target language, so a repeated
+   * image never stores or uploads the image again.
+   * @param {unknown} body - request body.
+   * @param {{signal?: AbortSignal}} [options] - caller abort signal.
+   * @returns {Promise<{result: object, usage: object, retries: number}>}
+   */
+  async function imageTranslateInner(body, { signal } = {}) {
+    const startedAt = Date.now();
+    const record = await recordingEnabled();
+    let meta;
+    let selection;
+    let result;
+    let usage = zeroUsage();
+    let cached = false;
+    let failure = null;
+    try {
+      meta = normalizeRequestMeta(body);
+      const plain = isPlainObject(body) ? body : {};
+      if (!isPlainObject(plain.image)) throw apiError('IMAGE_INVALID', 'image is required');
+      const image = normalizeImagePayload(plain.image);
+      const hash = imageHash(image.bytes);
+      selection = await resolveImageSelection();
+      const settings = selection.settings ?? {};
+      const targetLanguage = normalizeLanguageTag(plain.targetLanguage, { allowed: TARGET_LANGUAGES })
+        ?? settings.targetLanguage;
+      if (typeof targetLanguage !== 'string' || targetLanguage.length === 0) {
+        throw apiError('INTERNAL', 'the effective target language is missing');
+      }
+      const style = typeof settings.translationStyle === 'string' ? settings.translationStyle : 'auto';
+      const cacheKey = imageCacheKey({
+        hash,
+        provider: selection.provider,
+        model: selection.model,
+        targetLanguage,
+        translationStyle: style,
+      });
+      await cache.whenReady();
+      let blocks;
+      let fallback = false;
+      const cachedPayload = cache.get(cacheKey);
+      if (Array.isArray(cachedPayload) && cachedPayload.length > 0) {
+        try {
+          const parsed = JSON.parse(cachedPayload[0]);
+          if (Array.isArray(parsed?.blocks)) {
+            blocks = parsed.blocks;
+            fallback = parsed.fallback === true;
+            cached = true;
+          }
+        } catch {
+          blocks = undefined;
+        }
+      }
+      if (blocks === undefined) {
+        const attachmentService = getAttachments();
+        if (attachmentService === null || typeof attachmentService.saveImage !== 'function') {
+          throw apiError('MODEL_UNAVAILABLE', 'the DSH image attachment service is unavailable');
+        }
+        const prompt = buildImagePrompt({
+          targetLanguage,
+          sourceTitle: meta.sourceTitle,
+          site: meta.site,
+          translationStyle: style,
+        });
+        const callStartedAt = Date.now();
+        let ref;
+        try {
+          try {
+            ref = await attachmentService.saveImage({
+              data: image.bytes,
+              mediaType: image.mediaType,
+              name: 'image-translate',
+            });
+          } catch (error) {
+            throw mapImageAttachmentError(error);
+          }
+          const options = {
+            provider: selection.provider,
+            model: selection.model,
+            system: prompt.system,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt.user },
+                { type: 'image', attachment: ref },
+              ],
+            }],
+            temperature: 0.2,
+            maxTokens: LIMITS.imageMaxTokens,
+          };
+          if (typeof selection.reasoningEffort === 'string' && selection.reasoningEffort.length > 0) {
+            options.reasoningEffort = selection.reasoningEffort;
+          }
+          const call = await callModel({
+            llm: selection.llm,
+            options,
+            timeoutMs: LIMITS.imageTimeoutMs,
+            signal,
+            logger: log,
+          });
+          usage = call.usage;
+          const parsed = parseImageTranslation(call.text);
+          blocks = parsed.blocks;
+          fallback = parsed.fallback;
+          cache.set(cacheKey, [JSON.stringify({ blocks, fallback })]);
+        } finally {
+          if (ref !== undefined) {
+            await cleanupImageAttachment({
+              attachments: attachmentService,
+              ref,
+              cacheDir: imageVariantCacheDir,
+              startedAt: callStartedAt,
+              logger: log,
+            });
+          }
+        }
+      }
+      result = {
+        blocks,
+        provider: selection.provider,
+        model: selection.model,
+        cached,
+        fallback,
+        imageHash: hash,
+        targetLanguage,
+      };
+      return { result, usage, retries: 0 };
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      if (record) {
+        try {
+          const eventMeta = meta ?? { client: 'dsh', ...bestEffortTurnMeta(body) };
+          const event = failure === null
+            ? imageSuccessUsageEvent(body, eventMeta, result, usage, cached, startedAt)
+            : imageFailureUsageEvent(body, eventMeta, selection, failure, startedAt);
+          const round = imageConversationRound(body, eventMeta, selection, result, failure, failure === null, usage);
+          if (round !== null) {
+            const recorded = await conversations.recordTurn(round);
+            if (recorded !== null) {
+              event.sessionId = recorded.sessionId;
+              event.turn = recorded.turn;
+            }
+          }
+          await recordUsage(event);
+        } catch (error) {
+          try {
+            log.debug(`image usage recording failed: ${error instanceof Error ? error.message : String(error)}`);
+          } catch {
+            // Diagnostics only.
+          }
+        }
+      }
+    }
+  }
+
+  /** Serialize image translations so cleanup never races another image request. */
+  let imageQueue = Promise.resolve();
+
+  /**
+   * `POST /image-translate`: see {@link imageTranslateInner}; calls are serialized
+   * because every call cleans up its own attachment + request-variant cache.
+   * @param {unknown} body - request body.
+   * @param {{signal?: AbortSignal}} [options] - caller abort signal.
+   * @returns {Promise<{result: object, usage: object, retries: number}>}
+   */
+  function imageTranslate(body, options) {
+    const run = imageQueue.then(
+      () => imageTranslateInner(body, options),
+      () => imageTranslateInner(body, options),
+    );
+    imageQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   /**
@@ -1111,6 +1514,7 @@ export function createApi({
       () => withUsage('translate', body, () => translateService.translate(body, options)),
     ),
     lookup: (body, options) => withUsage('lookup', body, () => translateService.lookup(body, options)),
+    imageTranslate: (body, options) => imageTranslate(body, options),
     getUsage,
     listUsageEvents,
     getUsageTurns,

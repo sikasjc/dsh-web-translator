@@ -3,7 +3,7 @@
 一套运行在本机的网页翻译方案：
 
 - **浏览器扩展（Chrome/Edge MV3）**：在任意真实网页上做**原文 / 双语对照 / 仅译文**三种模式的网页翻译；右键菜单「dsh翻译」直达三种模式；划词、双击查词（可开关）；一键加入单词本；翻译后面板自动收起只留悬浮球；**浮窗内实时显示本页 / 今日 token 消耗**。
-- **DSH 插件**：提供**翻译后端**（使用你在 DSH 中配置的模型，模型可切换、提示词可调整）、**页面上下文与翻译风格**（自动/通用/编程/科技/金融；技术页面保护 Rust `trait`/`crate`/`impl` 原文、`port`→端口）、**token 账本与轨迹统计**、**单词本持久化**、**翻译记录开关与一键清理**；在 DSH **左侧工具栏**提供「dsh翻译」整页（概览 / 轨迹 / 设置 / 单词本），并在 DSH「设置」中保留同名页面。插件页会检测当前浏览器是否安装扩展：未检测到时弹出安装引导（GitHub 安装步骤 + 重新检测）。
+- **DSH 插件**：提供**翻译后端**（使用你在 DSH 中配置的模型，模型可切换、提示词可调整）、**页面上下文与翻译风格**（自动/通用/编程/科技/金融；技术页面保护 Rust `trait`/`crate`/`impl` 原文、`port`→端口）、**token 账本与轨迹统计**、**单词本持久化**、**图片翻译后端**（右键图片 → OCR + 原位译文，图片用完即删）、**翻译记录开关与一键清理**；在 DSH **左侧工具栏**提供「dsh翻译」整页（概览 / 轨迹 / 设置 / 单词本），并在 DSH「设置」中保留同名页面。插件页会检测当前浏览器是否安装扩展：未检测到时弹出安装引导（GitHub 安装步骤 + 重新检测）。
 
 不需要任何第三方翻译 API key：翻译经由本机 DSH 的模型服务完成；扩展只与 `http://127.0.0.1:3080` 上的本地接口通信。
 
@@ -112,6 +112,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | 目标语言 | 默认简体中文，可切换繁体中文、English、日本語、한국어、Français、Deutsch、Español、Русский 等 |
 | 翻译风格 | `auto` 按页面标题/URL/文本自动识别编程等技术页面；`general` 不做领域改写；`programming` / `tech` / `finance` 使用对应术语规范 |
 | 第三方词典 | 英文单词查词时的在线词典来源：`dictionaryapi.dev`（音标/释义/发音，默认）/ 英文 `Wiktionary`（英文释义，无发音）/ `off`（关闭，仅模型翻译、不发起第三方请求） |
+| 图片模型 | 右键图片翻译时使用的视觉模型：默认跟随当前翻译模型（DeepSeek 默认模型已声明支持图片）；下拉只列出声明支持图片输入的模型；图片仅用于本次请求，完成后删除 |
 | 系统提示词 | 模型角色与输出契约（`{{targetLanguage}}`、`{{segmentCount}}` 等占位符） |
 | 用户消息模板 | 待翻译段落的组织方式（`{{segmentsJson}}`、`{{sourceLanguage}}` 等占位符） |
 | 测试翻译 | 输入几句话直接验证当前模型/提示词效果（结果同时显示本次 tokens） |
@@ -146,6 +147,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 归档隐藏「dsh翻译记录」会话 |
 | POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?}`，响应含 `usage` 四字段与 `cached` |
 | POST | `/lookup` | 查词/查句 + 英文词典信息，响应含 `usage`；接受相同可选元数据 |
+| POST | `/image-translate` | 图片文字 OCR + 翻译 `{image:{mediaType,data}, targetLanguage?, ...元数据}` → `{result:{blocks:[{text,translation,bbox?}], provider, model, cached}, usage}`；图片用完即删 |
 | GET | `/usage/turns?limit=&kind=&status=&before=` | **Turn 聚合**分页（`kind`: `translate`/`lookup`/`error`；`before` 为上一页 turn id；返回 turns + steps） |
 | GET | `/ball-sites` | 不展示悬浮球的域名列表 `{sites, updatedAt}` |
 | POST | `/ball-sites/add` `{domain}` | 添加域名（去重、最多 200 个） |
@@ -175,6 +177,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
   - `cache.json`：翻译结果缓存（原文批次 → 译文，7 天 / 1000 批，可在「概览」页清空）；
   - `ball-sites.json`：不展示悬浮球的域名列表；
   - `conversations/`：翻译会话的 workspace 目录（会话日志由 DSH 自己持久化）。
+- 图片翻译只在用户右键图片时发生：图片当前可见区域发给所选图片模型，Host 在请求结束（成功或失败）后尽力删除临时附件与请求变体缓存；图片不写入 DSH 会话记录、不写入插件翻译缓存，只有 OCR 文本/译文进入本地结果缓存；
 - 扩展只保存自己的 UI 偏好（`chrome.storage.local`），不保存页面内容；
 - 页面原文与译文会写入**本机 DSH 会话日志**（`recordHistory` 关闭后跳过；会话日志仅本机可用，由 DSH 管理，可自行清理）；Host 侧另有进程内 LRU 与上述本地翻译缓存。
 

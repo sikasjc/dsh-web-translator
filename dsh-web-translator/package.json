@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-web-translator",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "private": true,
   "description": "LLM translation backend with token-usage accounting for the dsh-web-translator browser extension; left-toolbar page with stats, traces, prompts and wordbook review",
   "type": "module",
@@ -22,7 +22,8 @@
     "DESIGN-TOKEN-USAGE.md",
     "DESIGN-TURN-TRACE.md",
     "DESIGN-CONVERSATIONS.md",
-    "DESIGN-CACHE.md"
+    "DESIGN-CACHE.md",
+    "DESIGN-IMAGE.md"
   ],
   "license": "MIT",
   "dsh": {

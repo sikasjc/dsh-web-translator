@@ -87,6 +87,18 @@ export const LIMITS = Object.freeze({
   urlChars: 2048,
   /** Per-batch model timeout (DESIGN §4). */
   batchTimeoutMs: 90_000,
+  /** `POST /image-translate` JSON body cap (base64 image fits inside). */
+  imageBodyBytes: 8 * 1024 * 1024,
+  /** Decoded image byte cap accepted by `POST /image-translate`. */
+  imageBytes: 3 * 1024 * 1024,
+  /** `POST /image-translate` model timeout (vision calls are slower). */
+  imageTimeoutMs: 120_000,
+  /** Output-token ceiling for one image translation call. */
+  imageMaxTokens: 4096,
+  /** Maximum text blocks accepted from one image response. */
+  imageBlocks: 100,
+  /** Maximum characters per OCR/translation block. */
+  imageBlockChars: 2000,
   /** Translation LRU capacity (DESIGN §4.2). */
   translationCache: 512,
   /** Persistent translation-cache capacity, in batch entries (DESIGN-CACHE §2). */
@@ -130,6 +142,7 @@ export const DEFAULTS = Object.freeze({
   targetLanguage: DEFAULT_TARGET_LANGUAGE,
   translationStyle: 'auto',
   dictionaryProvider: 'dictionaryapi.dev',
+  imageModel: 'auto',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   userTemplate: DEFAULT_USER_TEMPLATE,
   batchSegments: LIMITS.batchSegments.default,
@@ -146,6 +159,7 @@ export const SETTINGS_KEYS = Object.freeze([
   'targetLanguage',
   'translationStyle',
   'dictionaryProvider',
+  'imageModel',
   'systemPrompt',
   'userTemplate',
   'batchSegments',

@@ -58,6 +58,7 @@ test('an empty ledger reports a zero summary with a continuous day window', asyn
   assert.deepEqual(summary.byKind, {
     translate: emptyUsageSummaryBuckets(),
     lookup: emptyUsageSummaryBuckets(),
+    image: emptyUsageSummaryBuckets(),
   });
   assert.deepEqual(summary.recent, []);
   assert.deepEqual(await service.events(), { events: [], nextBefore: null, hasMore: false });

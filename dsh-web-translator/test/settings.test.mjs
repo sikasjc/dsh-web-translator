@@ -44,6 +44,16 @@ test('dictionaryProvider defaults to dictionaryapi.dev and accepts the supported
   assert.equal(sanitizeSavedSettings({ dictionaryProvider: 'wiktionary' }).dictionaryProvider, 'wiktionary');
 });
 
+test('imageModel defaults to auto and accepts "auto" or "provider::model"', () => {
+  assert.equal(DEFAULTS.imageModel, 'auto');
+  assert.equal(normalizeSettingsPatch({ imageModel: 'auto' }).values.imageModel, 'auto');
+  assert.equal(normalizeSettingsPatch({ imageModel: 'modelhub::deepseek-flash' }).values.imageModel, 'modelhub::deepseek-flash');
+  assertInvalid(() => normalizeSettingsPatch({ imageModel: 'deepseek-flash' }), /imageModel/);
+  assertInvalid(() => normalizeSettingsPatch({ imageModel: 1 }), /imageModel/);
+  assert.equal(sanitizeSavedSettings({ imageModel: 'bad' }).imageModel, undefined);
+  assert.equal(sanitizeSavedSettings({ imageModel: 'modelhub::deepseek-flash' }).imageModel, 'modelhub::deepseek-flash');
+});
+
 test('recordHistory defaults to true and accepts booleans', () => {
   assert.equal(DEFAULTS.recordHistory, true);
   assert.equal(normalizeSettingsPatch({ recordHistory: true }).values.recordHistory, true);

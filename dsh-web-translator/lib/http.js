@@ -33,6 +33,7 @@ const ROUTES = Object.freeze({
   '/cache': Object.freeze(['DELETE']),
   '/translate': Object.freeze(['POST']),
   '/lookup': Object.freeze(['POST']),
+  '/image-translate': Object.freeze(['POST']),
   '/ball-sites': Object.freeze(['GET']),
   '/ball-sites/add': Object.freeze(['POST']),
   '/ball-sites/remove': Object.freeze(['POST']),
@@ -169,19 +170,21 @@ export function sendJson(res, status, payload, { head = false, headers = {} } = 
 }
 
 /**
- * Read and parse a JSON object request body (1 MiB cap, JSON content-type only).
+ * Read and parse a JSON object request body (JSON content-type only).
  * @param {object} req - Node IncomingMessage.
+ * @param {{maxBytes?: number, tooLargeCode?: string}} [options] - per-route cap.
  * @returns {Promise<Record<string, unknown>>}
  */
-export async function readJsonBody(req) {
+export async function readJsonBody(req, { maxBytes = LIMITS.bodyBytes, tooLargeCode = 'TEXT_LIMIT' } = {}) {
   const headers = req?.headers ?? {};
   const contentType = typeof headers['content-type'] === 'string' ? headers['content-type'] : '';
   if (!/(^|[/+])json\b/i.test(contentType)) {
     throw apiError('BAD_REQUEST', 'request body must be JSON (content-type: application/json)');
   }
+  const limit = Number.isFinite(Number(maxBytes)) && Number(maxBytes) > 0 ? Math.trunc(Number(maxBytes)) : LIMITS.bodyBytes;
   const declared = Number(headers['content-length']);
-  if (Number.isFinite(declared) && declared > LIMITS.bodyBytes) {
-    throw apiError('TEXT_LIMIT', `request body exceeds ${LIMITS.bodyBytes} bytes`);
+  if (Number.isFinite(declared) && declared > limit) {
+    throw apiError(tooLargeCode, `request body exceeds ${limit} bytes`);
   }
   const chunks = [];
   let size = 0;
@@ -189,7 +192,7 @@ export async function readJsonBody(req) {
     for await (const chunk of req) {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       size += bytes.length;
-      if (size > LIMITS.bodyBytes) throw apiError('TEXT_LIMIT', `request body exceeds ${LIMITS.bodyBytes} bytes`);
+      if (size > limit) throw apiError(tooLargeCode, `request body exceeds ${limit} bytes`);
       chunks.push(bytes);
     }
   } catch (error) {
@@ -281,6 +284,8 @@ async function dispatchWrite(path, body, api, signal) {
       return api.translate(body, { signal });
     case '/lookup':
       return api.lookup(body, { signal });
+    case '/image-translate':
+      return api.imageTranslate(body, { signal });
     case '/ball-sites/add':
       return api.addBallSite(body);
     case '/ball-sites/remove':
@@ -367,7 +372,10 @@ export function createHttpHandler(api, { connection } = {}) {
         } else if (dispatchMethod === 'DELETE') {
           data = await dispatchWrite(path, {}, api, abort.signal);
         } else {
-          data = await dispatchWrite(path, await readJsonBody(req), api, abort.signal);
+          const imageBody = path === '/image-translate';
+          data = await dispatchWrite(path, await readJsonBody(req, imageBody
+            ? { maxBytes: LIMITS.imageBodyBytes, tooLargeCode: 'IMAGE_TOO_LARGE' }
+            : undefined), api, abort.signal);
         }
       } finally {
         if (typeof res?.off === 'function') res.off('close', onClose);

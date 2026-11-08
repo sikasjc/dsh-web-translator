@@ -120,6 +120,13 @@ export function normalizeSettingsPatch(raw) {
         invalidSettings(`dictionaryProvider must be one of: ${DICTIONARY_PROVIDERS.join(', ')}`);
       }
       values.dictionaryProvider = value.trim();
+    } else if (key === 'imageModel') {
+      if (typeof value !== 'string') invalidSettings('imageModel must be a string');
+      const trimmed = value.trim();
+      if (trimmed !== 'auto' && !/^[A-Za-z0-9._-]{1,120}::[A-Za-z0-9._\/-]{1,200}$/u.test(trimmed)) {
+        invalidSettings('imageModel must be "auto" or "provider::model"');
+      }
+      values.imageModel = trimmed;
     } else if (key === 'systemPrompt') {
       values.systemPrompt = normalizePromptValue(value, key, LIMITS.systemPromptChars, warnings);
     } else if (key === 'userTemplate') {

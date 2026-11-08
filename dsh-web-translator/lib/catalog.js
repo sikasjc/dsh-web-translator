@@ -24,7 +24,8 @@ const MAX_CATALOG_RESOLVE = 200;
  * @param {object} raw - adapter answer.
  * @returns {{provider: string, model: string, name: string,
  *   reasoningEfforts: {id: string, name: string, description?: string}[],
- *   contextWindow?: number, maxTokens?: number, defaultEffort?: string}}
+ *   contextWindow?: number, maxTokens?: number, defaultEffort?: string,
+ *   inputModalities?: ('text'|'image')[]}}
  */
 export function toModelInfo(provider, model, raw) {
   const reasoningEfforts = [];
@@ -48,6 +49,10 @@ export function toModelInfo(provider, model, raw) {
   }
   if (typeof raw?.reasoning?.defaultEffort === 'string' && raw.reasoning.defaultEffort.length > 0) {
     info.defaultEffort = raw.reasoning.defaultEffort;
+  }
+  if (Array.isArray(raw?.inputModalities)) {
+    const modalities = raw.inputModalities.filter((value) => value === 'text' || value === 'image');
+    if (modalities.length > 0) info.inputModalities = [...new Set(modalities)];
   }
   return info;
 }
@@ -198,6 +203,9 @@ export function createCatalogService({ ctx, logger, now = Date.now, ttlMs = LIMI
           const item = { id: model.id, name: model.name };
           if (info !== undefined && Number.isFinite(info.contextWindow)) item.contextWindow = info.contextWindow;
           if (info !== undefined && Number.isFinite(info.maxTokens)) item.maxTokens = info.maxTokens;
+          if (info !== undefined && Array.isArray(info.inputModalities) && info.inputModalities.length > 0) {
+            item.inputModalities = [...info.inputModalities];
+          }
           return item;
         }),
       };

@@ -31,6 +31,7 @@ test('target language whitelist is the Lead-approved fixed list', () => {
   assert.equal(DEFAULTS.translationStyle, 'auto');
   assert.deepEqual([...DICTIONARY_PROVIDERS], ['dictionaryapi.dev', 'wiktionary', 'off']);
   assert.equal(DEFAULTS.dictionaryProvider, 'dictionaryapi.dev');
+  assert.equal(DEFAULTS.imageModel, 'auto');
 });
 
 test('factory defaults match DESIGN §4.1 / §4.2', () => {
@@ -85,7 +86,7 @@ test('document versions and settings keys are stable', () => {
   assert.equal(WORDBOOK_VERSION, 1);
   assert.equal(USAGE_VERSION, 1);
   assert.deepEqual([...SETTINGS_KEYS], [
-    'provider', 'model', 'reasoningEffort', 'targetLanguage', 'translationStyle', 'dictionaryProvider',
+    'provider', 'model', 'reasoningEffort', 'targetLanguage', 'translationStyle', 'dictionaryProvider', 'imageModel',
     'systemPrompt', 'userTemplate', 'batchSegments', 'batchChars', 'concurrency', 'recordHistory',
   ]);
 });

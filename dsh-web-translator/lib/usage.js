@@ -28,7 +28,7 @@ import { randomBytes } from 'node:crypto';
 import { LIMITS, USAGE_VERSION } from './constants.js';
 
 /** Event kinds accepted by `record` (DESIGN-TOKEN-USAGE §2.1). */
-export const USAGE_EVENT_KINDS = Object.freeze(['translate', 'lookup']);
+export const USAGE_EVENT_KINDS = Object.freeze(['translate', 'lookup', 'image']);
 
 /** Counter keys shared by totals / days / kinds buckets. */
 const BUCKET_KEYS = Object.freeze([
@@ -126,6 +126,7 @@ export function emptyUsageLedger() {
     kinds: {
       translate: emptyUsageBuckets(),
       lookup: emptyUsageBuckets(),
+      image: emptyUsageBuckets(),
     },
     events: [],
   };
@@ -277,7 +278,7 @@ function normalizeEvent(raw) {
   const event = {
     id: clip(raw.id, 64) ?? newEventId(),
     at: toCount(raw.at),
-    kind: raw.kind === 'lookup' ? 'lookup' : 'translate',
+    kind: USAGE_EVENT_KINDS.includes(raw.kind) ? raw.kind : 'translate',
     ok: raw.ok === true,
     provider: clip(raw.provider, 120) ?? '',
     model: clip(raw.model, 200) ?? '',
@@ -337,6 +338,7 @@ function normalizeLedger(raw, { maxEvents = LIMITS.usageEvents } = {}) {
   const kinds = raw.kinds !== null && typeof raw.kinds === 'object' ? raw.kinds : {};
   ledger.kinds.translate = normalizeBuckets(kinds.translate);
   ledger.kinds.lookup = normalizeBuckets(kinds.lookup);
+  ledger.kinds.image = normalizeBuckets(kinds.image);
 
   const events = Array.isArray(raw.events) ? raw.events : [];
   for (const value of events) {
@@ -707,6 +709,7 @@ export function createUsageService({
       byKind: {
         translate: summarizeBuckets(ledger.kinds.translate),
         lookup: summarizeBuckets(ledger.kinds.lookup),
+        image: summarizeBuckets(ledger.kinds.image),
       },
       recent: ledger.events.slice(0, RECENT_EVENTS),
     };
@@ -714,7 +717,7 @@ export function createUsageService({
 
   /**
    * One page of events, newest first, with keyset pagination on event id.
-   * @param {{limit?: number, kind?: 'translate'|'lookup'|'error', before?: string}} [options]
+   * @param {{limit?: number, kind?: 'translate'|'lookup'|'image'|'error', before?: string}} [options]
    * @returns {Promise<{events: object[], nextBefore: string | null, hasMore: boolean}>}
    */
   async function events(options = {}) {
@@ -749,7 +752,7 @@ export function createUsageService({
    * (DESIGN-TURN-TRACE §2.2). Events are grouped by `turnId`, or by
    * `evt:<eventId>` for legacy events without one, then aggregated in memory
    * from the capped event list.
-   * @param {{limit?: number, kind?: 'translate'|'lookup'|'error',
+   * @param {{limit?: number, kind?: 'translate'|'lookup'|'image'|'error',
    *   status?: 'ok'|'partial'|'error', before?: string}} [options]
    * @returns {Promise<{turns: object[], nextBefore: string | null, hasMore: boolean}>}
    */

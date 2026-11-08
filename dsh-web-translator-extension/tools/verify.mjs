@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.16.0', manifest.version === '1.16.0', manifest.version);
+  check('manifest: version 1.17.0', manifest.version === '1.17.0', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,13 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.16.0', "EXT_VERSION = '1.16.0'"],
+  ['EXT 版本 1.17.0', "EXT_VERSION = '1.17.0'"],
+  ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
+  ['图片翻译入口', 'function startImageTranslation('],
+  ['图片翻译覆盖层', 'function renderImageTranslation('],
+  ['图片翻译卡片回退', 'function renderImageCard('],
+  ['图片翻译清理', 'function removeImageTranslation('],
+  ['图片翻译 i18n', "imageTranslating: '"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],
   ['翻译 run 起始 Turn', "state.runId = makeTurnId('tr')"],
   ['translate Turn 身份', 'turnId: state.runId'],
@@ -322,7 +328,13 @@ const BG_TOKENS = [
   ['右键菜单-父菜单', "'dsh-it:root'"],
   ['右键菜单-原文', "'dsh-it:mode-source'"],
   ['右键菜单-译文', "'dsh-it:mode-only'"],
-  ['右键菜单-双语对照', "'dsh-it:mode-bilingual'"]
+  ['右键菜单-双语对照', "'dsh-it:mode-bilingual'"],
+  ['右键菜单-翻译图片文字', "'dsh-it:translate-image'"],
+  ['图片截图裁剪', 'chrome.tabs.captureVisibleTab'],
+  ['图片 base64', 'function blobToBase64'],
+  ['图片请求路由', "'image-translate'"],
+  ['图片请求入口', 'async function handleImageTranslate('],
+  ['图片超时', 'IMAGE_REQUEST_TIMEOUT_MS']
 ];
 for (const [name, needle] of BG_TOKENS) check('background.js 契约: ' + name, bg.includes(needle));
 

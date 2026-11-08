@@ -9,9 +9,11 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.11.0** · **browser extension 1.16.0**. Recent changes:
-> selectable third-party dictionary for English word lookups — dictionaryapi.dev / English Wiktionary /
-> off (plugin 1.11.0); translation styles with page context and terminology protection (plugin 1.10.0);
+> Current versions: **DSH plugin 1.12.0** · **browser extension 1.17.0**. Recent changes:
+> right-click **image text translation** with in-place overlays and image deletion after each request
+> (plugin 1.12.0 / extension 1.17.0); selectable third-party dictionary for English word lookups —
+> dictionaryapi.dev / English Wiktionary / off (plugin 1.11.0); translation styles with page context and
+> terminology protection (plugin 1.10.0);
 > per-site auto translation (extension 1.16.0), optional iframe translation (extension 1.15.0); extension
 > packaging, privacy policy and store-listing materials (extension 1.15.0); screen-based translation
 > scheduling with block-lazy and preload options (extension 1.14.0) plus later block-boundary fixes;
@@ -57,6 +59,11 @@ under [Data and privacy](#data-and-privacy).
 - **Selection / double-click / shortcut translation** (three opt-in toggles, default off): pop a
   translation/lookup card with translation, phonetics, dictionary definitions, pronunciation and
   "add to wordbook";
+- **Right-click image text translation**: right-click an image → **Translate image text**; only that
+  image's visible area is captured, sent through your local DSH to the selected vision model, and the
+  translations are drawn **in place over the original text** (bilingual/translation-only toggle, copy,
+  close; a card is used when the model cannot return boxes). Page translation never scans or translates
+  images automatically, and the image is deleted right after the request;
 - **Floating ball**: left-click starts translation with the current mode (click again to stop, then to
   restore), right-click opens the panel; drag it anywhere; it shows a progress ring and percentage while
   translating; hide/show it from the panel footer or the context menu; **hide per domain** (add from the
@@ -87,9 +94,12 @@ under [Data and privacy](#data-and-privacy).
     translation and tokens per turn. Legacy requests without a DSH session stay in a collapsed inline
     group; filters, "load earlier" and "clear stats" are supported;
   - **Settings**: model, reasoning effort, target language, translation style, system prompt, user
-    template, batching parameters, **third-party dictionary provider** and test translation; a
-    **Floating ball** page lists the domains that hide the ball and lets you remove or manually add
-    them;
+    template, batching parameters, **third-party dictionary provider**, **image vision model** and test
+    translation; a **Floating ball** page lists the domains that hide the ball and lets you remove or
+    manually add them;
+  - **Image translation backend**: captures one image, sends it to an image-capable model, returns
+    OCR blocks with normalized bounding boxes, records image tokens in the ledger and one DSH turn per
+    image, then deletes the temporary image attachment;
   - **Selectable third-party dictionary** for English single-word lookups: `dictionaryapi.dev`
     (phonetics / definitions / audio, default), English Wiktionary (definitions, no audio), or **off**
     (model translation only). The dictionary request is host-internal and is never written into DSH
@@ -116,6 +126,7 @@ dsh-web-translator/            # DSH plugin (local bundle installed into a DSH p
 ├── DESIGN-TURN-TRACE.md       # v3.1 addendum: turn traces (each conversation turn)
 ├── DESIGN-CONVERSATIONS.md    # v4 addendum: translation conversations bridged into DSH native views
 ├── DESIGN-CACHE.md            # v5 addendum: persistent translation-result cache (disk + TTL + DELETE /cache)
+├── DESIGN-IMAGE.md            # v6 addendum: right-click image translation, in-place overlays and image discard
 └── qa/                        # Independent QA scripts and reports (screenshots / live evidence not committed)
 
 dsh-web-translator-extension/  # Chrome / Edge MV3 extension (load unpacked)
@@ -251,6 +262,11 @@ the extension, then refresh the pages that are already open.
   sent to the selected dictionary, and failures degrade silently to "no dictionary". The request is
   host-internal and is **not written into DSH session/conversation records** (those only contain the
   model request and its translation);
+- **Image translation** only happens when you right-click an image and choose it: the visible image
+  area is sent through your local DSH to the model selected for images (default: the current translation
+  model, e.g. DeepSeek), and the temporary image attachment is deleted immediately after the request.
+  Only OCR text and translations are cached locally; the image is not written into DSH session records
+  or extension storage;
 - The extension only stores its own UI preferences (`chrome.storage.local`) and **does not store page
   content**; it never talks to models directly and stores no API keys;
 - Plugin data is written only under `$DSH_HOME/immersive-translate/`:
@@ -302,18 +318,18 @@ the extension, then refresh the pages that are already open.
 ## Development and tests
 
 ```bash
-# DSH plugin (host + unit tests) — currently 266/266
+# DSH plugin (host + unit tests) — currently 281/281
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/
 
 # Browser extension (static checks + headless Chrome E2E, no real model calls)
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 193 static checks
+node tools/verify.mjs        # 205 static checks
 node tools/e2e-chrome.mjs    # 132/132 headless E2E checks (mock DSH)
 ```
 
-- Design contracts: [`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md)
+- Design contracts: [`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md) / [`DESIGN-IMAGE.md`](dsh-web-translator/DESIGN-IMAGE.md)
 - Independent QA reports: [`TOKEN-STATS-QA.md`](dsh-web-translator/qa/TOKEN-STATS-QA.md) / [`TURN-TRACE-QA.md`](dsh-web-translator/qa/TURN-TRACE-QA.md) / [`CONVERSATION-QA.md`](dsh-web-translator/qa/CONVERSATION-QA.md) (harness usage and assertion results)
 - Live evidence: not committed (contains real pages/session information); run `node qa/conversation-shot.mjs` locally to generate it under `qa/live-conversations-evidence/`
 
