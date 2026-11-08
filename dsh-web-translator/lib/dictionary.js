@@ -1,17 +1,26 @@
 /**
  * English dictionary lookup for `POST /lookup` (DESIGN §5.7).
  *
- * Only an English word (not a phrase) queries dictionaryapi.dev; the request is
- * capped at 5 s and every failure degrades silently to "no dictionary". The
- * trim helper keeps stored/looked-up payloads small and free of unknown keys.
+ * Only an English word (not a phrase) qualifies. The provider is chosen in
+ * settings (`dictionaryProvider`): dictionaryapi.dev (phonetics/audio), English
+ * Wiktionary (definitions), or off (no third-party request). Requests are capped
+ * at 5 s and every failure degrades silently to "no dictionary". The trim
+ * helpers keep stored/looked-up payloads small and free of unknown keys.
  */
 import { LIMITS } from './constants.js';
+import { VERSION } from './version.js';
 
 /** A single English word accepted for dictionary lookup (DESIGN §5.7). */
 export const WORD_PATTERN = /^[A-Za-z][A-Za-z'-]{0,40}$/;
 
 /** dictionaryapi.dev English endpoint. */
 export const DICTIONARY_ENDPOINT = 'https://api.dictionaryapi.dev/api/v2/entries/en/';
+
+/** English Wiktionary REST definition endpoint. */
+export const WIKTIONARY_ENDPOINT = 'https://en.wiktionary.org/api/rest_v1/page/definition/';
+
+/** Descriptive User-Agent required by the Wikimedia APIs. */
+export const WIKTIONARY_USER_AGENT = `dsh-web-translator/${VERSION} (+https://github.com/sikasjc/dsh-web-translator)`;
 
 /** Upstream timeout before degrading silently. */
 export const DICTIONARY_TIMEOUT_MS = 5000;
@@ -53,6 +62,60 @@ function cleanAudioUrl(value) {
   if (text.length === 0) return undefined;
   if (!text.startsWith('https://') && !text.startsWith('http://')) return undefined;
   return text;
+}
+
+/** Named HTML entities that appear in Wiktionary definition fragments. */
+const HTML_ENTITIES = Object.freeze({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' });
+
+/**
+ * Reduce a Wiktionary HTML definition fragment to plain text.
+ * @param {unknown} value - raw fragment.
+ * @returns {string}
+ */
+function stripHtml(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/<[^>]*>/gu, ' ')
+    .replace(/&([a-z]+);/giu, (match, name) => {
+      const entity = HTML_ENTITIES[String(name).toLowerCase()];
+      return entity === undefined ? ' ' : entity;
+    })
+    .replace(/&#(\d+);/gu, (match, code) => {
+      const point = Number(code);
+      return Number.isInteger(point) && point > 0 && point < 0x110000 ? String.fromCodePoint(point) : ' ';
+    })
+    .replace(/\s+/gu, ' ')
+    .replace(/\s+([.,;:!?)\]])/gu, '$1')
+    .trim();
+}
+
+/**
+ * Trim an English Wiktionary (`en.wiktionary.org` REST definition) response to
+ * the DESIGN §5.7 dictionary vocabulary. Wiktionary supplies definitions only:
+ * no phonetics and no audio URL.
+ * @param {unknown} raw - parsed JSON response `{ en: [{ partOfSpeech, definitions }] }`.
+ * @returns {{meanings: {partOfSpeech: string, definitions: string[]}[]} | undefined}
+ */
+export function trimWiktionary(raw) {
+  const entries = Array.isArray(raw?.en) ? raw.en : [];
+  const meanings = [];
+  for (const entry of entries) {
+    if (meanings.length >= MAX_MEANINGS) break;
+    if (entry === null || typeof entry !== 'object') continue;
+    const definitions = [];
+    for (const item of Array.isArray(entry.definitions) ? entry.definitions : []) {
+      if (definitions.length >= MAX_DEFINITIONS) break;
+      const text = clean(stripHtml(item?.definition), MAX_FIELD_CHARS);
+      if (text.length > 0 && !definitions.includes(text)) definitions.push(text);
+    }
+    if (definitions.length === 0) continue;
+    meanings.push({
+      partOfSpeech: clean(entry.partOfSpeech, MAX_WORD_CHARS).toLowerCase() || 'unknown',
+      definitions,
+    });
+  }
+  if (meanings.length === 0) return undefined;
+  return { meanings };
 }
 
 /**
@@ -130,13 +193,24 @@ export function sanitizeDictionary(input) {
 
 /**
  * Create the dictionary lookup used by the lookup path.
+ *
+ * The provider is resolved for every word (so a settings change takes effect on
+ * the next lookup): `dictionaryapi.dev`, `wiktionary`, or anything else means
+ * "off". Provider failures never surface as lookup failures.
  * @param {{fetchImpl?: typeof fetch, timeoutMs?: number,
- *   logger?: {debug?: Function}}} [options] - injectable fetch for tests.
+ *   logger?: {debug?: Function},
+ *   resolveProvider?: () => (string | Promise<string>)}} [options] - injectable fetch/clock for tests.
  * @returns {{lookupWord: (word: string) => Promise<object | undefined>}}
  */
-export function createDictionaryLookup({ fetchImpl = globalThis.fetch, timeoutMs = DICTIONARY_TIMEOUT_MS, logger } = {}) {
+export function createDictionaryLookup({
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DICTIONARY_TIMEOUT_MS,
+  logger,
+  resolveProvider = () => 'dictionaryapi.dev',
+} = {}) {
   const fetcher = typeof fetchImpl === 'function' ? fetchImpl : undefined;
   const effectiveTimeout = Math.max(1, Math.trunc(Number(timeoutMs)) || DICTIONARY_TIMEOUT_MS);
+  const providerResolver = typeof resolveProvider === 'function' ? resolveProvider : () => 'dictionaryapi.dev';
 
   return {
     /**
@@ -146,12 +220,25 @@ export function createDictionaryLookup({ fetchImpl = globalThis.fetch, timeoutMs
      */
     async lookupWord(word) {
       if (!isEnglishWord(word) || fetcher === undefined) return undefined;
+      let provider = 'dictionaryapi.dev';
       try {
-        const url = `${DICTIONARY_ENDPOINT}${encodeURIComponent(word.trim().toLowerCase())}`;
+        provider = await providerResolver();
+      } catch {
+        // A broken settings resolver must not disable the default provider.
+        provider = 'dictionaryapi.dev';
+      }
+      if (provider !== 'dictionaryapi.dev' && provider !== 'wiktionary') return undefined;
+      try {
+        const endpoint = provider === 'wiktionary' ? WIKTIONARY_ENDPOINT : DICTIONARY_ENDPOINT;
+        const url = `${endpoint}${encodeURIComponent(word.trim().toLowerCase())}`;
+        const headers = provider === 'wiktionary'
+          ? { accept: 'application/json', 'user-agent': WIKTIONARY_USER_AGENT }
+          : { accept: 'application/json' };
         const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(effectiveTimeout) : undefined;
-        const response = await fetcher(url, { headers: { accept: 'application/json' }, ...(signal ? { signal } : {}) });
+        const response = await fetcher(url, { headers, ...(signal ? { signal } : {}) });
         if (!response || response.ok !== true) return undefined;
-        return trimDictionary(await response.json());
+        const json = await response.json();
+        return provider === 'wiktionary' ? trimWiktionary(json) : trimDictionary(json);
       } catch (error) {
         try {
           logger?.debug?.(`[dsh-web-translator] dictionary lookup degraded: ${error instanceof Error ? error.message : String(error)}`);

@@ -187,7 +187,13 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ### 5.7 `POST /lookup`
 请求：`{ "text":"immersive", "context":"...", "sourceUrl":"...", "targetLanguage":"zh-CN"? }`
 响应：`{ ok:true, result:{ text, translation, provider, model, dictionary?:{word,phonetic?,audio?,meanings:[{partOfSpeech,definitions:[...]}]} } }`
-词典：英文单词（`/^[A-Za-z][A-Za-z'-]{0,40}$/`）查 `dictionaryapi.dev`（5s 超时，失败静默降级）。
+词典：英文单词（`/^[A-Za-z][A-Za-z'-]{0,40}$/`）按 `settings.dictionaryProvider` 选择来源（5s 超时，失败静默降级）：
+
+- `dictionaryapi.dev`（默认）：`GET https://api.dictionaryapi.dev/api/v2/entries/en/<word>`，归一化为 `{word?,phonetic?,audio?,meanings}`；
+- `wiktionary`：`GET https://en.wiktionary.org/api/rest_v1/page/definition/<word>`（带描述性 User-Agent），只取 `en` 段、去 HTML 标签/实体、最多 4 义项 × 3 释义，无音标/音频；
+- `off`：不发起任何第三方请求，响应不带 `dictionary`。
+
+词典请求由 Host 内部完成，**不写入 DSH 会话/对话记录**；宿主把第三方数据当不可信输入裁剪后再返回。
 
 ### 5.6.2.1 翻译风格（`translationStyle`）
 

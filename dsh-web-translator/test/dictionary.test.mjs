@@ -5,10 +5,13 @@ import test from 'node:test';
 import { createFakeLogger } from './helpers.mjs';
 import {
   DICTIONARY_ENDPOINT,
+  WIKTIONARY_ENDPOINT,
+  WIKTIONARY_USER_AGENT,
   createDictionaryLookup,
   isEnglishWord,
   sanitizeDictionary,
   trimDictionary,
+  trimWiktionary,
 } from '../lib/dictionary.js';
 
 /** dictionaryapi.dev-shaped fixture. */
@@ -116,4 +119,81 @@ test('lookupWord degrades silently for non-words, failures and exceptions', asyn
   };
   assert.equal(await createDictionaryLookup({ fetchImpl: throwingFetch }).lookupWord('immersive'), undefined);
   assert.equal(await createDictionaryLookup({ fetchImpl: null }).lookupWord('immersive'), undefined);
+});
+
+/** en.wiktionary.org REST fixture with HTML fragments. */
+const WIKTIONARY_FIXTURE = {
+  en: [
+    {
+      partOfSpeech: 'Adjective',
+      language: 'English',
+      definitions: [
+        { definition: 'Tending to <a rel="mw:WikiLink" href="/wiki/immerse">immerse</a>.' },
+        { definition: 'Giving the impression of <a href="/wiki/immersion">immersion</a>.' },
+        { definition: '<span class="x">Deeply</span> involving &amp; engaging.' },
+        { definition: 'Fourth definition dropped by the cap.' },
+      ],
+    },
+    { partOfSpeech: 'Noun', definitions: [{ definition: 'An &quot;immersive&quot; thing.' }] },
+  ],
+  fr: [{ partOfSpeech: 'Adjective', language: 'French', definitions: [{ definition: 'form-of definition' }] }],
+};
+
+test('trimWiktionary strips HTML and keeps en definitions within the caps', () => {
+  assert.deepEqual(trimWiktionary(WIKTIONARY_FIXTURE), {
+    meanings: [
+      { partOfSpeech: 'adjective', definitions: ['Tending to immerse.', 'Giving the impression of immersion.', 'Deeply involving & engaging.'] },
+      { partOfSpeech: 'noun', definitions: ['An "immersive" thing.'] },
+    ],
+  });
+  assert.equal(trimWiktionary({ en: [] }), undefined);
+  assert.equal(trimWiktionary({ fr: [{ definitions: [{ definition: 'x' }] }] }), undefined);
+  assert.equal(trimWiktionary(null), undefined);
+});
+
+test('lookupWord queries the selected provider and applies Wiktionary normalization', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, json: async () => WIKTIONARY_FIXTURE };
+  };
+  const lookup = createDictionaryLookup({ fetchImpl, resolveProvider: () => 'wiktionary' });
+  const dictionary = await lookup.lookupWord('Immersive');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `${WIKTIONARY_ENDPOINT}immersive`);
+  assert.equal(calls[0].options.headers.accept, 'application/json');
+  assert.equal(calls[0].options.headers['user-agent'], WIKTIONARY_USER_AGENT);
+  assert.equal(dictionary.meanings[0].definitions[0], 'Tending to immerse.');
+  assert.equal(dictionary.phonetic, undefined);
+  assert.equal(dictionary.audio, undefined);
+
+  // Resolver is consulted per lookup, so a settings change applies immediately.
+  let providerReads = 0;
+  const dynamic = createDictionaryLookup({
+    fetchImpl,
+    resolveProvider: async () => (providerReads++ === 0 ? 'off' : 'dictionaryapi.dev'),
+  });
+  assert.equal(await dynamic.lookupWord('immersive'), undefined);
+  assert.equal(calls.length, 1, 'off makes no request');
+  assert.equal(await dynamic.lookupWord('immersive'), undefined, 'dictionaryapi fixture shape differs; degrades');
+  assert.equal(calls.length, 2);
+});
+
+test('lookupWord treats off/unknown providers as no dictionary and survives a throwing resolver', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return { ok: true, json: async () => API_FIXTURE };
+  };
+  assert.equal(await createDictionaryLookup({ fetchImpl, resolveProvider: () => 'off' }).lookupWord('immersive'), undefined);
+  assert.equal(await createDictionaryLookup({ fetchImpl, resolveProvider: () => 'youdao' }).lookupWord('immersive'), undefined);
+  assert.equal(calls, 0);
+
+  const throwingResolver = () => {
+    throw new Error('settings unavailable');
+  };
+  const lookup = createDictionaryLookup({ fetchImpl, resolveProvider: throwingResolver });
+  const dictionary = await lookup.lookupWord('immersive');
+  assert.equal(calls, 1, 'a broken resolver falls back to the default provider');
+  assert.equal(dictionary.word, 'immersive');
 });

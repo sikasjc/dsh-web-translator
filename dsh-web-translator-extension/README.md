@@ -146,7 +146,7 @@ node tools/make-icons.mjs   # 生成 icons/icon{16,32,48,128}.png
 
 - 先在选项页开启对应的「划词翻译」/「双击翻译」/「快捷键翻译」开关（默认都关闭）。
 - 在页面中选中 **1~500 字符** 的文本，或在单词上**双击**；按 **Command+K / Ctrl+K**（可在浏览器快捷键页修改）翻译选区或整页。
-- 弹出查词卡：原文、译文、音标、词典释义（英文单词查 `dictionaryapi.dev`，失败静默降级）、🔊 发音、加入单词本。
+- 弹出查词卡：原文、译文、音标、词典释义（英文单词按 DSH 设置中选择的第三方词典：`dictionaryapi.dev` / 英文 `Wiktionary` / 关闭；失败静默降级）、🔊 发音、加入单词本。
 - 发音优先使用词典 `audio` URL，否则用浏览器 `speechSynthesis`（语言按文本脚本自动判定）。
 - 「加入单词本」仅对**单个英文单词**或 **1~4 个汉字**可用；成功后按钮变为「已加入」。
   单词本数据只经本地 API 传给 DSH（`POST /wordbook/add`），不写 `chrome.storage`、不打日志。
@@ -248,6 +248,8 @@ v1.7.0 起两者再附带轨迹身份 `turnId` / `stepIndex`（`translate` 另�
    扩展不直连模型服务、不保存 API Key。
 2. **页面文本的去向**：译文由你在 DSH 中配置的模型生成。页面文本经本机 DSH 发往该模型服务
    （由你在 DSH 中自行配置的 provider，如 modelhub）；扩展本身不落盘、不打日志。
+   英文单词查词时，Host 会按你在 DSH 设置中选择的第三方词典（`dictionaryapi.dev` / 英文 `Wiktionary` / 关闭）
+   决定是否只把该单词发往对应公共词典；选择「关闭」后不发起任何第三方词典请求。
    token 统计只从本机 DSH 的账本读取（`GET /usage`）或在内存中累加并展示，不上传任何地方、不写入扩展存储。
    `translate` / `lookup` 请求会附带当前页 `sourceUrl`（≤2048 字符，超长省略）与 `sourceTitle`（≤200 字符），
    只发往本机 DSH，用于 token 账本与轨迹页展示来源站点。
@@ -388,7 +390,7 @@ token 展示（本页消耗累计 / GET usage 的今日累计 / 完成状态行 
 7. **目标语言以扩展设置为准**：面板/选项页的 12 语言选择会作为 `targetLanguage` 随请求发送，覆盖 DSH 设置里的目标语言；
    模型、提示词仍以 DSH 设置为准。
 8. **DSH 地址端口固定 3080**：`host_permissions` 只覆盖 `127.0.0.1:3080` 与 `localhost:3080`，改端口需改 manifest 并重载。
-9. **发音**：优先词典 `audio`（`dictionaryapi.dev`，英文单词），否则依赖系统 `speechSynthesis` 语音包；无语音包时无声。
+9. **发音**：优先词典 `audio`（`dictionaryapi.dev`，英文单词且第三方词典选它时），否则依赖系统 `speechSynthesis` 语音包；无语音包时无声。
 10. **单词本列表/复习不在扩展内**：扩展只做「加入单词本」，列表、SRS 复习、跟读评分在 DSH 设置页完成。
 11. **不支持** Firefox/Safari；受限页面（`chrome://`、扩展商店、PDF 查看器内部等）无法注入。
 12. `tools/e2e-chrome.mjs` 用 mock DSH API 验证扩展行为，**不覆盖**真实 DSH/模型；真实链路仍需按上面手测清单在本机 DSH 上验证。

@@ -110,6 +110,8 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | 模型 | 从当前 DSH 已配置的模型（provider/model 目录）中选择；默认跟随 DSH 当前默认模型 |
 | 推理强度 | `auto`（优先 off）/ 模型支持的其它强度；翻译建议低强度以降低延迟与成本 |
 | 目标语言 | 默认简体中文，可切换繁体中文、English、日本語、한국어、Français、Deutsch、Español、Русский 等 |
+| 翻译风格 | `auto` 按页面标题/URL/文本自动识别编程等技术页面；`general` 不做领域改写；`programming` / `tech` / `finance` 使用对应术语规范 |
+| 第三方词典 | 英文单词查词时的在线词典来源：`dictionaryapi.dev`（音标/释义/发音，默认）/ 英文 `Wiktionary`（英文释义，无发音）/ `off`（关闭，仅模型翻译、不发起第三方请求） |
 | 系统提示词 | 模型角色与输出契约（`{{targetLanguage}}`、`{{segmentCount}}` 等占位符） |
 | 用户消息模板 | 待翻译段落的组织方式（`{{segmentsJson}}`、`{{sourceLanguage}}` 等占位符） |
 | 测试翻译 | 输入几句话直接验证当前模型/提示词效果（结果同时显示本次 tokens） |
@@ -140,7 +142,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | GET | `/models` | 已配置的模型目录 |
 | GET | `/models/resolve?provider=&model=` | 单模型能力（上下文/输出上限/推理强度） |
 | GET | `/settings` | 生效设置 + 默认值 + 选中模型信息 |
-| PUT | `/settings` | 更新设置（模型/提示词/语言/批量参数/`recordHistory`） |
+| PUT | `/settings` | 更新设置（模型/提示词/语言/翻译风格/第三方词典/批量参数/`recordHistory`） |
 | DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 归档隐藏「dsh翻译记录」会话 |
 | POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?}`，响应含 `usage` 四字段与 `cached` |
 | POST | `/lookup` | 查词/查句 + 英文词典信息，响应含 `usage`；接受相同可选元数据 |
@@ -164,13 +166,17 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 ## 数据与隐私
 
 - 翻译与查词文本会发送到**你在 DSH 中配置的模型服务**（例如 modelhub），不会发送到其它第三方翻译服务；
-- 英文单词会额外查询 `dictionaryapi.dev` 获取音标/释义/音频；
+- 英文单词查词时可选择第三方词典来源：`dictionaryapi.dev`（音标/释义/音频，默认）、英文 `Wiktionary`（英文释义，无音频）或 `off`（关闭，不发起第三方词典请求）；只发送该单词（不含页面正文）；
   该请求由 Host 内部完成，不会写入 DSH 会话/对话记录；
 - 插件数据仅保存在 `$DSH_HOME/immersive-translate/`：
-  - `settings.json`：模型、提示词、语言等设置；
+  - `settings.json`：模型、提示词、语言、第三方词典等设置；
   - `wordbook.json`：单词本与复习进度；
+  - `usage.json`：Token 账本与最近 500 条事件（可在「轨迹」页清空）；
+  - `cache.json`：翻译结果缓存（原文批次 → 译文，7 天 / 1000 批，可在「概览」页清空）；
+  - `ball-sites.json`：不展示悬浮球的域名列表；
+  - `conversations/`：翻译会话的 workspace 目录（会话日志由 DSH 自己持久化）。
 - 扩展只保存自己的 UI 偏好（`chrome.storage.local`），不保存页面内容；
-- 页面文本不写入 DSH 会话日志；Host 侧仅进程内 LRU 缓存（重启即清）。
+- 页面原文与译文会写入**本机 DSH 会话日志**（`recordHistory` 关闭后跳过；会话日志仅本机可用，由 DSH 管理，可自行清理）；Host 侧另有进程内 LRU 与上述本地翻译缓存。
 
 ## 卸载
 

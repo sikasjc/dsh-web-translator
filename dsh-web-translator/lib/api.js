@@ -610,7 +610,15 @@ export function createApi({
   // Load the previous process' cache in the background; requests await
   // `cache.whenReady()` so a restart can hit disk without delaying startup.
   void cache.hydrate();
-  const dictionary = createDictionaryLookup({ fetchImpl, logger: log, timeoutMs: dictionaryTimeoutMs });
+  const dictionary = createDictionaryLookup({
+    fetchImpl,
+    logger: log,
+    timeoutMs: dictionaryTimeoutMs,
+    resolveProvider: async () => {
+      const effective = await getEffective();
+      return effective.settings.dictionaryProvider;
+    },
+  });
   const wordbook = createWordbookService({ store: wordbookStore, logger: log, now: clock });
   const ballSites = createBallSitesService({ store: ballSitesStore, now: clock });
   const usageService = createUsageService({ store: usageStore, now: clock, logger: log });

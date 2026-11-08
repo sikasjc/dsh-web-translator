@@ -6,14 +6,18 @@ Turn the **models configured in DSH (DeepSeek Harness)** into a local immersive 
 a DSH plugin provides the translation backend, token accounting and wordbook, while a Chrome/Edge
 extension translates pages and looks words up in the browser.
 **No third-party translation API key is required.** Text only travels between your local DSH and the
-model service you configured in DSH.
+model service you configured in DSH — except the optional English-word dictionary lookup described
+under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.8.0** · **browser extension 1.14.3**. Recent changes:
-> screen-based translation scheduling with block-lazy and preload options (1.14.0), plus block-boundary fixes for structured tables and long prose lists (1.14.1–1.14.3); floating
-> ball quick-translate, progress ring, per-domain hiding and page-language matching (extensions
-> 1.10.0–1.13.0, plugin 1.8.0); persistent translation-result cache (7-day TTL / 1000 batches, survives
-> restarts, 0-token hits, plugin 1.7.0); micro-batching (extension 1.10.0); translation conversations are
-> grouped under a **dsh翻译记录** workspace in the sidebar (1.6.0); each translation action is a real DSH
+> Current versions: **DSH plugin 1.11.0** · **browser extension 1.16.0**. Recent changes:
+> selectable third-party dictionary for English word lookups — dictionaryapi.dev / English Wiktionary /
+> off (plugin 1.11.0); translation styles with page context and terminology protection (plugin 1.10.0);
+> per-site auto translation (extension 1.16.0), optional iframe translation (extension 1.15.0); extension
+> packaging, privacy policy and store-listing materials (extension 1.15.0); screen-based translation
+> scheduling with block-lazy and preload options (extension 1.14.0) plus later block-boundary fixes;
+> floating ball quick-translate, progress ring, per-domain hiding and page-language matching
+> (extensions 1.10.0–1.13.0); persistent translation-result cache (plugin 1.7.0); translation
+> conversations grouped under a **dsh翻译记录** workspace (1.6.0); each translation action is a real DSH
 > session and each model request becomes one native turn, viewable in DSH's own Conversation /
 > Trajectory / Stats views (1.5.0).
 > Note: to avoid including personal information such as real browsing data or session titles, this
@@ -82,9 +86,14 @@ model service you configured in DSH.
     to open the session in DSH's own Conversation / Trajectory / Stats views with the full source text,
     translation and tokens per turn. Legacy requests without a DSH session stay in a collapsed inline
     group; filters, "load earlier" and "clear stats" are supported;
-  - **Settings**: model, reasoning effort, target language, system prompt, user template, batching
-    parameters and test translation; a **Floating ball** page lists the domains that hide the ball and
-    lets you remove or manually add them;
+  - **Settings**: model, reasoning effort, target language, translation style, system prompt, user
+    template, batching parameters, **third-party dictionary provider** and test translation; a
+    **Floating ball** page lists the domains that hide the ball and lets you remove or manually add
+    them;
+  - **Selectable third-party dictionary** for English single-word lookups: `dictionaryapi.dev`
+    (phonetics / definitions / audio, default), English Wiktionary (definitions, no audio), or **off**
+    (model translation only). The dictionary request is host-internal and is never written into DSH
+    session records;
   - **Wordbook**: spaced-repetition review plus pronunciation/shadowing practice;
   - **Sidebar grouping**: every translation action / lookup is a real DSH session automatically grouped
     under **dsh翻译记录** (historical sessions are backfilled on first start); open one to see DSH's own
@@ -235,12 +244,13 @@ the extension, then refresh the pages that are already open.
 
 - Translation / lookup text is sent through your local DSH to **the model service you configured in DSH**
   (for example modelhub); it is not sent to other third-party translation services;
-- **English single-word lookups** additionally query the public dictionary API
-  [`dictionaryapi.dev`](https://dictionaryapi.dev/) to fetch phonetics, definitions and pronunciation
-  audio. Only that single word (not the page text) is sent to that third party, and failures degrade
-  silently to "no dictionary"; skip word lookups if you do not want this third-party request. This
-  dictionary request is host-internal: it is **not written into DSH session/conversation records**
-  (those only contain the model request and its translation);
+- **English single-word lookups** may additionally query a public dictionary, selected in DSH →
+  dsh翻译 → Settings → Third-party dictionary: [`dictionaryapi.dev`](https://dictionaryapi.dev/)
+  (phonetics, definitions, pronunciation audio; default), English Wiktionary (definitions, no audio),
+  or **off** (no third-party dictionary request at all). Only that single word (not the page text) is
+  sent to the selected dictionary, and failures degrade silently to "no dictionary". The request is
+  host-internal and is **not written into DSH session/conversation records** (those only contain the
+  model request and its translation);
 - The extension only stores its own UI preferences (`chrome.storage.local`) and **does not store page
   content**; it never talks to models directly and stores no API keys;
 - Plugin data is written only under `$DSH_HOME/immersive-translate/`:
@@ -292,15 +302,15 @@ the extension, then refresh the pages that are already open.
 ## Development and tests
 
 ```bash
-# DSH plugin (host + unit tests) — currently 246/246
+# DSH plugin (host + unit tests) — currently 266/266
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/
 
 # Browser extension (static checks + headless Chrome E2E, no real model calls)
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 183 static checks
-node tools/e2e-chrome.mjs    # 119/119 headless E2E checks (mock DSH)
+node tools/verify.mjs        # 193 static checks
+node tools/e2e-chrome.mjs    # 132/132 headless E2E checks (mock DSH)
 ```
 
 - Design contracts: [`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md)

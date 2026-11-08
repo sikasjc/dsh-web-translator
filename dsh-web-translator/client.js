@@ -144,6 +144,11 @@ window.__ModuleLoader__.load({
       'settings.targetLanguage': '目标语言',
       'settings.translationStyle': '翻译风格',
       'settings.translationStyleHint': 'auto 会根据页面标题/URL/文本自动识别编程等技术页面；通用不做领域改写；编程/科技/金融使用对应术语规范。',
+      'settings.dictionaryProvider': '第三方词典',
+      'settings.dictionaryProviderHint': '英文单词查词时的在线词典来源：dictionaryapi.dev（音标/释义/发音）、Wiktionary（英文释义，无发音）或关闭（只用模型翻译，不发起第三方词典请求）。词典请求由本机 DSH 插件发出，不会写入 DSH 会话记录。',
+      'settings.dictionaryApiDev': 'dictionaryapi.dev（音标/释义/发音）',
+      'settings.dictionaryWiktionary': 'Wiktionary（英文释义）',
+      'settings.dictionaryOff': '关闭（仅模型翻译）',
       'settings.style.auto': '自动（推荐）',
       'settings.style.general': '通用',
       'settings.style.programming': '编程',
@@ -495,6 +500,11 @@ window.__ModuleLoader__.load({
       'settings.targetLanguage': 'Target language',
       'settings.translationStyle': 'Translation style',
       'settings.translationStyleHint': 'Auto detects programming/technical pages from the title, URL and text; General applies no domain rules; Programming/Tech/Finance use domain-specific terminology.',
+      'settings.dictionaryProvider': 'Third-party dictionary',
+      'settings.dictionaryProviderHint': 'Dictionary source for English single-word lookups: dictionaryapi.dev (phonetics/definitions/audio), Wiktionary (English definitions, no audio), or off (model translation only; no third-party dictionary request). The request is made by the local DSH plugin and is never written into DSH session records.',
+      'settings.dictionaryApiDev': 'dictionaryapi.dev (phonetics/definitions/audio)',
+      'settings.dictionaryWiktionary': 'Wiktionary (English definitions)',
+      'settings.dictionaryOff': 'Off (model translation only)',
       'settings.style.auto': 'Auto (recommended)',
       'settings.style.general': 'General',
       'settings.style.programming': 'Programming',
@@ -1401,6 +1411,7 @@ window.__ModuleLoader__.load({
         reasoningEffort: typeof settings.reasoningEffort === 'string' && settings.reasoningEffort ? settings.reasoningEffort : 'auto',
         targetLanguage: typeof settings.targetLanguage === 'string' && settings.targetLanguage ? settings.targetLanguage : 'zh-CN',
         translationStyle: ['auto', 'general', 'programming', 'tech', 'finance'].includes(settings.translationStyle) ? settings.translationStyle : 'auto',
+        dictionaryProvider: ['dictionaryapi.dev', 'wiktionary', 'off'].includes(settings.dictionaryProvider) ? settings.dictionaryProvider : 'dictionaryapi.dev',
         systemPrompt: typeof settings.systemPrompt === 'string' ? settings.systemPrompt : '',
         userTemplate: typeof settings.userTemplate === 'string' ? settings.userTemplate : '',
         recordHistory: settings.recordHistory !== false,
@@ -1619,6 +1630,7 @@ window.__ModuleLoader__.load({
           reasoningEffort: form.reasoningEffort,
           targetLanguage: form.targetLanguage,
           translationStyle: form.translationStyle,
+          dictionaryProvider: form.dictionaryProvider,
           systemPrompt: form.systemPrompt,
           userTemplate: form.userTemplate,
           recordHistory: form.recordHistory,
@@ -1731,6 +1743,7 @@ window.__ModuleLoader__.load({
           form.reasoningEffort !== baseline.reasoningEffort ||
           form.targetLanguage !== baseline.targetLanguage ||
           form.translationStyle !== baseline.translationStyle ||
+          form.dictionaryProvider !== baseline.dictionaryProvider ||
           form.systemPrompt !== baseline.systemPrompt ||
           form.userTemplate !== baseline.userTemplate ||
           form.recordHistory !== baseline.recordHistory);
@@ -1839,9 +1852,29 @@ window.__ModuleLoader__.load({
                 )),
               ),
             ),
+            h(
+              'label',
+              { className: 'dsh-it-field' },
+              h('span', { className: 'dsh-it-label' }, t('settings.dictionaryProvider')),
+              h(
+                'select',
+                {
+                  className: 'dsh-it-select',
+                  value: form.dictionaryProvider,
+                  'aria-label': t('settings.dictionaryProvider'),
+                  onChange: (event) => updateForm({ dictionaryProvider: event.target.value }),
+                },
+                ['dictionaryapi.dev', 'wiktionary', 'off'].map((provider) => h(
+                  'option',
+                  { key: 'dictionary-' + provider, value: provider },
+                  t(provider === 'off' ? 'settings.dictionaryOff' : provider === 'wiktionary' ? 'settings.dictionaryWiktionary' : 'settings.dictionaryApiDev'),
+                )),
+              ),
+            ),
           ),
           h('p', { className: 'dsh-it-hint' }, t('settings.modelHint')),
           h('p', { className: 'dsh-it-hint' }, t('settings.translationStyleHint')),
+          h('p', { className: 'dsh-it-hint' }, t('settings.dictionaryProviderHint')),
           effortHint ? h('p', { className: 'dsh-it-hint' }, effortHint) : null,
         ),
         h(

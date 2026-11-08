@@ -28,6 +28,9 @@ export const DEFAULT_TARGET_LANGUAGE = 'zh-CN';
 /** Supported translation styles/domains (auto uses page heuristics). */
 export const TRANSLATION_STYLES = Object.freeze(['auto', 'general', 'programming', 'tech', 'finance']);
 
+/** Selectable third-party dictionaries for English single-word lookups. */
+export const DICTIONARY_PROVIDERS = Object.freeze(['dictionaryapi.dev', 'wiktionary', 'off']);
+
 /** On-disk `settings.json` schema version. */
 export const SETTINGS_VERSION = 1;
 
@@ -126,6 +129,7 @@ export const DEFAULTS = Object.freeze({
   reasoningEffort: 'auto',
   targetLanguage: DEFAULT_TARGET_LANGUAGE,
   translationStyle: 'auto',
+  dictionaryProvider: 'dictionaryapi.dev',
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   userTemplate: DEFAULT_USER_TEMPLATE,
   batchSegments: LIMITS.batchSegments.default,
@@ -141,6 +145,7 @@ export const SETTINGS_KEYS = Object.freeze([
   'reasoningEffort',
   'targetLanguage',
   'translationStyle',
+  'dictionaryProvider',
   'systemPrompt',
   'userTemplate',
   'batchSegments',

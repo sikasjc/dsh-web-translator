@@ -33,6 +33,17 @@ test('translationStyle defaults to auto and accepts the supported styles', () =>
   assertInvalid(() => normalizeSettingsPatch({ translationStyle: 1 }), /translationStyle/);
 });
 
+test('dictionaryProvider defaults to dictionaryapi.dev and accepts the supported providers', () => {
+  assert.equal(DEFAULTS.dictionaryProvider, 'dictionaryapi.dev');
+  for (const provider of ['dictionaryapi.dev', 'wiktionary', 'off']) {
+    assert.equal(normalizeSettingsPatch({ dictionaryProvider: provider }).values.dictionaryProvider, provider);
+  }
+  assertInvalid(() => normalizeSettingsPatch({ dictionaryProvider: 'youdao' }), /dictionaryProvider/);
+  assertInvalid(() => normalizeSettingsPatch({ dictionaryProvider: 1 }), /dictionaryProvider/);
+  assert.equal(sanitizeSavedSettings({ dictionaryProvider: 'youdao' }).dictionaryProvider, undefined);
+  assert.equal(sanitizeSavedSettings({ dictionaryProvider: 'wiktionary' }).dictionaryProvider, 'wiktionary');
+});
+
 test('recordHistory defaults to true and accepts booleans', () => {
   assert.equal(DEFAULTS.recordHistory, true);
   assert.equal(normalizeSettingsPatch({ recordHistory: true }).values.recordHistory, true);
@@ -51,6 +62,7 @@ test('accepts a complete valid patch', () => {
     batchChars: 2000,
     concurrency: 3,
     translationStyle: 'tech',
+    dictionaryProvider: 'wiktionary',
     recordHistory: false,
   });
   assert.deepEqual(warnings, []);
@@ -61,6 +73,7 @@ test('accepts a complete valid patch', () => {
   assert.equal(values.concurrency, 3);
   assert.equal(values.recordHistory, false);
   assert.equal(values.translationStyle, 'tech');
+  assert.equal(values.dictionaryProvider, 'wiktionary');
 });
 
 test('blank prompts mean "restore default" (undefined patch value)', () => {

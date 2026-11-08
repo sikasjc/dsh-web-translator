@@ -13,6 +13,7 @@ import {
   SETTINGS_VERSION,
   TARGET_LANGUAGES,
   TRANSLATION_STYLES,
+  DICTIONARY_PROVIDERS,
 } from './constants.js';
 import { apiError } from './errors.js';
 import { effectivePrompts, findUnknownPlaceholders } from './prompts.js';
@@ -114,6 +115,11 @@ export function normalizeSettingsPatch(raw) {
         invalidSettings(`translationStyle must be one of: ${TRANSLATION_STYLES.join(', ')}`);
       }
       values.translationStyle = value.trim();
+    } else if (key === 'dictionaryProvider') {
+      if (typeof value !== 'string' || !DICTIONARY_PROVIDERS.includes(value.trim())) {
+        invalidSettings(`dictionaryProvider must be one of: ${DICTIONARY_PROVIDERS.join(', ')}`);
+      }
+      values.dictionaryProvider = value.trim();
     } else if (key === 'systemPrompt') {
       values.systemPrompt = normalizePromptValue(value, key, LIMITS.systemPromptChars, warnings);
     } else if (key === 'userTemplate') {
