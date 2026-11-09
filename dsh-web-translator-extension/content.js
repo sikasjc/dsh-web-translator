@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.3';
+  var EXT_VERSION = '1.17.4';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -887,7 +887,9 @@
             try {
               if (node.nodeType === 3) return NodeFilter.FILTER_ACCEPT;
               var tag = tagOf(node);
-              if (tag && SKIP_TAGS.has(tag)) return NodeFilter.FILTER_REJECT;
+              // 行内 <code> 是正文的一部分（如文件名/命令 token），必须参与翻译；
+              // 整块代码仍在 <pre> 里，由上面的 PRE 规则整棵跳过。
+              if (tag && SKIP_TAGS.has(tag) && tag !== 'CODE') return NodeFilter.FILTER_REJECT;
               if (node === state.host || node.id === HOST_ID) return NodeFilter.FILTER_REJECT;
               if (node.hasAttribute && node.hasAttribute(MARK_ATTR)) return NodeFilter.FILTER_REJECT;
               if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return NodeFilter.FILTER_REJECT;
@@ -970,7 +972,7 @@
         }
         if (node.nodeType !== 1) return;
         var tag = tagOf(node);
-        if (!tag || SKIP_TAGS.has(tag)) return;
+        if (!tag || (SKIP_TAGS.has(tag) && tag !== 'CODE')) return;
         if (node === state.host || node.id === HOST_ID || node.id === IMAGE_OVERLAY_ID) return;
         if (node.hasAttribute && node.hasAttribute(MARK_ATTR)) return;
         if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return;
@@ -990,12 +992,35 @@
           parts.push(' ');
           return;
         }
+        if (tag === 'CODE') {
+          var codeText = normalizeText(node.textContent || '');
+          if (codeText.length > 0) {
+            var codeIndex = links.length + 1;
+            var codeToken = { kind: 'code', text: codeText };
+            try {
+              var codeStyle = window.getComputedStyle(node);
+              var codeStyleSnapshot = {};
+              ['font-family', 'font-size', 'font-weight', 'line-height', 'background-color', 'color', 'padding', 'border', 'border-radius'].forEach(function (prop) {
+                var value = codeStyle.getPropertyValue(prop);
+                if (value) codeStyleSnapshot[prop] = value;
+              });
+              codeToken.style = codeStyleSnapshot;
+            } catch (codeStyleErr) {
+              /* ignore */
+            }
+            var codeClass = node.getAttribute ? node.getAttribute('class') : '';
+            if (codeClass) codeToken.className = codeClass;
+            links.push(codeToken);
+            parts.push('[[' + codeIndex + ']]' + codeText + '[[/' + codeIndex + ']]');
+            return;
+          }
+        }
         if (tag === 'A') {
           var href = safeHref(node);
           var linkText = normalizeText(node.textContent || '');
           if (href && linkText.length > 0) {
             var index = links.length + 1;
-            var link = { href: href, text: linkText };
+            var link = { kind: 'a', href: href, text: linkText };
             try {
               var computed = window.getComputedStyle(node);
               if (computed.color) link.color = computed.color;
@@ -1239,7 +1264,7 @@
         return;
       }
 
-      var linkScan = el.querySelector && el.querySelector('a') ? textOfWithLinks(el) : null;
+      var linkScan = el.querySelector && el.querySelector('a, code') ? textOfWithLinks(el) : null;
       var text = linkScan ? linkScan.text : textOf(el);
       var links = linkScan ? linkScan.links : [];
       var minLength = isDiv ? 60 : MIN_TEXT;
@@ -1730,7 +1755,22 @@
       var index = parseInt(match[1], 10) - 1;
       var link = links[index];
       var inner = stripLinkMarkers(match[2]);
-      if (!link || !link.href) {
+      if (link && link.kind === 'code') {
+        var codeNode = document.createElement('code');
+        if (link.className) codeNode.setAttribute('class', link.className);
+        if (link.style) {
+          Object.keys(link.style).forEach(function (prop) {
+            try {
+              codeNode.style.setProperty(prop, link.style[prop]);
+            } catch (styleErr) {
+              /* ignore */
+            }
+          });
+        }
+        // 代码/文件名 token 不随译文翻译，强制用原文。
+        codeNode.textContent = link.text || inner;
+        node.appendChild(codeNode);
+      } else if (!link || !link.href) {
         node.appendChild(document.createTextNode(inner));
       } else {
         var anchor = document.createElement('a');

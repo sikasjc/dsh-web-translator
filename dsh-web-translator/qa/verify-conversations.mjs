@@ -10,7 +10,7 @@
  * bridge contract with `node:assert/strict`:
  *   - static host contract (conversations module, LIMITS.sessionIdChars, usage
  *     sessionId/turn normalization, /conversations route + dispatch, api wiring,
- *     bridge-never-fails policy, version 1.12.1);
+ *     bridge-never-fails policy, version 1.12.2);
  *   - in-process bridge: one translation run (turnId) → one real DSH session
  *     with turn-by-turn user/assistant events + usage, title rename, live list;
  *   - `/usage/turns` + `/usage/events` carry sessionId/turn; lookup sessions;
@@ -468,11 +468,11 @@ async function checkHostStatic() {
     assert.match(apiSource, /listUsageEvents/);
   });
 
-  await check('package.json version === 1.12.1', () => {
-    assert.equal(JSON.parse(readText('package.json')).version, '1.12.1');
+  await check('package.json version === 1.12.2', () => {
+    assert.equal(JSON.parse(readText('package.json')).version, '1.12.2');
   });
-  await check("lib/version.js VERSION === '1.12.1'", () => {
-    assert.match(readText('lib/version.js'), /VERSION\s*=\s*['"]1\.12\.1['"]/);
+  await check("lib/version.js VERSION === '1.12.2'", () => {
+    assert.match(readText('lib/version.js'), /VERSION\s*=\s*['"]1\.12\.2['"]/);
   });
   await check('DESIGN-CONVERSATIONS.md contract file present', () => {
     assert.ok(exists('DESIGN-CONVERSATIONS.md') && readText('DESIGN-CONVERSATIONS.md').length > 3000);

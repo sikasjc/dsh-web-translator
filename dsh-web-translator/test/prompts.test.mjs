@@ -63,6 +63,7 @@ test('link markers add a conditional preservation note to the system prompt', ()
   });
   assert.match(linked.system, /\[\[1\]\]\.\.\.\[\[\/1\]\]/);
   assert.match(linked.system, /preserve each marker pair/);
+  assert.match(linked.system, /code marker/);
   assert.equal(linked.user.includes('[[1]]'), true);
 });
 

@@ -187,7 +187,7 @@ export function renderTranslatePrompts({ systemPrompt, userTemplate, texts, targ
   const baseSystem = renderTemplate(systemPrompt ?? DEFAULT_SYSTEM_PROMPT, values);
   const hasLinkMarkers = segments.some((text) => typeof text === 'string' && /\[\[\s*\d+\s*\]\]/.test(text));
   const linkNote = hasLinkMarkers
-    ? 'Inline link markers look like [[1]]...[[/1]]: preserve each marker pair exactly and translate only the text between them.'
+    ? 'Inline link/code markers look like [[1]]...[[/1]]: preserve each marker pair exactly, translate only the text between them, and keep code marker contents literal (file names, commands, identifiers).'
     : '';
   let system = contextText.length > 0 ? contextText + '\n\n' + baseSystem : baseSystem;
   if (linkNote.length > 0) system += '\n\n' + linkNote;

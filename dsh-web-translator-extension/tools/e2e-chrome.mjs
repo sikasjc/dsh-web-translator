@@ -43,7 +43,7 @@ const TEST_HTML = `<!doctype html>
     <div class="center-block"><p id="center-p">Centered paragraph text for alignment testing with enough words.</p></div>
     <h2 id="center-h2" style="text-align: center">Centered heading alignment test</h2>
     <p id="center-inline" class="center-narrow">Narrow centered paragraph with text.</p>
-    <p id="link-block">This is the first paragraph with plenty of English words to translate and <a href="/docs" id="docs-link">the documentation</a> on the page.</p>
+    <p id="link-block">This is the first paragraph with plenty of English words to translate and <a href="/docs" id="docs-link">the documentation</a>, and the <code>ttsystem</code> token on the page.</p>
     <p><a id="next-link" href="/test.html?follow=clicked">Next page via link</a></p>
     <p><a id="blank-link" href="/test.html?follow=blank" target="_blank">Open new tab page</a></p>
     <p>Broken<br>line words here for translation.</p>
@@ -851,6 +851,23 @@ async function main() {
       inBlock: translation ? Array.from(translation.querySelectorAll('a')).map((anchor) => ({ href: anchor.getAttribute('href') || '', text: (anchor.textContent || '').trim() })) : []
     };
   })()`);
+  const codeProbe = await evalOn(page, `(() => {
+    const block = document.getElementById('link-block');
+    const translation = block && block.nextElementSibling && block.nextElementSibling.getAttribute('data-dsh-it') === 'trans'
+      ? block.nextElementSibling : null;
+    return {
+      sourceCodes: Array.from(block ? block.querySelectorAll('code') : []).map((code) => (code.textContent || '').trim()),
+      translatedCodes: Array.from(translation ? translation.querySelectorAll('code') : []).map((code) => (code.textContent || '').trim()),
+      translatedText: translation ? (translation.textContent || '') : ''
+    };
+  })()`);
+  check(
+    '行内 code token 保留：译文包含 <code>ttsystem</code>',
+    codeProbe.sourceCodes.includes('ttsystem') &&
+      codeProbe.translatedCodes.includes('ttsystem') &&
+      codeProbe.translatedText.indexOf('ttsystem') !== -1,
+    JSON.stringify(codeProbe)
+  );
   check(
     '超链接保留：块级译文按原文链接生成 <a>',
     linkProbe.inBlock.some((anchor) => /\/docs/.test(anchor.href) && anchor.text.length > 0),
