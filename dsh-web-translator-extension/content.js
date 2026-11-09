@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.2';
+  var EXT_VERSION = '1.17.3';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -1767,6 +1767,23 @@
     node.setAttribute('dir', 'auto');
     fillTranslatedContent(node, text, block.links);
     node.style.cssText = layout === 'inline' ? TRANS_STYLE_INLINE : TRANS_STYLE_BLOCK;
+    // 块级译文与下一段原文之间沿用原文段落的下外边距，避免译文贴住下一段；
+    // 内嵌注入（li/td/flex 内部）不复制外层 margin，避免撑坏原容器。
+    if (!block.inner && layout !== 'inline') {
+      try {
+        var sourceSpacing = window.getComputedStyle(block.el);
+        var sourceMarginBottom = sourceSpacing.marginBottom;
+        var numericMargin = parseFloat(sourceMarginBottom);
+        if (!sourceMarginBottom || sourceMarginBottom === 'auto' || !isFinite(numericMargin) || numericMargin <= 0) {
+          sourceMarginBottom = '0.75em';
+        }
+        // 原文和译文是一组；在原文段落外边距之外再留 0.75em，避免译文
+        // 直接贴住下一段原文（长文双语阅读时尤其容易混淆段落边界）。
+        node.style.setProperty('margin-bottom', 'calc(' + sourceMarginBottom + ' + 0.75em)');
+      } catch (spacingErr) {
+        /* ignore */
+      }
+    }
     // 与原文同样的排版：从原文元素（或表格单元格）复制 computed style
     copyTypography(block.el, node);
     if (!block.inner) copyHorizontalAlignment(block.el, node);

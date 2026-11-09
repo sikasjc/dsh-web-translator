@@ -330,7 +330,7 @@ node tools/e2e-chrome.mjs
 
 预期：`node tools/verify.mjs` 输出 `ALL 210 STATIC CHECKS PASSED`；
 `file` 输出 4 个 `PNG image data, 16 x 16 / 32 x 32 / 48 x 48 / 128 x 128, 8-bit/color RGBA`；
-`node tools/e2e-chrome.mjs` 输出 `135/135 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
+`node tools/e2e-chrome.mjs` 输出 `136/136 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
 E2E 覆盖：扩展加载（manifest/CSP/commands 合法性）、content 注入、翻译流水线报文、
 请求元数据（translate/lookup POST body 的 `client` / `sourceUrl` / `sourceTitle`）、
 轨迹身份（translate 的 `turnId`/`stepIndex`/`mode`、同一 run 懒加载批次共用 turnId、lookup 单步 turn）、

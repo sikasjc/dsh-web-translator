@@ -426,7 +426,8 @@ async function main() {
       response.end(
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Flow parents</title></head><body>' +
           '<h1>Grid and flex parent paragraphs</h1>' +
-          '<div id="grid-parent" style="display:grid;grid-template-columns:1fr"><p id="grid-long">' + longGrid + '</p></div>' +
+          '<div id="grid-parent" style="display:grid;grid-template-columns:1fr"><p id="grid-long">' + longGrid + '</p>' +
+            '<p id="after-grid">A following grid item paragraph should stay separated from the translation above.</p></div>' +
           '<div id="flex-parent" style="display:flex"><p id="flex-long">' + longFlex + '</p></div>' +
         '</body></html>'
       );
@@ -2275,11 +2276,22 @@ async function main() {
       for (let k = 0; next && k < 4; k += 1, next = next.nextElementSibling) {
         if (next.getAttribute && next.getAttribute('data-dsh-it') === 'trans') { transNext = true; break; }
       }
+      let transNode = null;
+      let cursor = el.nextElementSibling;
+      for (let k = 0; cursor && k < 4; k += 1, cursor = cursor.nextElementSibling) {
+        if (cursor.getAttribute && cursor.getAttribute('data-dsh-it') === 'trans') { transNode = cursor; break; }
+      }
+      const after = document.getElementById('after-grid');
+      const transRect = transNode ? transNode.getBoundingClientRect() : null;
+      const afterRect = after ? after.getBoundingClientRect() : null;
       return {
         src: el.getAttribute('data-dsh-it'),
         transNext,
         transInside: !!el.querySelector('[data-dsh-it="trans"]'),
-        display: getComputedStyle(el.parentElement).display
+        display: getComputedStyle(el.parentElement).display,
+        transMarginBottom: transNode ? getComputedStyle(transNode).marginBottom : '',
+        srcMarginBottom: getComputedStyle(el).marginBottom,
+        afterGap: transRect && afterRect ? Math.round(afterRect.top - transRect.bottom) : null
       };
     };
     return { grid: probe('grid-long'), flex: probe('flex-long') };
@@ -2287,6 +2299,14 @@ async function main() {
   check(
     '边界布局：grid 父级的长段落仍被翻译（不丢整段）',
     !!flowParentProbe.grid && flowParentProbe.grid.src === 'src' && flowParentProbe.grid.transNext === true,
+    JSON.stringify(flowParentProbe.grid)
+  );
+  check(
+    '边界布局：grid 译文与下一段原文保持段落间距',
+    !!flowParentProbe.grid &&
+      parseFloat(flowParentProbe.grid.transMarginBottom) > parseFloat(flowParentProbe.grid.srcMarginBottom) &&
+      typeof flowParentProbe.grid.afterGap === 'number' &&
+      flowParentProbe.grid.afterGap > parseFloat(flowParentProbe.grid.srcMarginBottom),
     JSON.stringify(flowParentProbe.grid)
   );
   check(
