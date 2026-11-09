@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.0';
+  var EXT_VERSION = '1.17.1';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -942,6 +942,89 @@
     }
   }
 
+  /**
+   * 支持超链接的块级正文抽取：把块内 <a> 的文字替换成 [[n]]...[[/n]] 标记，
+   * 同时返回每个标记对应的 URL/样式。译后按标记把文字还原为 <a>，避免块级
+   * 翻译把原文超链接拍平成一整段纯文本。
+   * @param {Element} el - block element.
+   * @returns {{text: string, links: object[]}}
+   */
+  function textOfWithLinks(el) {
+    var links = [];
+    var parts = [];
+    var safeHref = function (anchor) {
+      try {
+        var href = String(anchor.href || '');
+        if (!/^https?:|^mailto:|^tel:/i.test(href)) return '';
+        return href;
+      } catch (err) {
+        return '';
+      }
+    };
+    var walk = function (node) {
+      try {
+        if (!node) return;
+        if (node.nodeType === 3) {
+          parts.push(node.nodeValue || '');
+          return;
+        }
+        if (node.nodeType !== 1) return;
+        var tag = tagOf(node);
+        if (!tag || SKIP_TAGS.has(tag)) return;
+        if (node === state.host || node.id === HOST_ID || node.id === IMAGE_OVERLAY_ID) return;
+        if (node.hasAttribute && node.hasAttribute(MARK_ATTR)) return;
+        if (node.getAttribute && node.getAttribute('aria-hidden') === 'true') return;
+        try {
+          var closedDetails = node.closest ? node.closest('details') : null;
+          if (closedDetails && !closedDetails.open && !(node.closest && node.closest('summary'))) return;
+          var view = node.ownerDocument && node.ownerDocument.defaultView;
+          if (view) {
+            var style = view.getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden') return;
+          }
+          if (typeof node.checkVisibility === 'function' && !node.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true })) return;
+        } catch (styleErr) {
+          /* 取不到可见性时继续 */
+        }
+        if (tag === 'BR' || tag === 'WBR') {
+          parts.push(' ');
+          return;
+        }
+        if (tag === 'A') {
+          var href = safeHref(node);
+          var linkText = normalizeText(node.textContent || '');
+          if (href && linkText.length > 0) {
+            var index = links.length + 1;
+            var link = { href: href, text: linkText };
+            try {
+              var computed = window.getComputedStyle(node);
+              if (computed.color) link.color = computed.color;
+              if (computed.textDecorationLine) link.textDecoration = computed.textDecorationLine;
+            } catch (styleReadErr) {
+              /* ignore */
+            }
+            var target = node.getAttribute ? node.getAttribute('target') : '';
+            if (target) link.target = target;
+            var rel = node.getAttribute ? node.getAttribute('rel') : '';
+            if (rel) link.rel = rel;
+            var title = node.getAttribute ? node.getAttribute('title') : '';
+            if (title) link.title = title;
+            links.push(link);
+            parts.push('[[' + index + ']]' + linkText + '[[/' + index + ']]');
+            return;
+          }
+        }
+        if (BLOCK_BOUNDARY_TAGS.has(tag)) parts.push(' ');
+        var children = node.childNodes || [];
+        for (var ci = 0; ci < children.length; ci += 1) walk(children[ci]);
+      } catch (err) {
+        /* 单个节点异常不影响整体抽取 */
+      }
+    };
+    walk(el);
+    return { text: normalizeText(parts.join('')), links: links };
+  }
+
   function isVisible(el) {
     try {
       if (!el || !el.isConnected) return false;
@@ -1156,7 +1239,9 @@
         return;
       }
 
-      var text = textOf(el);
+      var linkScan = el.querySelector && el.querySelector('a') ? textOfWithLinks(el) : null;
+      var text = linkScan ? linkScan.text : textOf(el);
+      var links = linkScan ? linkScan.links : [];
       var minLength = isDiv ? 60 : MIN_TEXT;
       if (isDiv && longestTextRun(el) < 40) {
         registerPlaceholder();
@@ -1223,6 +1308,7 @@
         kind: 'block',
         inner: innerTag,
         drop: false,
+        links: links,
         index: found.length,
         transNode: null,
         placeholder: null
@@ -1610,6 +1696,57 @@
     }
   }
 
+  /** 去掉模型输出里残留的链接标记（标记未成对时使用）。 */
+  function stripLinkMarkers(text) {
+    return String(text || '').replace(/\[\[\s*\/?\s*\d+\s*\]\]/g, '');
+  }
+
+  /**
+   * 把带 [[n]]...[[/n]] 标记的译文还原为文本 + <a> 节点。
+   * 标记缺失/不完整时退化为纯文本（不显示标记本身）。
+   * @param {Element} node - translated node.
+   * @param {string} text - translated text.
+   * @param {object[]} links - source link descriptors (1-based marker index).
+   */
+  function fillTranslatedContent(node, text, links) {
+    var value = String(text || '');
+    node.textContent = '';
+    if (!Array.isArray(links) || links.length === 0) {
+      node.textContent = value;
+      return;
+    }
+    var pattern = /\[\[\s*(\d+)\s*\]\]([\s\S]*?)\[\[\s*\/\s*\1\s*\]\]/g;
+    var cursor = 0;
+    var matched = false;
+    var match;
+    while ((match = pattern.exec(value)) !== null) {
+      matched = true;
+      if (match.index > cursor) node.appendChild(document.createTextNode(stripLinkMarkers(value.slice(cursor, match.index))));
+      var index = parseInt(match[1], 10) - 1;
+      var link = links[index];
+      var inner = stripLinkMarkers(match[2]);
+      if (!link || !link.href) {
+        node.appendChild(document.createTextNode(inner));
+      } else {
+        var anchor = document.createElement('a');
+        anchor.setAttribute('href', link.href);
+        if (link.target) anchor.setAttribute('target', link.target);
+        if (link.title) anchor.setAttribute('title', link.title);
+        anchor.setAttribute('rel', link.target === '_blank' ? 'noopener noreferrer' : (link.rel || 'noopener'));
+        if (link.color) anchor.style.setProperty('color', link.color);
+        if (link.textDecoration) anchor.style.setProperty('text-decoration', link.textDecoration);
+        anchor.textContent = inner || link.text || '';
+        node.appendChild(anchor);
+      }
+      cursor = match.index + match[0].length;
+    }
+    if (!matched) {
+      node.textContent = stripLinkMarkers(value);
+      return;
+    }
+    if (cursor < value.length) node.appendChild(document.createTextNode(stripLinkMarkers(value.slice(cursor))));
+  }
+
   function createTransNode(block, text, layout) {
     var tag = block.inner ? 'div' : block.tag;
     var node;
@@ -1623,7 +1760,7 @@
     node.setAttribute(LAYOUT_ATTR, layout === 'inline' ? 'inline' : 'below');
     node.setAttribute('lang', state.effectiveTarget || '');
     node.setAttribute('dir', 'auto');
-    node.textContent = text;
+    fillTranslatedContent(node, text, block.links);
     node.style.cssText = layout === 'inline' ? TRANS_STYLE_INLINE : TRANS_STYLE_BLOCK;
     // 与原文同样的排版：从原文元素（或表格单元格）复制 computed style
     copyTypography(block.el, node);

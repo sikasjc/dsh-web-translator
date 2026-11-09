@@ -54,6 +54,18 @@ test('default translate prompts render target language, count and JSON segments'
   assert.ok(rendered.user.includes('["hello","world"]'));
 });
 
+test('link markers add a conditional preservation note to the system prompt', () => {
+  const plain = renderTranslatePrompts({ texts: ['hello'], targetLanguage: 'zh-CN' });
+  assert.equal(plain.system.includes('[[1]]'), false);
+  const linked = renderTranslatePrompts({
+    texts: ['Read [[1]]the documentation[[/1]] for details.'],
+    targetLanguage: 'zh-CN',
+  });
+  assert.match(linked.system, /\[\[1\]\]\.\.\.\[\[\/1\]\]/);
+  assert.match(linked.system, /preserve each marker pair/);
+  assert.equal(linked.user.includes('[[1]]'), true);
+});
+
 test('custom prompts are rendered with the same variables', () => {
   const rendered = renderTranslatePrompts({
     systemPrompt: 'Translate to {{targetLanguage}}; {{segmentCount}} segs; {{segments}}',

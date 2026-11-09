@@ -43,7 +43,7 @@ const TEST_HTML = `<!doctype html>
     <div class="center-block"><p id="center-p">Centered paragraph text for alignment testing with enough words.</p></div>
     <h2 id="center-h2" style="text-align: center">Centered heading alignment test</h2>
     <p id="center-inline" class="center-narrow">Narrow centered paragraph with text.</p>
-    <p>This is the first paragraph with plenty of English words to translate on the page.</p>
+    <p id="link-block">This is the first paragraph with plenty of English words to translate and <a href="/docs" id="docs-link">the documentation</a> on the page.</p>
     <p><a id="next-link" href="/test.html?follow=clicked">Next page via link</a></p>
     <p><a id="blank-link" href="/test.html?follow=blank" target="_blank">Open new tab page</a></p>
     <p>Broken<br>line words here for translation.</p>
@@ -827,6 +827,21 @@ async function main() {
   check('翻译：注入译文节点', translated.count >= 2, 'count=' + translated.count + ' tags=' + translated.tags.join('/'));
   check('翻译：原文块标记 src', translated.srcCount === translated.count, 'src=' + translated.srcCount);
   check('翻译：译文为 mock 纯文本', translated.texts.every((text) => text.indexOf('【译文】') === 0), translated.texts[0]);
+  const linkProbe = await evalOn(page, `(() => {
+    const anchors = Array.from(document.querySelectorAll('[data-dsh-it="trans"] a'));
+    const linkBlock = document.getElementById('link-block');
+    const translation = linkBlock && linkBlock.nextElementSibling && linkBlock.nextElementSibling.getAttribute('data-dsh-it') === 'trans'
+      ? linkBlock.nextElementSibling : null;
+    return {
+      anchors: anchors.map((anchor) => ({ href: anchor.getAttribute('href') || '', text: (anchor.textContent || '').trim() })),
+      inBlock: translation ? Array.from(translation.querySelectorAll('a')).map((anchor) => ({ href: anchor.getAttribute('href') || '', text: (anchor.textContent || '').trim() })) : []
+    };
+  })()`);
+  check(
+    '超链接保留：块级译文按原文链接生成 <a>',
+    linkProbe.inBlock.some((anchor) => /\/docs/.test(anchor.href) && anchor.text.length > 0),
+    JSON.stringify(linkProbe)
+  );
   const allUnitTexts = await evalOn(page, `Array.prototype.slice.call(document.querySelectorAll('[data-dsh-it="trans"],[data-dsh-it="trans-inline"]')).map((node) => node.textContent)`);
   check(
     '翻译：跳过 code/pre/可编辑区/纯数字（按钮文案现在会翻译）',
