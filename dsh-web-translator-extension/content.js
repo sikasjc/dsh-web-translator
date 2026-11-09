@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.4';
+  var EXT_VERSION = '1.17.5';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -4920,6 +4920,7 @@
     if (state.running || state.lazyActive) stopTranslate();
     endTurn();
     closeCard();
+    removeImageTranslation();
     resetPageTokenStats();
     setStatus(t('statusNavigate'), 'warn');
     refreshUi();
@@ -5087,6 +5088,11 @@
   }
 
   function onDocumentMouseDown(event) {
+    if (imageOverlay) {
+      if (isFromOurUi(event)) return;
+      removeImageTranslation();
+      return;
+    }
     if (!state.cardState) return;
     if (isFromOurUi(event)) return;
     closeCard();
@@ -5410,6 +5416,46 @@
     return parts.join('\n\n');
   }
 
+  /**
+   * 把图片译文缩到 bbox 内：先用原文/译文长度和 bbox 面积估算一个接近原图的字号，
+   * 再从该字号往下缩，直到 scrollHeight/scrollWidth 不再溢出。
+   * @param {HTMLElement} element - .dsh-img-block.
+   */
+  function fitImageBlock(element) {
+    if (!element) return;
+    try {
+      var current = parseFloat(element.style.fontSize);
+      if (!isFinite(current) || current <= 0) current = 12;
+      var minSize = 8;
+      var guard = 0;
+      while (current > minSize && guard < 80) {
+        if (element.scrollHeight <= element.clientHeight + 1 && element.scrollWidth <= element.clientWidth + 1) break;
+        current = Math.max(minSize, Math.round((current - 0.5) * 10) / 10);
+        element.style.fontSize = current + 'px';
+        guard += 1;
+      }
+      // 极窄/极高的 bbox 仍放不下时，压一点行高做最后兜底。
+      if (element.scrollHeight > element.clientHeight + 2 || element.scrollWidth > element.clientWidth + 2) {
+        element.style.lineHeight = '1.05';
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  function fitImageBlocks(elements) {
+    for (var i = 0; i < elements.length; i += 1) fitImageBlock(elements[i]);
+  }
+
+  function guardImageOverlayHost(host) {
+    // 必须用冒泡阶段：capture 阶段 stopPropagation 会拦截 shadow DOM 内
+    // 工具栏按钮自己的 click，导致「双语/复制/关闭」全部失效。
+    var stop = function (event) { event.stopPropagation(); };
+    ['mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu'].forEach(function (type) {
+      host.addEventListener(type, stop);
+    });
+  }
+
   function renderImageCard(result, pageRect) {
     var blocks = Array.isArray(result.blocks) ? result.blocks : [];
     var host = document.createElement('div');
@@ -5473,11 +5519,7 @@
     actions.appendChild(copy);
     card.appendChild(actions);
     shadow.appendChild(card);
-    host.addEventListener('mousedown', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('mouseup', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('click', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('dblclick', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('contextmenu', function (event) { event.stopPropagation(); }, true);
+    guardImageOverlayHost(host);
     document.body.appendChild(host);
     imageOverlay = { host: host, shadow: shadow, kind: 'card' };
   }
@@ -5525,6 +5567,7 @@
     layer.style.width = '100%';
     layer.style.height = '100%';
     shadow.appendChild(layer);
+    var fitElements = [];
 
     for (var j = 0; j < withBoxes.length; j += 1) {
       var item = withBoxes[j];
@@ -5541,7 +5584,13 @@
       element.style.height = Math.max(1, (box[3] - box[1]) * 100) + '%';
       element.style.background = background;
       element.style.color = imageTextColor(background);
-      element.style.fontSize = Math.max(9, Math.min(26, Math.round(boxHeight * 0.42))) + 'px';
+      var sizingText = String(block.text || block.translation || '');
+      var estimatedFont = Math.sqrt((boxWidth * boxHeight) / Math.max(1, sizingText.length)) * 1.05;
+      // 正文类长块封顶 16px（常见网页正文字号），短标签/标题允许到 20px；
+      // 再交给 fitImageBlock() 依据真实渲染结果继续缩小，避免整块溢出错位。
+      var fontCap = sizingText.length > 24 ? 16 : 20;
+      element.style.fontSize = Math.max(8, Math.min(fontCap, Math.round(estimatedFont))) + 'px';
+      fitElements.push(element);
       if (block.text) {
         var orig = document.createElement('span');
         orig.className = 'dsh-img-orig';
@@ -5568,6 +5617,7 @@
       if (next) layer.classList.add('dsh-img-bilingual');
       else layer.classList.remove('dsh-img-bilingual');
       bilingual.textContent = next ? t('imageOnly') : t('imageBilingual');
+      if (imageOverlay && imageOverlay.fitAll) imageOverlay.fitAll();
     });
     var copy = document.createElement('button');
     copy.type = 'button';
@@ -5599,13 +5649,12 @@
       layer.appendChild(hint);
     }
 
-    host.addEventListener('mousedown', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('mouseup', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('click', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('dblclick', function (event) { event.stopPropagation(); }, true);
-    host.addEventListener('contextmenu', function (event) { event.stopPropagation(); }, true);
+    guardImageOverlayHost(host);
     document.body.appendChild(host);
-    imageOverlay = { host: host, shadow: shadow, kind: 'overlay' };
+    var fitAll = function () { fitImageBlocks(fitElements); };
+    imageOverlay = { host: host, shadow: shadow, kind: 'overlay', fitAll: fitAll };
+    requestAnimationFrame(fitAll);
+    setTimeout(fitAll, 80);
     showToast(t('imageDone'), 2200);
   }
 
