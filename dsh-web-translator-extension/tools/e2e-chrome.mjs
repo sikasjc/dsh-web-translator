@@ -419,6 +419,19 @@ async function main() {
       );
       return;
     }
+    if (request.url && request.url.startsWith('/flow-parents.html')) {
+      const longGrid = 'A grid parent paragraph must still be translated even though inserting a new sibling would become another grid item. This paragraph is intentionally longer than the inline translation limit so the old scanner skipped it completely and the page showed untranslated English here.';
+      const longFlex = 'A flex parent paragraph must also be translated: a new sibling would become a horizontal flex item, so the translation has to be inserted inside the paragraph itself rather than changing the flex row layout of the page.';
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Flow parents</title></head><body>' +
+          '<h1>Grid and flex parent paragraphs</h1>' +
+          '<div id="grid-parent" style="display:grid;grid-template-columns:1fr"><p id="grid-long">' + longGrid + '</p></div>' +
+          '<div id="flex-parent" style="display:flex"><p id="flex-long">' + longFlex + '</p></div>' +
+        '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/long.html')) {
       const longText = 'A long paragraph sentence with enough English words for the block translation path. '.repeat(12).trim();
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -2241,6 +2254,49 @@ async function main() {
     JSON.stringify(autoSiteResetProbe)
   );
   await evalOn(sw, `chrome.storage.local.set({ autoTranslateSites: [], followTranslation: true, autoTranslate: false })`);
+
+  /* 7.9) 网格/弹性父级中的长段落：旧扫描会整段跳过 */
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: false, autoTranslate: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/flow-parents.html' });
+  await wait(1800);
+  await evalOn(sw, `chrome.tabs.sendMessage(${tab.id}, { type: 'dsh-it:toggle' })`);
+  await wait(2500);
+  await evalOn(page, `document.getElementById('grid-long').scrollIntoView({ block: 'center' })`);
+  await wait(800);
+  await evalOn(page, `document.getElementById('flex-long').scrollIntoView({ block: 'center' })`);
+  await wait(1200);
+  const flowParentProbe = await evalOn(page, `(() => {
+    const probe = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      let next = el.nextElementSibling;
+      let transNext = false;
+      for (let k = 0; next && k < 4; k += 1, next = next.nextElementSibling) {
+        if (next.getAttribute && next.getAttribute('data-dsh-it') === 'trans') { transNext = true; break; }
+      }
+      return {
+        src: el.getAttribute('data-dsh-it'),
+        transNext,
+        transInside: !!el.querySelector('[data-dsh-it="trans"]'),
+        display: getComputedStyle(el.parentElement).display
+      };
+    };
+    return { grid: probe('grid-long'), flex: probe('flex-long') };
+  })()`);
+  check(
+    '边界布局：grid 父级的长段落仍被翻译（不丢整段）',
+    !!flowParentProbe.grid && flowParentProbe.grid.src === 'src' && flowParentProbe.grid.transNext === true,
+    JSON.stringify(flowParentProbe.grid)
+  );
+  check(
+    '边界布局：flex 父级的长段落翻译注入到段落内部',
+    !!flowParentProbe.flex && flowParentProbe.flex.src === 'src' &&
+      (flowParentProbe.flex.transInside === true || flowParentProbe.flex.transNext === true),
+    JSON.stringify(flowParentProbe.flex)
+  );
+  await evalOn(page, `window.scrollTo(0, 0)`); await wait(400);
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 
   /* 8) options 页 */
   try {

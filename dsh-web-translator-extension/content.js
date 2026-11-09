@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.1';
+  var EXT_VERSION = '1.17.2';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -1282,8 +1282,12 @@
         registerPlaceholder();
         return;
       }
-      // 父级是 flex/grid：兄弟节点会变成新的 flex 项；仅允许内嵌注入的标签类继续
+      // 父级是 grid：译文作为新的 grid item 插入（相当于普通流里的「下一行」），
+      // 并复制原文的 grid-column，避免落到错误的列。
+      // 父级是 flex：新兄弟会变成横向 flex item，改为把译文 append 到原文内部。
       var parentEl = el.parentElement;
+      var gridParent = false;
+      var flexInner = false;
       if (parentEl) {
         var parentDisplay = '';
         try {
@@ -1291,11 +1295,10 @@
         } catch (err) {
           parentDisplay = '';
         }
-        if (parentDisplay.indexOf('flex') !== -1 || parentDisplay.indexOf('grid') !== -1) {
-          if (!INNER_TAGS.has(tag)) {
-            registerPlaceholder();
-            return;
-          }
+        if (parentDisplay.indexOf('grid') !== -1 && !INNER_TAGS.has(tag) && tag !== 'LI') {
+          gridParent = true;
+        } else if (parentDisplay.indexOf('flex') !== -1 && !INNER_TAGS.has(tag) && tag !== 'LI') {
+          flexInner = true;
         }
       }
 
@@ -1306,7 +1309,9 @@
         tag: tag,
         type: 'block',
         kind: 'block',
-        inner: innerTag,
+        inner: innerTag || flexInner,
+        gridParent: gridParent,
+        flexInner: flexInner,
         drop: false,
         links: links,
         index: found.length,
@@ -1765,6 +1770,14 @@
     // 与原文同样的排版：从原文元素（或表格单元格）复制 computed style
     copyTypography(block.el, node);
     if (!block.inner) copyHorizontalAlignment(block.el, node);
+    if (block.gridParent) {
+      try {
+        var sourceGridColumn = window.getComputedStyle(block.el).gridColumn;
+        if (sourceGridColumn && sourceGridColumn !== 'auto') node.style.setProperty('grid-column', sourceGridColumn);
+      } catch (gridStyleErr) {
+        /* ignore */
+      }
+    }
     // 块级元素的背景/圆角也跟随原文（如彩色标题条、提示卡片）
     try {
       var blockStyle = window.getComputedStyle(block.el);
@@ -1867,6 +1880,13 @@
       }
       var layout = resolveTransLayout(block, text);
       var node = createTransNode(block, text, layout);
+      if (block.flexInner) {
+        try {
+          block.el.setAttribute('data-dsh-it-flex-inner', 'true');
+        } catch (flexAttrErr) {
+          /* ignore */
+        }
+      }
       if (!insertBlockNode(block, node)) return false;
       markSourceLayout(block.el, layout);
       block.transNode = node;
@@ -2256,6 +2276,12 @@
     } catch (err) {
       /* ignore */
     }
+    try {
+      var flexInners = document.querySelectorAll('[data-dsh-it-flex-inner]');
+      for (var fi = 0; fi < flexInners.length; fi++) flexInners[fi].removeAttribute('data-dsh-it-flex-inner');
+    } catch (flexCleanupErr) {
+      /* ignore */
+    }
 
     for (var j = 0; j < state.units.length; j++) {
       state.units[j].transNode = null;
@@ -2282,7 +2308,9 @@
 
   var PAGE_CSS = [
     'html[' + MODE_ATTR + '="source"] [data-dsh-it="trans"]{display:none!important;}',
-    'html[' + MODE_ATTR + '="only"] [data-dsh-it="src"]:not(td):not(th):not(caption):not(summary):not(li){display:none!important;}',
+    'html[' + MODE_ATTR + '="only"] [data-dsh-it="src"]:not(td):not(th):not(caption):not(summary):not(li):not([data-dsh-it-flex-inner="true"]){display:none!important;}',
+    'html[' + MODE_ATTR + '="only"] [data-dsh-it="src"][data-dsh-it-flex-inner="true"]{visibility:hidden!important;}',
+    'html[' + MODE_ATTR + '="only"] [data-dsh-it="src"][data-dsh-it-flex-inner="true"] [data-dsh-it="trans"]{visibility:visible!important;display:block!important;}',
     'html[' + MODE_ATTR + '="only"] td[data-dsh-it="src"],html[' + MODE_ATTR + '="only"] th[data-dsh-it="src"],' +
       'html[' + MODE_ATTR + '="only"] caption[data-dsh-it="src"],html[' + MODE_ATTR + '="only"] summary[data-dsh-it="src"],' +
       'html[' + MODE_ATTR + '="only"] li[data-dsh-it="src"]{visibility:hidden!important;}',

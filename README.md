@@ -9,10 +9,11 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.12.1** · **browser extension 1.17.1**. Recent changes:
-> block translations now keep the source's inline hyperlinks (translated link text keeps its original
-> target); right-click **image text translation** with in-place overlays and image deletion after each
-> request (plugin 1.12.1 / extension 1.17.1); selectable third-party dictionary for English word lookups —
+> Current versions: **DSH plugin 1.12.1** · **browser extension 1.17.2**. Recent changes:
+> grid/flex parent long paragraphs are translated instead of being skipped (extension 1.17.2); block
+> translations now keep the source's inline hyperlinks (translated link text keeps its original target);
+> right-click **image text translation** with in-place overlays and image deletion after each request
+> (plugin 1.12.1 / extension 1.17.1); selectable third-party dictionary for English word lookups —
 > dictionaryapi.dev / English Wiktionary / off (plugin 1.11.0); translation styles with page context and
 > terminology protection (plugin 1.10.0);
 > per-site auto translation (extension 1.16.0), optional iframe translation (extension 1.15.0); extension
@@ -327,8 +328,8 @@ node --test test/
 
 # Browser extension (static checks + headless Chrome E2E, no real model calls)
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 208 static checks
-node tools/e2e-chrome.mjs    # 133/133 headless E2E checks (mock DSH)
+node tools/verify.mjs        # 210 static checks
+node tools/e2e-chrome.mjs    # 135/135 headless E2E checks (mock DSH)
 ```
 
 - Design contracts: [`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md) / [`DESIGN-IMAGE.md`](dsh-web-translator/DESIGN-IMAGE.md)
