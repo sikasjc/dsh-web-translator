@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.8';
+  var EXT_VERSION = '1.17.9';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -2123,7 +2123,22 @@
       trans.textContent = text;
       // 复制 label/链接/按钮本身的排版与颜色 → 译文与原文同样式（背景随元素自然继承）
       copyComputedStyle(host, trans, INLINE_STYLE_PROPS);
-      trans.style.setProperty('margin-left', '0.35em');
+      var hostTag = tagOf(host);
+      var longHeading = /^H[1-3]$/.test(hostTag) && (unit.text.length > 60 || text.length > 90);
+      if (longHeading) {
+        // 长标题/文章 H1 若把全尺寸译文并排塞进标题，会把首屏撑成一屏重复文字。
+        // 改为标题内的小号块级译注：原文一行、译文另起一行且字号更小。
+        trans.setAttribute('data-dsh-it-heading', '');
+        trans.style.setProperty('display', 'block');
+        trans.style.setProperty('margin-left', '0');
+        trans.style.setProperty('margin-top', '0.18em');
+        trans.style.setProperty('font-size', '0.58em');
+        trans.style.setProperty('line-height', '1.3');
+        trans.style.setProperty('font-weight', '500');
+        trans.style.setProperty('max-width', '100%');
+      } else {
+        trans.style.setProperty('margin-left', '0.35em');
+      }
       trans.style.setProperty('white-space', 'pre-wrap');
       trans.style.setProperty('word-break', 'break-word');
       trans.style.setProperty('overflow-wrap', 'anywhere');

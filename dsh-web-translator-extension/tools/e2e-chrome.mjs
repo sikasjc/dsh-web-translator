@@ -419,6 +419,16 @@ async function main() {
       );
       return;
     }
+    if (request.url && request.url.startsWith('/long-heading.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Long heading</title></head><body>' +
+          '<h1 id="long-heading">If the Windows Update hot patcher checks that the function has not already been patched, does that mean you cannot install two hot-patches?</h1>' +
+          '<p>The body paragraph should still be translated normally after the long heading.</p>' +
+        '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/flow-parents.html')) {
       const longGrid = 'A grid parent paragraph must still be translated even though inserting a new sibling would become another grid item. This paragraph is intentionally longer than the inline translation limit so the old scanner skipped it completely and the page showed untranslated English here.';
       const longFlex = 'A flex parent paragraph must also be translated: a new sibling would become a horizontal flex item, so the translation has to be inserted inside the paragraph itself rather than changing the flex row layout of the page.';
@@ -2333,6 +2343,35 @@ async function main() {
     JSON.stringify(flowParentProbe.flex)
   );
   await evalOn(page, `window.scrollTo(0, 0)`); await wait(400);
+
+  /* 7.10) 长标题：译注缩小为块级小字，避免首屏被全尺寸重复标题撑爆 */
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: false, autoTranslate: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/long-heading.html' });
+  await wait(1600);
+  await fireToggle();
+  await wait(2600);
+  const headingProbe = await evalOn(page, `(() => {
+    const h1 = document.getElementById('long-heading');
+    const trans = h1 ? h1.querySelector('[data-dsh-it="trans-inline"]') : null;
+    if (!h1 || !trans) return { found: false };
+    const h1Style = getComputedStyle(h1);
+    const transStyle = getComputedStyle(trans);
+    return {
+      found: true,
+      headingAttr: trans.hasAttribute('data-dsh-it-heading'),
+      display: transStyle.display,
+      transFont: parseFloat(transStyle.fontSize),
+      h1Font: parseFloat(h1Style.fontSize),
+      text: (trans.textContent || '').slice(0, 80)
+    };
+  })()`);
+  check(
+    '长标题：译注改为块级小字，避免全尺寸重复撑爆首屏',
+    headingProbe.found === true && headingProbe.headingAttr === true &&
+      headingProbe.display === 'block' && headingProbe.transFont < headingProbe.h1Font,
+    JSON.stringify(headingProbe)
+  );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 
   /* 8) options 页 */

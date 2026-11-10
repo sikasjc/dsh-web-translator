@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.17.8', manifest.version === '1.17.8', manifest.version);
+  check('manifest: version 1.17.9', manifest.version === '1.17.9', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.17.8', "EXT_VERSION = '1.17.8'"],
+  ['EXT 版本 1.17.9', "EXT_VERSION = '1.17.9'"],
   ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
   ['图片翻译入口', 'function startImageTranslation('],
   ['图片翻译覆盖层', 'function renderImageTranslation('],
@@ -161,6 +161,7 @@ const CONTENT_TOKENS = [
   ['图片翻译长驻进度提示', '大图可能需要 20–30 秒'],
   ['图片快速模式选项', 'imageFastMode'],
   ['图片 OCR 源语言透传', 'sourceLanguage: detectPageLanguage()'],
+  ['长标题块级译注', "data-dsh-it-heading"],
   ['译后超链接还原', 'function fillTranslatedContent('],
   ['超链接标记协议', "[[/' + index + ']]"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],
