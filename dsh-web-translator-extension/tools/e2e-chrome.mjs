@@ -2362,6 +2362,8 @@ async function main() {
       hideSameLang: (document.getElementById('hideBallSameLanguage') || {}).checked,
       hasAutoSiteInput: !!document.getElementById('autoSiteInput'),
       translateIframes: (document.getElementById('translateIframes') || {}).checked,
+      imageFastMode: (document.getElementById('imageFastMode') || {}).checked,
+      hasImageFastHint: !!document.getElementById('imageFastMode'),
       labels: document.querySelectorAll('[data-i18n]').length
     }))()`);
     check('options.html 加载：标题正确', String(optionsProbe.title).indexOf('dsh翻译') !== -1, optionsProbe.title);
@@ -2383,6 +2385,11 @@ async function main() {
     check('options.js 运行：显示悬浮球默认开启', optionsProbe.showBall === true, String(optionsProbe.showBall));
     check('options.js 运行：语言一致隐藏悬浮球默认开启', optionsProbe.hideSameLang === true, String(optionsProbe.hideSameLang));
     check('options.js 运行：iframe 翻译默认关闭', optionsProbe.translateIframes === false, String(optionsProbe.translateIframes));
+    check(
+      'options.js 运行：图片翻译快速模式默认关闭',
+      optionsProbe.hasImageFastHint === true && optionsProbe.imageFastMode === false,
+      JSON.stringify({ hasImageFastHint: optionsProbe.hasImageFastHint, imageFastMode: optionsProbe.imageFastMode })
+    );
     check('options.html 运行：自动翻译站点输入存在', optionsProbe.hasAutoSiteInput === true, String(optionsProbe.hasAutoSiteInput));
     optionsPage.close();
   } catch (err) {

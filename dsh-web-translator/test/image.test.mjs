@@ -55,6 +55,14 @@ test('buildImagePrompt describes the strict JSON block/bbox contract', () => {
   assert.match(prompt.user, /example\.com/);
 });
 
+test('buildImagePrompt compact mode omits the original-text schema', () => {
+  const prompt = buildImagePrompt({ targetLanguage: 'zh-CN', compact: true });
+  assert.match(prompt.system, /Do NOT include the original OCR text/);
+  assert.match(prompt.system, /Do not merge separate UI elements/);
+  assert.match(prompt.system, /"translation"/);
+  assert.doesNotMatch(prompt.system, /"text":"original text as shown"/);
+});
+
 test('parseImageTranslation keeps blocks, clamps bboxes, caps fields and drops junk', () => {
   const answer = JSON.stringify({
     blocks: [
@@ -92,6 +100,9 @@ test('imageCacheKey separates image/model/language/style and prompt version', ()
   for (const key of ['hash', 'provider', 'model', 'targetLanguage', 'translationStyle']) {
     assert.notEqual(imageCacheKey(base), imageCacheKey({ ...base, [key]: 'other' }));
   }
+  // Compact (translation-only) results have no OCR text and must never be
+  // served to a bilingual request.
+  assert.notEqual(imageCacheKey(base), imageCacheKey({ ...base, compact: true }));
 });
 
 test('cleanupImageAttachment removes the new object and new request variants only', async (t) => {

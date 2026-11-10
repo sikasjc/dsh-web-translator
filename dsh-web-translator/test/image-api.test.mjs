@@ -118,6 +118,27 @@ test('imageTranslate sends an image block to the vision model and records usage/
   assert.equal(events.events[0].provider, 'modelhub');
 });
 
+test('imageTranslate compact mode uses translation-only prompt and a separate cache entry', async (t) => {
+  const compactBlocks = [{ translation: '你好', bbox: [0.1, 0.1, 0.4, 0.2] }];
+  const fullBlocks = [{ text: 'Hello', translation: '你好', bbox: [0.1, 0.1, 0.4, 0.2] }];
+  const streams = [
+    () => textStream(JSON.stringify({ blocks: compactBlocks })),
+    () => textStream(JSON.stringify({ blocks: fullBlocks })),
+  ];
+  const { api, llm } = await setupImageApi(t, { streams });
+  const compact = await api.imageTranslate(imageBody({ compact: true }));
+  assert.equal(compact.result.blocks[0].text, '');
+  assert.equal(compact.result.blocks[0].translation, '你好');
+  assert.match(llm.state.streamCalls[0].system, /Do NOT include the original OCR text/);
+  assert.doesNotMatch(llm.state.streamCalls[0].system, /"text":"original text as shown"/);
+
+  // Same image, different output mode: must not hit the compact cache entry.
+  const full = await api.imageTranslate(imageBody());
+  assert.equal(full.result.cached, false);
+  assert.equal(full.result.blocks[0].text, 'Hello');
+  assert.equal(llm.state.streamCalls.length, 2);
+});
+
 test('imageTranslate deletes the new attachment object and request cache files', async (t) => {
   const objectDir = await createTempDir();
   t.after(() => removeTempDir(objectDir));

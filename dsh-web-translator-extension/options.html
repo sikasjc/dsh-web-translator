@@ -244,6 +244,11 @@
         <input id="translateIframes" type="checkbox">
         <span data-i18n="fieldTranslateIframes">翻译 iframe 内内容（默认关闭；Cookie 弹窗、嵌入评论等）</span>
       </label>
+      <label class="check">
+        <input id="imageFastMode" type="checkbox">
+        <span data-i18n="fieldImageFast">图片翻译快速模式（只返回译文、不保留原文；默认关闭）</span>
+      </label>
+      <p class="hint" data-i18n="hintImageFast">开启后视觉模型不再输出 OCR 原文，图片覆盖层只显示译文，响应通常更快；该模式下没有「双语」切换。</p>
       <label class="field">
         <span data-i18n="fieldUiLang">界面语言</span>
         <select id="uiLang">

@@ -31,6 +31,7 @@
 - 每个 block：`left/top/width/height` 由归一化 bbox × 截图裁剪区域换算；背景色取裁剪图 bbox 边缘像素平均色，文字颜色按亮度自动黑/白；
 - 覆盖层默认**仅译文**；工具栏可切「双语」（每块上方显示原文小字）、复制译文、关闭；
 - **字号自适应（V1.17.5）**：初始字号按 bbox 面积/原文字符数估算并限制在 8–20px，再用 `scrollHeight/scrollWidth` 逐级缩到 bbox 内；双语切换后重新适配，极窄 bbox 压行高兜底，避免译文溢出；
+- **图片快速模式（V1.17.7，扩展选项默认关闭）**：`imageFastMode` 发送 `compact:true`，Host prompt 只要求 `{"blocks":[{"translation","bbox"}]}`，不再输出 OCR 原文，实测 dense figure 约 20s vs 25s（具体取决于模型与图片内容）；缓存 key 增加 compact 段，快速结果不会喂给双语请求；覆盖层检测不到原文时隐藏「双语」按钮。
 - **进度提示（V1.17.6）**：「正在翻译图片」toast 保持最长 120s，重试点击不会把它缩成 1.8s；成功/失败后再显示 2.2s/8s 结果提示，避免大图 20–30 秒请求期间用户误以为任务结束。
 - **关闭行为（V1.17.5）**：工具栏的 mousedown/mouseup/click/dblclick/contextmenu 守卫改到冒泡阶段，避免 capture 阶段 `stopPropagation` 拦截 Shadow DOM 内按钮自己的 click（之前会导致「双语/复制/关闭」全部点不动）；点击覆盖层外部、按 Esc、页面 URL 变化也会移除覆盖层；
 - 模型没给 bbox / JSON 解析失败 → 图片旁回退卡片（原文 + 译文列表）；

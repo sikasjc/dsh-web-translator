@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.6';
+  var EXT_VERSION = '1.17.7';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -107,6 +107,7 @@
     followTranslation: true,
     hideBallSameLanguage: true,
     translateIframes: false,
+    imageFastMode: false,
     showFloatingBall: true,
     ballPosition: { right: 16, bottom: 16 },
     uiLang: 'zh'
@@ -125,6 +126,7 @@
     'followTranslation',
     'hideBallSameLanguage',
     'translateIframes',
+    'imageFastMode',
     'showFloatingBall',
     'ballPosition',
     'uiLang'
@@ -727,6 +729,7 @@
     if (typeof raw.shortcutTranslate === 'boolean') result.shortcutTranslate = raw.shortcutTranslate;
     if (typeof raw.hideBallSameLanguage === 'boolean') result.hideBallSameLanguage = raw.hideBallSameLanguage;
     if (typeof raw.translateIframes === 'boolean') result.translateIframes = raw.translateIframes;
+    if (typeof raw.imageFastMode === 'boolean') result.imageFastMode = raw.imageFastMode;
     if (typeof raw.followTranslation === 'boolean') result.followTranslation = raw.followTranslation;
     if (typeof raw.showFloatingBall === 'boolean') result.showFloatingBall = raw.showFloatingBall;
     if (raw.ballPosition && typeof raw.ballPosition === 'object') {
@@ -5607,6 +5610,13 @@
 
     var toolbar = document.createElement('div');
     toolbar.className = 'dsh-img-toolbar';
+    var hasOriginalText = false;
+    for (var bi = 0; bi < blocks.length; bi += 1) {
+      if (blocks[bi] && typeof blocks[bi].text === 'string' && blocks[bi].text.trim().length > 0) {
+        hasOriginalText = true;
+        break;
+      }
+    }
     var bilingual = document.createElement('button');
     bilingual.type = 'button';
     bilingual.className = 'dsh-img-btn';
@@ -5635,7 +5645,8 @@
       event.stopPropagation();
       removeImageTranslation();
     });
-    toolbar.appendChild(bilingual);
+    // 快速模式只返回译文；没有原文时隐藏「双语」按钮，避免点了没反应。
+    if (hasOriginalText) toolbar.appendChild(bilingual);
     toolbar.appendChild(copy);
     toolbar.appendChild(close);
     layer.appendChild(toolbar);
@@ -5718,7 +5729,8 @@
                 viewportWidth: vw,
                 viewportHeight: vh,
                 sourceUrl: location.href,
-                sourceTitle: document.title
+                sourceTitle: document.title,
+                compact: state.settings.imageFastMode === true
               }, function (response) {
                 var lastError = null;
                 try {

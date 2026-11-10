@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS = {
   showFloatingBall: true,
   hideBallSameLanguage: true,
   translateIframes: false,
+  imageFastMode: false,
   uiLang: 'zh'
 };
 const RPC_TIMEOUT_MS = 120000;
@@ -95,6 +96,8 @@ const I18N = {
     fieldShowBall: '显示悬浮球（可拖动；隐藏后可用右键菜单「dsh翻译 → 显示悬浮球」恢复）',
     fieldHideSameLang: '页面语言与目标语言一致时隐藏悬浮球（默认开启）',
     fieldTranslateIframes: '翻译 iframe 内内容（默认关闭；Cookie 弹窗、嵌入评论等）',
+    fieldImageFast: '图片翻译快速模式（只返回译文、不保留原文；默认关闭）',
+    hintImageFast: '开启后视觉模型不再输出 OCR 原文，图片覆盖层只显示译文，响应通常更快；该模式下没有「双语」切换。',
     fieldUiLang: '界面语言',
     btnSave: '保存',
     btnOpenDsh: '打开 DSH 页面',
@@ -170,6 +173,8 @@ const I18N = {
     fieldShowBall: 'Show floating ball (draggable; restore via right-click → dsh翻译 → Show floating ball)',
     fieldHideSameLang: 'Hide the floating ball when the page language matches the target language (on by default)',
     fieldTranslateIframes: 'Translate content inside iframes (off by default; cookie dialogs, embedded comments)',
+    fieldImageFast: 'Fast image translation (translation only, no original text; off by default)',
+    hintImageFast: 'The vision model skips the original OCR text, so the overlay only shows translations and is usually faster; bilingual switching is unavailable in this mode.',
     fieldUiLang: 'UI language',
     btnSave: 'Save',
     btnOpenDsh: 'Open DSH page',
@@ -363,6 +368,7 @@ function normalizeSettings(raw) {
   if (typeof raw.showFloatingBall === 'boolean') result.showFloatingBall = raw.showFloatingBall;
   if (typeof raw.hideBallSameLanguage === 'boolean') result.hideBallSameLanguage = raw.hideBallSameLanguage;
   if (typeof raw.translateIframes === 'boolean') result.translateIframes = raw.translateIframes;
+  if (typeof raw.imageFastMode === 'boolean') result.imageFastMode = raw.imageFastMode;
   if (raw.uiLang === 'zh' || raw.uiLang === 'en') result.uiLang = raw.uiLang;
   return result;
 }
@@ -448,6 +454,7 @@ function fillForm() {
   $('showFloatingBall').checked = state.settings.showFloatingBall !== false;
   $('hideBallSameLanguage').checked = state.settings.hideBallSameLanguage !== false;
   $('translateIframes').checked = state.settings.translateIframes === true;
+  $('imageFastMode').checked = state.settings.imageFastMode === true;
   $('uiLang').value = state.settings.uiLang;
 }
 
@@ -468,6 +475,7 @@ function readForm() {
   const showFloatingBall = !!$('showFloatingBall').checked;
   const hideBallSameLanguage = !!$('hideBallSameLanguage').checked;
   const translateIframes = !!$('translateIframes').checked;
+  const imageFastMode = !!$('imageFastMode').checked;
   const uiLang = $('uiLang').value === 'en' ? 'en' : 'zh';
 
   return {
@@ -485,6 +493,7 @@ function readForm() {
     showFloatingBall: showFloatingBall,
     hideBallSameLanguage: hideBallSameLanguage,
     translateIframes: translateIframes,
+    imageFastMode: imageFastMode,
     uiLang: uiLang
   };
 }
@@ -522,7 +531,7 @@ async function save(options) {
 
 function setBusy(busy) {
   state.busy = busy;
-  for (const id of ['testBtn', 'modelBtn', 'saveBtn', 'openDshBtn', 'baseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'autoSiteInput', 'autoSiteAdd', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'uiLang']) {
+  for (const id of ['testBtn', 'modelBtn', 'saveBtn', 'openDshBtn', 'baseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'autoSiteInput', 'autoSiteAdd', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'imageFastMode', 'uiLang']) {
     const el = $(id);
     if (el) el.disabled = busy;
   }
@@ -687,7 +696,7 @@ async function removeAutoSite(site) {
 
 async function init() {
   try {
-    const raw = await storageGet(['dshBaseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'autoTranslateSites', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'uiLang']);
+    const raw = await storageGet(['dshBaseUrl', 'targetLanguage', 'mode', 'scheduleMode', 'preload', 'autoTranslate', 'autoTranslateSites', 'selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate', 'followTranslation', 'showFloatingBall', 'hideBallSameLanguage', 'translateIframes', 'imageFastMode', 'uiLang']);
     state.settings = normalizeSettings(raw);
     state.uiLang = state.settings.uiLang;
     applyLang();

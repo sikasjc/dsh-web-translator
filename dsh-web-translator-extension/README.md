@@ -1,6 +1,6 @@
 # dsh翻译（dsh-web-translator）— Chrome / Edge MV3 扩展
 
-在任意真实网页上做**网页翻译**（原文 / 双语对照 / 仅译文；正文块级对照保留原文超链接与行内 `<code>` token + 导航/标签/页脚/按钮行内对照；grid/flex 父级长段落不漏译）、**右键翻译**、**划词 / 双击 / 自定义快捷键翻译（默认关闭）**、**右键图片翻译文字（译文原位覆盖、字号自适应、可关闭、长驻进度）**、**加入单词本**、
+在任意真实网页上做**网页翻译**（原文 / 双语对照 / 仅译文；正文块级对照保留原文超链接与行内 `<code>` token + 导航/标签/页脚/按钮行内对照；grid/flex 父级长段落不漏译）、**右键翻译**、**划词 / 双击 / 自定义快捷键翻译（默认关闭）**、**右键图片翻译文字（译文原位覆盖、字号自适应、可关闭、长驻进度、可选快速模式）**、**加入单词本**、
 以及发音播放，并在浮窗/查词卡上展示 **token 消耗**（本页实时累加 + 今日累计）。翻译由本机 **DSH**（DeepSeek Harness）插件 `@local/dsh-web-translator` 提供，
 使用你在 DSH 中配置的模型（模型、推理强度、提示词都在 DSH 设置页里改），扩展本身**不直连模型、不保存密钥**。
 
@@ -328,9 +328,9 @@ node tools/debug-layout.mjs https://lobste.rs/
 node tools/e2e-chrome.mjs
 ```
 
-预期：`node tools/verify.mjs` 输出 `ALL 215 STATIC CHECKS PASSED`；
+预期：`node tools/verify.mjs` 输出 `ALL 216 STATIC CHECKS PASSED`；
 `file` 输出 4 个 `PNG image data, 16 x 16 / 32 x 32 / 48 x 48 / 128 x 128, 8-bit/color RGBA`；
-`node tools/e2e-chrome.mjs` 输出 `137/137 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
+`node tools/e2e-chrome.mjs` 输出 `138/138 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
 E2E 覆盖：扩展加载（manifest/CSP/commands 合法性）、content 注入、翻译流水线报文、
 请求元数据（translate/lookup POST body 的 `client` / `sourceUrl` / `sourceTitle`）、
 轨迹身份（translate 的 `turnId`/`stepIndex`/`mode`、同一 run 懒加载批次共用 turnId、lookup 单步 turn）、

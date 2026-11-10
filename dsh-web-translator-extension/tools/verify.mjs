@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.17.6', manifest.version === '1.17.6', manifest.version);
+  check('manifest: version 1.17.7', manifest.version === '1.17.7', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -100,7 +100,7 @@ const CONTENT_TOKENS = [
   ['译文标记', 'data-dsh-it="trans"'],
   ['原文标记', 'data-dsh-it="src"'],
   ['模式属性', 'data-dsh-it-mode'],
-  ['设置键', "'dshBaseUrl',\n    'targetLanguage',\n    'mode',\n    'scheduleMode',\n    'preload',\n    'autoTranslate',\n    'autoTranslateSites',\n    'selectionTranslate',\n    'doubleClickTranslate',\n    'shortcutTranslate',\n    'followTranslation',\n    'hideBallSameLanguage',\n    'translateIframes',\n    'showFloatingBall',\n    'ballPosition',\n    'uiLang'"],
+  ['设置键', "'dshBaseUrl',\n    'targetLanguage',\n    'mode',\n    'scheduleMode',\n    'preload',\n    'autoTranslate',\n    'autoTranslateSites',\n    'selectionTranslate',\n    'doubleClickTranslate',\n    'shortcutTranslate',\n    'followTranslation',\n    'hideBallSameLanguage',\n    'translateIframes',\n    'imageFastMode',\n    'showFloatingBall',\n    'ballPosition',\n    'uiLang'"],
   ['单页上限 800', 'MAX_BLOCKS = 800'],
   ['文本下限 2', 'MIN_TEXT = 2'],
   ['行内候选下限 12', 'INLINE_MIN_TEXT = 12'],
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.17.6', "EXT_VERSION = '1.17.6'"],
+  ['EXT 版本 1.17.7', "EXT_VERSION = '1.17.7'"],
   ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
   ['图片翻译入口', 'function startImageTranslation('],
   ['图片翻译覆盖层', 'function renderImageTranslation('],
@@ -159,6 +159,7 @@ const CONTENT_TOKENS = [
   ['图片译文自适应字号', 'function fitImageBlock('],
   ['图片遮罩按钮冒泡守卫', 'function guardImageOverlayHost('],
   ['图片翻译长驻进度提示', '大图可能需要 20–30 秒'],
+  ['图片快速模式选项', 'imageFastMode'],
   ['译后超链接还原', 'function fillTranslatedContent('],
   ['超链接标记协议', "[[/' + index + ']]"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],

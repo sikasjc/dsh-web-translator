@@ -1343,12 +1343,14 @@ export function createApi({
         throw apiError('INTERNAL', 'the effective target language is missing');
       }
       const style = typeof settings.translationStyle === 'string' ? settings.translationStyle : 'auto';
+      const compact = plain.compact === true;
       const cacheKey = imageCacheKey({
         hash,
         provider: selection.provider,
         model: selection.model,
         targetLanguage,
         translationStyle: style,
+        compact,
       });
       await cache.whenReady();
       let blocks;
@@ -1376,6 +1378,7 @@ export function createApi({
           sourceTitle: meta.sourceTitle,
           site: meta.site,
           translationStyle: style,
+          compact,
         });
         const callStartedAt = Date.now();
         let ref;

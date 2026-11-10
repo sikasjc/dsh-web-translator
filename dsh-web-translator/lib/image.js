@@ -24,7 +24,7 @@ import { isPlainObject } from './validate.js';
 export const IMAGE_MEDIA_TYPES = Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
 /** Prompt/cache version: bump when the OCR prompt or block contract changes. */
-export const IMAGE_PROMPT_VERSION = '1';
+export const IMAGE_PROMPT_VERSION = '2';
 
 /** Upper bound for one base64 image payload (bytes + JSON envelope headroom). */
 const IMAGE_BASE64_MAX = Math.ceil((LIMITS.imageBytes * 4) / 3) + 4;
@@ -89,19 +89,24 @@ export function imageHash(bytes) {
  *   translationStyle?: string}} input - prompt context.
  * @returns {{system: string, user: string}}
  */
-export function buildImagePrompt({ targetLanguage, sourceTitle, site, translationStyle } = {}) {
+export function buildImagePrompt({ targetLanguage, sourceTitle, site, translationStyle, compact = false } = {}) {
   const language = typeof targetLanguage === 'string' && targetLanguage.trim().length > 0
     ? targetLanguage.trim()
     : 'zh-CN';
   const style = typeof translationStyle === 'string' && translationStyle.length > 0 ? translationStyle : 'auto';
+  const schema = compact
+    ? '{"blocks":[{"translation":"translated text","bbox":[x0,y0,x1,y1]}]}'
+    : '{"blocks":[{"text":"original text as shown","translation":"translated text","bbox":[x0,y0,x1,y1]}]}';
   const system = [
     'You are an OCR and translation engine for images.',
     `Read every readable text block in the image and translate each block into ${language}.`,
     `Translation style: ${style}.`,
     'Keep numbers, code, URLs, file names, product names and identifiers unchanged unless they are ordinary prose.',
-    'Preserve line breaks inside a block; do not merge separate UI elements, labels, columns or captions.',
+    compact
+      ? 'Do NOT include the original OCR text in the response; output only the translation and bbox for each block. Do not merge separate UI elements, labels, columns, captions or conversation rows.'
+      : 'Preserve line breaks inside a block; do not merge separate UI elements, labels, columns or captions.',
     'Return ONLY a JSON object with this exact shape:',
-    '{"blocks":[{"text":"original text as shown","translation":"translated text","bbox":[x0,y0,x1,y1]}]}',
+    schema,
     'bbox is normalized to 0..1 relative to the image: [left, top, right, bottom].',
     'If the image contains no readable text, return {"blocks":[]}. No markdown fences, no commentary.',
   ].join('\n');
@@ -196,8 +201,8 @@ export function parseImageTranslation(text) {
  *   translationStyle?: string}} input - key parts.
  * @returns {string}
  */
-export function imageCacheKey({ hash, provider, model, targetLanguage, translationStyle }) {
-  return [
+export function imageCacheKey({ hash, provider, model, targetLanguage, translationStyle, compact = false }) {
+  const parts = [
     'image',
     IMAGE_PROMPT_VERSION,
     String(hash ?? ''),
@@ -205,7 +210,11 @@ export function imageCacheKey({ hash, provider, model, targetLanguage, translati
     String(model ?? ''),
     String(targetLanguage ?? ''),
     String(translationStyle ?? 'auto'),
-  ].join(':');
+  ];
+  // Keep full (bilingual) keys backward-compatible; compact results must never
+  // be reused for a bilingual request (they have no original OCR text).
+  if (compact === true) parts.push('compact');
+  return parts.join(':');
 }
 
 /** Recursively list files under one cache directory (best effort, bounded depth). */

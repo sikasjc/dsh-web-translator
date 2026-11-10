@@ -453,7 +453,8 @@ async function handleImageTranslate(message, sender, sendResponse) {
       client: 'extension',
       turnId: turnId,
       stepIndex: 0,
-      mode: 'image'
+      mode: 'image',
+      compact: message.compact === true
     };
     const response = await requestHost('image-translate', payload, { timeoutMs: IMAGE_REQUEST_TIMEOUT_MS });
     if (!response || response.ok !== true) {
