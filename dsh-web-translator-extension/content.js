@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.5';
+  var EXT_VERSION = '1.17.6';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -283,7 +283,7 @@
       cardNeedTranslation: '没有译文，暂不能加入单词本',
       cardLookupFail: '查询失败：{msg}',
       cardAddHint: '仅单个英文单词或 1~4 个汉字可加入单词本',
-      imageTranslating: '正在识别并翻译图片中的文字…',
+      imageTranslating: '正在识别并翻译图片中的文字…（大图可能需要 20–30 秒，请勿重复点击）',
       imageDone: '图片翻译完成，译文已覆盖在原文字位置',
       imageNoText: '未在图片中识别到文字',
       imageNotFound: '未找到要翻译的图片，请直接右键图片重试',
@@ -380,7 +380,7 @@
       cardNeedTranslation: 'No translation available to save',
       cardLookupFail: 'Lookup failed: {msg}',
       cardAddHint: 'Only a single English word or 1~4 CJK characters can be added',
-      imageTranslating: 'Reading and translating the text in this image…',
+      imageTranslating: 'Reading and translating the text in this image… (large images may take 20–30s; please do not click again)',
       imageDone: 'Image translated; the translation now covers the original text',
       imageNoText: 'No readable text was found in the image',
       imageNotFound: 'Could not locate the image; right-click the image and try again',
@@ -5660,7 +5660,9 @@
 
   function startImageTranslation(srcUrl) {
     if (imageTranslatePending) {
-      showToast(t('imageTranslating'), 1800);
+      // 保持长驻进度提示：重试点击时不能把仍在进行中的长请求提示缩成 1.8s，
+      // 否则用户会误以为任务已经结束。
+      showToast(t('imageTranslating'), 120000);
       return;
     }
     var img = findImageBySrc(srcUrl);
@@ -5669,10 +5671,11 @@
       return;
     }
     imageTranslatePending = true;
-    showToast(t('imageTranslating'), 8000);
+    showToast(t('imageTranslating'), 120000);
     var finish = function (message) {
       imageTranslatePending = false;
-      if (message) showToast(message, 3200);
+      // 错误信息也要留足时间；大图请求可能 20–30 秒，用户往往不会盯着 toast。
+      if (message) showToast(message, 8000);
     };
     waitForImageReady(img, function () {
       safe(function () {
