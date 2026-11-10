@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.9';
+  var EXT_VERSION = '1.17.10';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -2349,6 +2349,12 @@
       var layoutMarks = document.querySelectorAll('[' + LAYOUT_ATTR + ']');
       for (var k = 0; k < layoutMarks.length; k++) layoutMarks[k].removeAttribute(LAYOUT_ATTR);
     } catch (err) {
+      /* ignore */
+    }
+    try {
+      var detailsMarks = document.querySelectorAll('[data-dsh-it-details-done]');
+      for (var di = 0; di < detailsMarks.length; di++) detailsMarks[di].removeAttribute('data-dsh-it-details-done');
+    } catch (detailsErr) {
       /* ignore */
     }
     try {
@@ -5140,8 +5146,62 @@
     applyBallPosition(state.settings.ballPosition, true);
   }
 
+  /**
+   * 用户展开一个原本折叠的 <details> 后，补翻刚刚出现的文字。
+   * 只处理页面已处于翻译状态的情况；新内容通过现有 translate RPC 走同一套
+   * token/缓存/错误路径，注入仍复用行内译文。
+   */
+  function translateOpenedDetails(detailsEl) {
+    try {
+      if (!detailsEl || detailsEl.tagName !== 'DETAILS' || !detailsEl.open) return;
+      if (!state.effectiveTarget || state.mode === 'source') return;
+      if (!(state.running || state.lazyActive || state.done > 0 || state.units.length > 0)) return;
+      if (detailsEl.getAttribute('data-dsh-it-details-done')) return;
+      var units = collectTextUnits(detailsEl, new Set(), state.effectiveTarget, 0);
+      units = units.filter(function (unit) {
+        try {
+          return unit && unit.el && unit.text && !unit.el.closest('[' + MARK_ATTR + ']');
+        } catch (err) {
+          return false;
+        }
+      });
+      if (units.length === 0) return;
+      detailsEl.setAttribute('data-dsh-it-details-done', '1');
+      requestTranslations(units).then(function (translations) {
+        for (var i = 0; i < units.length; i += 1) {
+          var unit = units[i];
+          var translated = translations && typeof translations[i] === 'string' ? translations[i] : '';
+          if (!translated || isSameTranslation(unit.text, translated)) {
+            unit.status = 'done';
+            continue;
+          }
+          try {
+            if (injectInlineTranslation(unit, translated)) unit.status = 'done';
+          } catch (err) {
+            /* 单段失败不影响其它 */
+          }
+        }
+        updateProgressUi();
+        refreshUi();
+        syncPageMode();
+        endTurn();
+      }).catch(function () {
+        /* 展开内容补翻失败时保留原文 */
+      });
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  function onDocumentToggle(event) {
+    var target = event && event.target;
+    if (!target || target.tagName !== 'DETAILS') return;
+    safe(function () { translateOpenedDetails(target); });
+  }
+
   function bindEvents() {
     try {
+      document.addEventListener('toggle', onDocumentToggle, true);
       document.addEventListener('mouseup', onDocumentMouseUp, true);
       document.addEventListener('mousedown', onDocumentMouseDown, true);
       document.addEventListener('dblclick', onDocumentDoubleClick, true);

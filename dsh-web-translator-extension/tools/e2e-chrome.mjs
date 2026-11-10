@@ -419,6 +419,18 @@ async function main() {
       );
       return;
     }
+    if (request.url && request.url.startsWith('/details.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Details</title></head><body>' +
+          '<p>Visible paragraph before the collapsible section.</p>' +
+          '<details id="hidden-details"><summary>More details</summary>' +
+            '<p>Hidden details content should be translated after expanding.</p>' +
+            '<a href="/archive">Archive.org</a></details>' +
+        '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/long-heading.html')) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
@@ -2371,6 +2383,31 @@ async function main() {
     headingProbe.found === true && headingProbe.headingAttr === true &&
       headingProbe.display === 'block' && headingProbe.transFont < headingProbe.h1Font,
     JSON.stringify(headingProbe)
+  );
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
+
+  /* 7.11) 展开 <details> 后补翻新显示内容 */
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: false, autoTranslate: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/details.html' });
+  await wait(1600);
+  await fireToggle();
+  await wait(2200);
+  await evalOn(page, `(() => { const d = document.getElementById('hidden-details'); if (d) d.open = true; return !!d; })()`);
+  await wait(2600);
+  const detailsProbe = await evalOn(page, `(() => {
+    const d = document.getElementById('hidden-details');
+    return {
+      found: !!d,
+      done: !!(d && d.getAttribute('data-dsh-it-details-done')),
+      inline: d ? d.querySelectorAll('[data-dsh-it="trans-inline"]').length : 0,
+      text: d ? (d.innerText || '').slice(0, 120) : ''
+    };
+  })()`);
+  check(
+    '展开 `<details>` 后补翻新显示内容',
+    detailsProbe.found === true && detailsProbe.done === true && detailsProbe.inline > 0,
+    JSON.stringify(detailsProbe)
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 
