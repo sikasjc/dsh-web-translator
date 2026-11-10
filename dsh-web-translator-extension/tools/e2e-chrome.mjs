@@ -419,6 +419,16 @@ async function main() {
       );
       return;
     }
+    if (request.url && request.url.startsWith('/hidden-visibility.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Hidden</title></head><body>' +
+          '<p>Visible paragraph for the hidden-visibility fixture.</p>' +
+          '<div style="visibility:hidden"><p id="hidden-layout">Hidden but laid out content should be translated before it becomes visible.</p></div>' +
+        '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/dynamic.html')) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
@@ -2458,6 +2468,37 @@ async function main() {
     dynamicProbe.found === true && dynamicProbe.src === 'src' &&
       (dynamicProbe.transNext === true || dynamicProbe.inline > 0),
     JSON.stringify(dynamicProbe)
+  );
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
+
+  /* 7.13) visibility 隐藏但有布局盒的内容：提前翻译，展开侧栏/菜单后立刻可见 */
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: false, autoTranslate: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/hidden-visibility.html' });
+  await wait(1600);
+  await fireToggle();
+  await wait(2600);
+  const hiddenVisibilityProbe = await evalOn(page, `(() => {
+    const p = document.getElementById('hidden-layout');
+    if (!p) return { found: false };
+    let next = p.nextElementSibling;
+    let transNext = false;
+    for (let k = 0; next && k < 4; k += 1, next = next.nextElementSibling) {
+      if (next.getAttribute && next.getAttribute('data-dsh-it') === 'trans') { transNext = true; break; }
+    }
+    return {
+      found: true,
+      src: p.getAttribute('data-dsh-it'),
+      transNext,
+      inline: p.querySelectorAll('[data-dsh-it="trans-inline"]').length,
+      text: (p.innerText || '').slice(0, 100)
+    };
+  })()`);
+  check(
+    'visibility 隐藏但有布局的内容提前翻译',
+    hiddenVisibilityProbe.found === true && hiddenVisibilityProbe.src === 'src' &&
+      (hiddenVisibilityProbe.transNext === true || hiddenVisibilityProbe.inline > 0),
+    JSON.stringify(hiddenVisibilityProbe)
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 

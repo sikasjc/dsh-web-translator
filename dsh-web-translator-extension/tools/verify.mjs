@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.17.12', manifest.version === '1.17.12', manifest.version);
+  check('manifest: version 1.17.13', manifest.version === '1.17.13', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.17.12', "EXT_VERSION = '1.17.12'"],
+  ['EXT 版本 1.17.13', "EXT_VERSION = '1.17.13'"],
   ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
   ['图片翻译入口', 'function startImageTranslation('],
   ['图片翻译覆盖层', 'function renderImageTranslation('],
@@ -165,6 +165,7 @@ const CONTENT_TOKENS = [
   ['展开 details 补翻', 'translateOpenedDetails'],
   ['动态页面延迟重扫', 'scheduleDynamicRescan'],
   ['行内收集跳过已注入节点', "parent.closest('[' + MARK_ATTR + ']')"],
+  ['visibility 隐藏内容回退', 'checkVisibility({ checkOpacity: false, checkVisibilityCSS: true })'],
   ['译后超链接还原', 'function fillTranslatedContent('],
   ['超链接标记协议', "[[/' + index + ']]"],
   ['Turn id 生成', 'function makeTurnId(prefix)'],

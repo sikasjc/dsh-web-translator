@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "dsh翻译",
-  "version": "1.17.12",
+  "version": "1.17.13",
   "description": "dsh-web-translator：本地网页翻译扩展。调用本机 DSH 插件 API，支持原文/双语对照/仅译文、划词与双击查词、加入单词本；文本只发往本机 DSH 及你配置的模型服务。",
   "permissions": [
     "storage",

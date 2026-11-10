@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.12';
+  var EXT_VERSION = '1.17.13';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -1057,9 +1057,11 @@
     try {
       if (!el || !el.isConnected) return false;
       if (el.hasAttribute('hidden')) return false;
-      if (typeof el.checkVisibility === 'function') {
-        return el.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true });
+      if (typeof el.checkVisibility === 'function' && el.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true })) {
+        return true;
       }
+      // 站点常先用 visibility/content-visibility 隐藏侧栏/菜单，稍后再显示；
+      // display:none 没有布局盒（rect 为空），而“有布局但暂不可见”的内容值得提前翻译。
       return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
     } catch (err) {
       return false;

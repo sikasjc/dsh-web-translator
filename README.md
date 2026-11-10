@@ -9,7 +9,7 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.12.5** · **browser extension 1.17.12**. Recent changes:
+> Current versions: **DSH plugin 1.12.5** · **browser extension 1.17.13**. Recent changes:
 > grid/flex parent long paragraphs are translated instead of being skipped, with comfortable spacing
 > between a translated paragraph and the next source paragraph; inline `<code>` tokens (file names,
 > commands, identifiers) are preserved verbatim in translations (plugin 1.12.2 / extension 1.17.4);
@@ -21,7 +21,9 @@ under [Data and privacy](#data-and-privacy).
 > headings now get a compact block-level translation instead of a full-size duplicate (extension
 > 1.17.9); expanding a previously closed `<details>` now translates the newly revealed content;
 > screen-mode translation runs two delayed rescans so late-rendered current-screen content is
-> translated too (extension 1.17.11); rescans also skip already-injected nodes so old translations do not fill the inline-unit cap and starve new dynamic content (extension 1.17.12);
+> translated too (extension 1.17.11); rescans also skip already-injected nodes so old translations do not fill the inline-unit cap and starve new dynamic content (extension 1.17.12); sidebars/menus that are laid out but
+> temporarily hidden by visibility/content-visibility are translated ahead of time (extension
+> 1.17.13);
 > an optional fast image mode skips OCR-original output for shorter requests;
 > block translations now keep the source's inline hyperlinks (translated link text keeps its original target);
 > right-click **image text translation** with in-place overlays and image deletion after each request
@@ -344,8 +346,8 @@ node --test test/
 
 # Browser extension (static checks + headless Chrome E2E, no real model calls)
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 221 static checks
-node tools/e2e-chrome.mjs    # 141/141 headless E2E checks (mock DSH)
+node tools/verify.mjs        # 222 static checks
+node tools/e2e-chrome.mjs    # 142/142 headless E2E checks (mock DSH)
 ```
 
 - Design contracts: [`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md) / [`DESIGN-IMAGE.md`](dsh-web-translator/DESIGN-IMAGE.md)
