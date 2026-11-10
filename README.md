@@ -9,12 +9,13 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.12.2** · **browser extension 1.17.5**. Recent changes:
+> Current versions: **DSH plugin 1.12.3** · **browser extension 1.17.5**. Recent changes:
 > grid/flex parent long paragraphs are translated instead of being skipped, with comfortable spacing
 > between a translated paragraph and the next source paragraph; inline `<code>` tokens (file names,
 > commands, identifiers) are preserved verbatim in translations (plugin 1.12.2 / extension 1.17.4);
 > image-text overlays now auto-fit their font inside each bbox and the toolbar/close actions work
-> reliably (extension 1.17.5);
+> reliably (extension 1.17.5); dense image-text figures no longer fail with `OUTPUT_TRUNCATED`
+> (plugin 1.12.3);
 > block translations now keep the source's inline hyperlinks (translated link text keeps its original target);
 > right-click **image text translation** with in-place overlays and image deletion after each request
 > (plugin 1.12.1 / extension 1.17.1); selectable third-party dictionary for English word lookups —

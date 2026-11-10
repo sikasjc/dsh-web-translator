@@ -50,7 +50,8 @@
 - `settings.imageModel`：`auto`（默认；跟随当前翻译模型，若当前模型不接受图片则回退到目录第一个图片模型）或 `provider::model`；
 - 显式配置的模型必须声明 `inputModalities` 包含 `image`，否则 `PUT /settings` 返回 `INVALID_SETTINGS`；
 - 运行期无图片模型 → `MODEL_NO_VISION`(502)；图片校验失败 → `IMAGE_INVALID`(400) / `IMAGE_TOO_LARGE`(413) / `IMAGE_UNSUPPORTED`(415)；
-- 图片请求超时 120s；模型失败/超时沿用既有错误映射。
+- 图片请求超时 120s；模型失败/超时沿用既有错误映射；
+- 视觉输出上限 **16384 tokens**（V1.12.3 起）：信息量大的截图/图表（如整页对话表）在 4096 下会被截断并返回 `OUTPUT_TRUNCATED`，扩展端表现为“右键翻译没有译文”；单张普通图片实际输出远低于该上限。
 
 ## 5. Token / 账本 / 会话
 

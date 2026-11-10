@@ -93,6 +93,8 @@ test('imageTranslate sends an image block to the vision model and records usage/
   assert.equal(llm.state.streamCalls.length, 1);
   const options = llm.state.streamCalls[0];
   assert.equal(options.provider, 'modelhub');
+  assert.equal(options.maxTokens, LIMITS.imageMaxTokens);
+  assert.ok(options.maxTokens >= 8192, 'dense figure images need a larger output budget');
   assert.equal(options.model, 'deepseek-flash');
   assert.equal(options.messages[0].content.length, 2);
   assert.equal(options.messages[0].content[1].type, 'image');

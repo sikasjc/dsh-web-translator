@@ -94,7 +94,7 @@ export const LIMITS = Object.freeze({
   /** `POST /image-translate` model timeout (vision calls are slower). */
   imageTimeoutMs: 120_000,
   /** Output-token ceiling for one image translation call. */
-  imageMaxTokens: 4096,
+  imageMaxTokens: 16384,
   /** Maximum text blocks accepted from one image response. */
   imageBlocks: 100,
   /** Maximum characters per OCR/translation block. */

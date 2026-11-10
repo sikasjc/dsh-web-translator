@@ -215,7 +215,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ```
 - 图片模型：`settings.imageModel`（默认 `auto` 跟随当前翻译模型；显式 `provider::model` 必须声明 `inputModalities` 包含 `image`）；`auto` 下当前模型不支持图片时回退到目录里第一个图片模型，都没有则 `MODEL_NO_VISION`(502)；
 - 图片校验：PNG/JPEG/WebP/GIF、canonical base64、解码后 ≤3 MiB；`/image-translate` 的 JSON body 上限 8 MiB；错误 `IMAGE_INVALID`(400) `IMAGE_TOO_LARGE`(413) `IMAGE_UNSUPPORTED`(415)；
-- 单次视觉调用完成 OCR + 翻译 + bbox，temperature 0.2、输出上限 4096、超时 120s；
+- 单次视觉调用完成 OCR + 翻译 + bbox，temperature 0.2、输出上限 16384、超时 120s；
 - 解析：严格 JSON `{blocks:[...]}`，支持 fenced/数组；bbox 归一化 0..1 并裁剪；最多 100 块、每块 2000 字符；解析失败降级为单块纯文本（无 bbox，扩展回退卡片）；无文字返回 `blocks:[]`；
 - 图片丢弃：调用结束（成功/失败）后在 `finally` 中删除本次新建的归一化附件对象与 request-image 变体缓存；图片不写入 DSH 会话事件与插件翻译缓存；只有 OCR/译文结果按 `sha256(image)+provider/model+targetLanguage+style+promptVersion` 缓存（复用 `cache.json`）；
 - 账本/会话：usage kind=`image`（segments=OCR 块数、chars=OCR 字符数、sample=首块原文、outputPreview=首块译文），每次图片动作 = 一条 DSH 会话，单次模型请求 = 一个 Turn（kind=`image`，标题 `图片翻译 · …`）。
