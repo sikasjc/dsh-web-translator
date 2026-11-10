@@ -419,6 +419,15 @@ async function main() {
       );
       return;
     }
+    if (request.url && request.url.startsWith('/dynamic.html')) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dynamic</title></head><body>' +
+          '<p id="initial-content">Initial paragraph visible before translation begins.</p>' +
+        '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/details.html')) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
@@ -2408,6 +2417,47 @@ async function main() {
     '展开 `<details>` 后补翻新显示内容',
     detailsProbe.found === true && detailsProbe.done === true && detailsProbe.inline > 0,
     JSON.stringify(detailsProbe)
+  );
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
+
+  /* 7.12) 动态插入内容：启动后的延迟重扫补翻新节点 */
+  await evalOn(sw, `chrome.storage.local.set({ followTranslation: false, autoTranslate: false })`);
+  await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);
+  await page.send('Page.navigate', { url: pageOrigin + '/dynamic.html' });
+  await wait(1600);
+  translateDelayMs = 1200;
+  await fireToggle();
+  await wait(350);
+  await evalOn(page, `(() => {
+    const p = document.createElement('p');
+    p.id = 'late-content';
+    p.textContent = 'Dynamically inserted content should be translated too.';
+    document.body.appendChild(p);
+    return true;
+  })()`);
+  await wait(4800);
+  translateDelayMs = 0;
+  const dynamicProbe = await evalOn(page, `(() => {
+    const el = document.getElementById('late-content');
+    if (!el) return { found: false };
+    let next = el.nextElementSibling;
+    let transNext = false;
+    for (let k = 0; next && k < 4; k += 1, next = next.nextElementSibling) {
+      if (next.getAttribute && next.getAttribute('data-dsh-it') === 'trans') { transNext = true; break; }
+    }
+    return {
+      found: true,
+      src: el.getAttribute('data-dsh-it'),
+      transNext,
+      inline: el.querySelectorAll('[data-dsh-it="trans-inline"]').length,
+      text: (el.innerText || '').slice(0, 100)
+    };
+  })()`);
+  check(
+    '动态插入内容：启动后的延迟重扫补翻新节点',
+    dynamicProbe.found === true && dynamicProbe.src === 'src' &&
+      (dynamicProbe.transNext === true || dynamicProbe.inline > 0),
+    JSON.stringify(dynamicProbe)
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 

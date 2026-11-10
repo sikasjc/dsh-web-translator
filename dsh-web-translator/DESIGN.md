@@ -319,6 +319,8 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - 悬浮球（右下）：点击展开面板。
 - 面板：模式三按钮（原文/双语/仅译文）、目标语言、当前模型名（只读，来自 /settings）、「翻译此页/停止/还原」、进度条（已译/总数）、设置按钮（openOptionsPage）、状态/错误行、隐私提示。
 - 抽取算法（与设计 v1 §5.4 相同语义）：候选块标签 + 行内 DIV/SPAN + 长度 2..4000 + 跳过脚本/代码/表单/隐藏/插件节点 + 目标语言跳过 + 单页上限 800 块（超出提示只译前 800）。
+- **重扫跳过已注入节点（V1.17.12）**：`collectTextUnits` 不再把 `[data-dsh-it]` 内的文本（已有译文/原文包裹）当作新单元；否则每轮重扫都会把旧译文重新收集，撑满 `MAX_TEXT_UNITS` 并让后出现的内容没有机会翻译。
+- **动态页面延迟重扫（V1.17.11）**：screen 模式启动后 900ms / 2400ms 各调用一次 `mergeNewUnits + flushScreenWindow`，仅对当前屏新出现的单元补翻；已登记/已注入的 anchor 会被跳过，不重复翻译；会话停止/完成/页面还原后不再触发。
 - **展开 details 补翻（V1.17.10）**：捕获 document `toggle`，仅当页面已有翻译会话且非 source 模式时，对刚展开的 `<details>` 用 `collectTextUnits` 提取新内容并走现有 translate RPC 补注入；`data-dsh-it-details-done` 防重复，restore 时清除。
 - **长标题块级译注（V1.17.9）**：H1–H3 行内译文在原文 >60 字符或译文 >90 字符时不再跟随全尺寸字号并排，而是用 `data-dsh-it-heading` + `display:block`、0.58em 小字另起一行；避免长文章标题把首屏撑成一屏重复文字（如 The Old New Thing）。
 - **块级超链接保留（V1.17.1）**：`textOfWithLinks()` 把块内安全 `<a>`（http/https/mailto/tel）的文字替换为 `[[n]]...[[/n]]` 标记，随段落一起送模型；Host 在 `renderTranslatePrompts()` 检测到标记时向 system prompt 追加「保留标记对、只翻译标记内文字」的指令；扩展 `fillTranslatedContent()` 按标记把译文还原为真实 `<a>`（href 取原文、保留 target/title，`_blank` 强制 `rel=noopener noreferrer`），标记缺失/不成对时去标记回退纯文本；行内链接原本就包在 `<a>` 内，不受影响。

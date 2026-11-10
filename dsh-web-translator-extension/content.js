@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.10';
+  var EXT_VERSION = '1.17.12';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -1487,7 +1487,14 @@
         var parent = node.parentElement;
         var text = normalizeText(node.nodeValue || '');
         if (parent && text.length >= 1 && HAS_LETTER_RE.test(text)) {
+          var parentInjected = false;
+          try {
+            parentInjected = !!(parent.closest && parent.closest('[' + MARK_ATTR + ']'));
+          } catch (injectedErr) {
+            parentInjected = false;
+          }
           if (
+            !parentInjected &&
             !isEditableOrHidden(parent) &&
             !isInSkipTextTag(parent) &&
             !isInClosedDetails(parent) &&
@@ -3899,6 +3906,25 @@
   }
 
   /** 按屏模式：扫描当前屏 + 立即发送（首屏不等待；滚动停稳后只补当前屏） */
+  /**
+   * 动态页面（Vue/React/Wikipedia 侧栏等）在翻译启动后仍可能继续插入内容。
+   * 启动后做两次延迟重扫：首次扫描过早时，新出现的当前屏内容也能补翻译。
+   * 只在 screen 模式使用；block 模式由 IntersectionObserver 负责新节点。
+   */
+  function scheduleDynamicRescan(session, lazy) {
+    var delays = [900, 2400];
+    for (var i = 0; i < delays.length; i += 1) {
+      (function (delay) {
+        setTimeout(function () {
+          safe(function () {
+            if (!state.lazyActive || !state.lazy || state.lazy !== lazy || lazy.session !== session || state.stopFlag) return;
+            flushScreenWindow(session, true);
+          });
+        }, delay);
+      })(delays[i]);
+    }
+  }
+
   function flushScreenWindow(session, allowMerge) {
     var lazy = state.lazy;
     if (!lazy || lazy.session !== session || state.stopFlag) return;
@@ -4223,6 +4249,7 @@
       // 首屏：整屏（+preload）一次入队并立即发送，不等待 coalescing 窗口
       flushScreenWindow(session, false);
       attachScreenListeners(state.lazy);
+      scheduleDynamicRescan(session, state.lazy);
       return;
     }
 
