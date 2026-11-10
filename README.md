@@ -9,15 +9,16 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.12.4** · **browser extension 1.17.7**. Recent changes:
+> Current versions: **DSH plugin 1.12.5** · **browser extension 1.17.8**. Recent changes:
 > grid/flex parent long paragraphs are translated instead of being skipped, with comfortable spacing
 > between a translated paragraph and the next source paragraph; inline `<code>` tokens (file names,
 > commands, identifiers) are preserved verbatim in translations (plugin 1.12.2 / extension 1.17.4);
 > image-text overlays now auto-fit their font inside each bbox and the toolbar/close actions work
 > reliably (extension 1.17.5); dense image-text figures no longer fail with `OUTPUT_TRUNCATED`
 > (plugin 1.12.3); image translation keeps a long-lived progress hint instead of dropping it after 8s;
-> an optional fast image mode skips OCR-original output for shorter requests (plugin 1.12.4 /
-> extension 1.17.7);
+> image translation now uses cross-platform Tesseract WASM OCR locally, then the existing text
+> translator; the visual model remains the fallback (plugin 1.12.5 / extension 1.17.8);
+> an optional fast image mode skips OCR-original output for shorter requests;
 > block translations now keep the source's inline hyperlinks (translated link text keeps its original target);
 > right-click **image text translation** with in-place overlays and image deletion after each request
 > (plugin 1.12.1 / extension 1.17.1); selectable third-party dictionary for English word lookups —
@@ -70,7 +71,11 @@ under [Data and privacy](#data-and-privacy).
   translation/lookup card with translation, phonetics, dictionary definitions, pronunciation and
   "add to wordbook";
 - **Right-click image text translation**: right-click an image → **Translate image text**; only that
-  image's visible area is captured, sent through your local DSH to the selected vision model, and the
+  image's visible area is captured locally; DSH first runs cross-platform local Tesseract WASM OCR
+  and sends only the extracted text through the normal translation path. The selected vision model is
+  used only as a fallback (unsupported script, non-JPEG, low OCR confidence or an explicitly selected
+  image model), and the temporary image is deleted after the request. Local OCR keeps the image itself
+  from being sent to the model provider;
   translations are drawn **in place over the original text** (bilingual/translation-only toggle, copy,
   close; a card is used when the model cannot return boxes). Page translation never scans or translates
   images automatically, and the image is deleted right after the request;
@@ -328,14 +333,14 @@ the extension, then refresh the pages that are already open.
 ## Development and tests
 
 ```bash
-# DSH plugin (host + unit tests) — currently 284/284
+# DSH plugin (host + unit tests) — currently 287/287
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/
 
 # Browser extension (static checks + headless Chrome E2E, no real model calls)
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 216 static checks
+node tools/verify.mjs        # 217 static checks
 node tools/e2e-chrome.mjs    # 138/138 headless E2E checks (mock DSH)
 ```
 

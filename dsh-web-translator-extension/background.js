@@ -450,6 +450,7 @@ async function handleImageTranslate(message, sender, sendResponse) {
       image: { mediaType: 'image/jpeg', data: capture.base64 },
       sourceUrl: typeof message.sourceUrl === 'string' ? message.sourceUrl : '',
       sourceTitle: typeof message.sourceTitle === 'string' ? message.sourceTitle : '',
+      sourceLanguage: typeof message.sourceLanguage === 'string' ? message.sourceLanguage : 'auto',
       client: 'extension',
       turnId: turnId,
       stepIndex: 0,

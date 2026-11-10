@@ -35,7 +35,7 @@ dsh翻译是 DSH（DeepSeek Harness）的本地网页翻译前端。翻译由你
 使用前提（重要）：
 本扩展是 DSH 插件的浏览器前端，需要先在本机安装并运行 DSH，以及安装 dsh-web-translator 插件。扩展默认连接 http://127.0.0.1:3080/dsh-immersive/api。未检测到本地 DSH 时，扩展会提示连接失败，无法翻译网页。
 
-数据：网页文本只发送到本机 DSH 地址，再由 DSH 使用你配置的模型提供方翻译；英文单词查词时可按 DSH 设置选择是否只把该单词发往公共词典（`dictionaryapi.dev` / Wiktionary / 关闭），默认 `dictionaryapi.dev`，可关闭；图片翻译仅在右键图片时触发，图片可见区域发往本机 DSH 的图片模型，Host 完成后立即删除临时图片；开发者不接收页面内容、浏览历史、图片或遥测。详见隐私政策。
+数据：网页文本只发送到本机 DSH 地址，再由 DSH 使用你配置的模型提供方翻译；英文单词查词时可按 DSH 设置选择是否只把该单词发往公共词典（`dictionaryapi.dev` / Wiktionary / 关闭），默认 `dictionaryapi.dev`，可关闭；图片翻译仅在右键图片时触发，图片可见区域发往本机 DSH；DSH 默认先在本机做跨平台 OCR，图片不发给模型，只有 OCR 文本进入翻译；仅当本地 OCR 不可用/低置信度或用户显式选择图片模型时才回退视觉模型，Host 完成后立即删除临时图片；开发者不接收页面内容、浏览历史、图片或遥测。详见隐私政策。
 项目地址：https://github.com/sikasjc/dsh-web-translator
 ```
 

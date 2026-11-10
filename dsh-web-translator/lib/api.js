@@ -36,6 +36,7 @@ import {
 } from './settings.js';
 import { createJsonStore, resolveDataDir, resolveDshHome } from './store.js';
 import { createTranslateService } from './translate.js';
+import { recognizeImage as recognizeLocalImage } from './local-ocr.js';
 import { createUsageService } from './usage.js';
 import { VERSION } from './version.js';
 import {
@@ -1320,6 +1321,63 @@ export function createApi({
    * @param {{signal?: AbortSignal}} [options] - caller abort signal.
    * @returns {Promise<{result: object, usage: object, retries: number}>}
    */
+  /**
+   * Try the cross-platform local OCR path: Tesseract WASM → OCR blocks →
+   * the normal text translation service. Returns null when OCR is unavailable
+   * or not trustworthy, so the caller can fall back to the visual model.
+   * @param {{image: {bytes: Uint8Array, mediaType: string}, plain: object,
+   *   meta: object, targetLanguage: string, sourceLanguage: string,
+   *   signal?: AbortSignal}} input - image and request context.
+   * @returns {Promise<{result: object, usage: object, selection: object}|null>}
+   */
+  async function tryLocalImageTranslation({ image, plain, meta, targetLanguage, sourceLanguage, signal }) {
+    if (image.mediaType !== 'image/jpeg') return null;
+    let local = null;
+    try {
+      local = await recognizeLocalImage(image.bytes, { sourceLanguage });
+    } catch (error) {
+      try { log.debug(`[dsh-web-translator] local OCR unavailable: ${error instanceof Error ? error.message : String(error)}`); } catch { /* ignore */ }
+      return null;
+    }
+    if (local === null || !Array.isArray(local.blocks) || local.blocks.length === 0) return null;
+    const averageConfidence = local.blocks.reduce((sum, block) => sum + (Number(block.confidence) || 0), 0) / local.blocks.length;
+    if (averageConfidence < 0.55) return null;
+    const translations = await translateService.translate({
+      texts: local.blocks.map((block) => block.text),
+      targetLanguage,
+      sourceLanguage,
+      sourceTitle: meta.sourceTitle,
+      sourceUrl: meta.sourceUrl,
+      client: meta.client ?? 'extension',
+    }, { signal });
+    if (!Array.isArray(translations.translations) || translations.translations.length !== local.blocks.length) return null;
+    const compact = plain.compact === true;
+    const blocks = local.blocks.map((block, index) => ({
+      text: compact ? '' : block.text,
+      translation: translations.translations[index],
+      bbox: block.bbox,
+    }));
+    return {
+      result: {
+        blocks,
+        provider: translations.provider,
+        model: translations.model,
+        cached: translations.cached === true,
+        fallback: false,
+        imageHash: null,
+        targetLanguage,
+        engine: 'local-ocr',
+        ocrLanguage: local.language,
+      },
+      usage: translations.usage,
+      selection: {
+        provider: translations.provider,
+        model: translations.model,
+        reasoningEffort: translations.reasoningEffort,
+      },
+    };
+  }
+
   async function imageTranslateInner(body, { signal } = {}) {
     const startedAt = Date.now();
     const record = await recordingEnabled();
@@ -1335,15 +1393,40 @@ export function createApi({
       if (!isPlainObject(plain.image)) throw apiError('IMAGE_INVALID', 'image is required');
       const image = normalizeImagePayload(plain.image);
       const hash = imageHash(image.bytes);
-      selection = await resolveImageSelection();
-      const settings = selection.settings ?? {};
+      const savedSettings = await settingsService.loadSaved();
       const targetLanguage = normalizeLanguageTag(plain.targetLanguage, { allowed: TARGET_LANGUAGES })
-        ?? settings.targetLanguage;
+        ?? savedSettings.targetLanguage;
       if (typeof targetLanguage !== 'string' || targetLanguage.length === 0) {
         throw apiError('INTERNAL', 'the effective target language is missing');
       }
-      const style = typeof settings.translationStyle === 'string' ? settings.translationStyle : 'auto';
+      const style = typeof savedSettings.translationStyle === 'string' ? savedSettings.translationStyle : 'auto';
       const compact = plain.compact === true;
+      const sourceLanguage = typeof plain.sourceLanguage === 'string' && plain.sourceLanguage.trim().length > 0
+        ? plain.sourceLanguage.trim().slice(0, 40)
+        : 'auto';
+
+      // Local OCR first (cross-platform, image never leaves the host). The
+      // visual model remains the fallback for unsupported scripts, non-JPEG
+      // inputs, low confidence or a translation failure. An explicitly chosen
+      // imageModel means the user opted into that vision model, so respect it.
+      const localOcrAllowed = !savedSettings.imageModel || savedSettings.imageModel === 'auto';
+      let local = null;
+      if (localOcrAllowed) {
+        try {
+          local = await tryLocalImageTranslation({ image, plain, meta, targetLanguage, sourceLanguage, signal });
+        } catch (error) {
+          try { log.debug(`[dsh-web-translator] local OCR path failed: ${error instanceof Error ? error.message : String(error)}`); } catch { /* ignore */ }
+        }
+      }
+      if (local !== null) {
+        usage = local.usage;
+        cached = local.result.cached === true;
+        result = Object.assign({}, local.result, { imageHash: hash });
+        selection = local.selection;
+        return { result, usage, retries: 0 };
+      }
+
+      selection = await resolveImageSelection();
       const cacheKey = imageCacheKey({
         hash,
         provider: selection.provider,

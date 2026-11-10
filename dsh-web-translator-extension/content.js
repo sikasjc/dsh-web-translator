@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.7';
+  var EXT_VERSION = '1.17.8';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -5730,6 +5730,7 @@
                 viewportHeight: vh,
                 sourceUrl: location.href,
                 sourceTitle: document.title,
+                sourceLanguage: detectPageLanguage() || 'auto',
                 compact: state.settings.imageFastMode === true
               }, function (response) {
                 var lastError = null;
