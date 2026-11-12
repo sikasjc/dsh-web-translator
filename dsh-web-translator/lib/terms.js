@@ -15,6 +15,7 @@
 
 /** Tokens used for keep-original terms (unlikely to appear in normal text). */
 const TOKEN_PREFIX = '[[DSH_KEEP_';
+const TOKEN_SAFE = /[^A-Za-z0-9]+/g;
 
 /** Terms that should stay in English on programming pages. */
 const KEEP_TERMS = /\btrait(s)?\b/gi;
@@ -27,7 +28,9 @@ const PORT_SOURCE = /\bport(s)?\b/i;
 const PORT_BAD = /港口|口岸/g;
 
 /**
- * Replace keep-original terms in a batch with opaque tokens.
+ * Replace keep-original terms in a batch with deterministic opaque tokens
+ * (e.g. trait -> [[DSH_KEEP_TRAIT]]), so batching order does not change the
+ * cache key.
  * @param {readonly string[]} texts - source segments.
  * @returns {{texts: string[], tokens: Array<{token: string, value: string}>}}
  */
@@ -35,10 +38,8 @@ export function protectTechnicalTerms(texts) {
   const tokens = [];
   const protectedTexts = [];
   for (const text of Array.isArray(texts) ? texts : []) {
-    let index = 0;
     const next = String(text).replace(KEEP_TERMS, (match) => {
-      const token = `${TOKEN_PREFIX}${tokens.length}_${index}]]`;
-      index += 1;
+      const token = `${TOKEN_PREFIX}${match.toLowerCase().replace(TOKEN_SAFE, '_').toUpperCase()}]]`;
       tokens.push({ token, value: match });
       return token;
     });

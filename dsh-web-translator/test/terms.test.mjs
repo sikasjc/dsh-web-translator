@@ -16,6 +16,14 @@ test('protectTechnicalTerms replaces trait/traits with opaque tokens', () => {
   assert.deepEqual(protectedBatch.tokens.map((entry) => entry.value), ['Traits', 'trait']);
 });
 
+test('protected tokens are deterministic regardless of batch position', () => {
+  const first = protectTechnicalTerms(['Traits define behavior']);
+  const second = protectTechnicalTerms(['Intro text', 'A trait object']);
+  assert.equal(first.tokens[0].token, '[[DSH_KEEP_TRAITS]]');
+  assert.equal(second.tokens[0].token, '[[DSH_KEEP_TRAIT]]');
+  assert.equal(protectTechnicalTerms(['trait']).tokens[0].token, '[[DSH_KEEP_TRAIT]]');
+});
+
 test('restoreTechnicalTerms restores original spelling and plural form', () => {
   const protectedBatch = protectTechnicalTerms(['Traits and a trait']);
   const translated = `使用 ${protectedBatch.tokens[0].token} 和 a ${protectedBatch.tokens[1].token}`;

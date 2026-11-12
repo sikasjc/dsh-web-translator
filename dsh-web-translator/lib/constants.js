@@ -100,13 +100,13 @@ export const LIMITS = Object.freeze({
   /** Maximum characters per OCR/translation block. */
   imageBlockChars: 2000,
   /** Translation LRU capacity (DESIGN §4.2). */
-  translationCache: 512,
+  translationCache: 2048,
   /** Persistent translation-cache capacity, in batch entries (DESIGN-CACHE §2). */
-  translationCacheEntries: 1000,
+  translationCacheEntries: 3000,
   /** Persistent translation-cache entry TTL: 7 days (DESIGN-CACHE §2). */
   translationCacheTtlMs: 7 * 24 * 60 * 60 * 1000,
-  /** Persistent translation-cache file size cap before dropping oldest entries (~4 MiB, DESIGN-CACHE §2). */
-  translationCacheFileBytes: 4 * 1024 * 1024,
+  /** Persistent translation-cache file size cap before dropping oldest entries (~8 MiB, DESIGN-CACHE §2). */
+  translationCacheFileBytes: 8 * 1024 * 1024,
   /** Provider/model catalog cache TTL (DESIGN §5.2). */
   catalogTtlMs: 30_000,
   /** Usage ledger: events kept on disk (DESIGN-TOKEN-USAGE §2.1). */

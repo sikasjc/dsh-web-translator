@@ -736,17 +736,19 @@ test('translate passes page title/url and technical terminology context to the m
     client: 'extension',
   });
   assert.equal(llm.state.streamCalls.length, 1);
-  const system = llm.state.streamCalls[0].system;
-  assert.ok(system.includes('Page context'));
-  assert.ok(system.includes('doc.rust-lang.org'));
-  assert.ok(system.includes('trait'));
-  assert.ok(system.includes('端口'));
+  const call = llm.state.streamCalls[0];
+  const promptText = call.system + '\n' + call.messages[0].content[0].text;
+  assert.ok(promptText.includes('Page context'));
+  assert.ok(promptText.includes('doc.rust-lang.org'));
+  assert.ok(promptText.includes('trait'));
+  assert.ok(promptText.includes('端口'));
+  assert.equal(call.system.includes('Page context'), false, 'dynamic context must not break the static system prefix');
 });
 
 test('technical pages keep trait tokens and fix port terminology deterministically', async (t) => {
   const technicalStream = (options) => {
     const userText = options.messages[0].content[0].text;
-    const tokenMatch = userText.match(/\[\[DSH_KEEP_\d+_\d+\]\]/);
+    const tokenMatch = userText.match(/\[\[DSH_KEEP_[A-Z_]+\]\]/);
     assert.ok(tokenMatch, 'protected token must appear in the prompt');
     return textStream(JSON.stringify({ translations: [`使用 ${tokenMatch[0]} 定义共享行为`, '配置港口。'] }));
   };
@@ -770,8 +772,11 @@ test('PUT settings translationStyle is applied to the next translation prompt', 
     sourceTitle: 'Markets',
     sourceUrl: 'https://example.com/markets',
   });
-  assert.ok(llm.state.streamCalls[0].system.includes('finance/markets'));
-  assert.ok(llm.state.streamCalls[0].system.includes('收益率'));
+  const call = llm.state.streamCalls[0];
+  const promptText = call.system + '\n' + call.messages[0].content[0].text;
+  assert.ok(promptText.includes('finance/markets'));
+  assert.ok(promptText.includes('收益率'));
+  assert.equal(call.system.includes('finance/markets'), false);
 });
 
 test('a broken usage ledger never fails a translation', async (t) => {
@@ -1380,11 +1385,11 @@ test('persistent cache hits across API instances and DELETE /cache clears it', a
 
   const written = await waitFor(async () => {
     const raw = await readCacheFile(dir);
-    return raw !== null && raw.v === 1 && Object.keys(raw.entries ?? {}).length === 1;
+    return raw !== null && raw.v === 2 && Object.keys(raw.entries ?? {}).length === 1;
   });
   assert.equal(written, true, 'the debounced flush wrote cache.json');
   const raw = await readCacheFile(dir);
-  assert.equal(raw.v, 1);
+  assert.equal(raw.v, 2);
   assert.equal(typeof raw.savedAt, 'number');
   const [cacheKey, entry] = Object.entries(raw.entries)[0];
   assert.match(cacheKey, /^modelhub\|deepseek-flash\|zh-CN\|[0-9a-f]{40}$/);
@@ -1438,7 +1443,7 @@ test('a corrupt cache.json starts cold, warns once and is repaired', async (t) =
 
   const repaired = await waitFor(async () => {
     const raw = await readCacheFile(dir);
-    return raw !== null && raw.v === 1 && Object.keys(raw.entries ?? {}).length === 1;
+    return raw !== null && raw.v === 2 && Object.keys(raw.entries ?? {}).length === 1;
   });
   assert.equal(repaired, true, 'the next write repairs cache.json into the compact envelope');
 });

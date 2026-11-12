@@ -118,7 +118,7 @@
   - 单请求 `texts` 1..50；每条 ≤ 8000 字符；
   - Host 再切批：默认每批 ≤ 10 段且总字符 ≤ 1600（`batchSegments` / `batchChars` 可配）；
   - 批并发 2；批内段数=1 时允许纯文本回退解析。
-- 缓存：进程内 LRU（512 批，key=`provider|model|target|sha1(system|userTemplate|textsJson)`）——同页重复/模式切换不重复计费。
+- 缓存：进程内 LRU（2048 批，key=`provider|model|target|sha1(system|user|sourceLanguage|textsJson)`；`user` 是渲染后的 user prompt，含页面/风格上下文）——同页重复/模式切换不重复计费；动态页面上下文不进入 system 前缀，避免打断模型前缀缓存。
 
 ### 4.3 输出解析
 

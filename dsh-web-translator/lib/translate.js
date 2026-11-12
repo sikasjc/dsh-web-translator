@@ -241,7 +241,7 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
           model,
           targetLanguage,
           system: rendered.system,
-          userTemplate: settings.userTemplate ?? '',
+          user: rendered.user,
           sourceLanguage,
           textsJson: rendered.textsJson,
         });

@@ -76,9 +76,9 @@ test('limits match the DESIGN values', () => {
   assert.equal(LIMITS.usageTurnsDefault, 20);
   assert.equal(LIMITS.usageTurnsMax, 100);
   // Persistent translation cache (DESIGN-CACHE §2).
-  assert.equal(LIMITS.translationCacheEntries, 1000);
+  assert.equal(LIMITS.translationCacheEntries, 3000);
   assert.equal(LIMITS.translationCacheTtlMs, 7 * 24 * 60 * 60 * 1000);
-  assert.equal(LIMITS.translationCacheFileBytes, 4 * 1024 * 1024);
+  assert.equal(LIMITS.translationCacheFileBytes, 8 * 1024 * 1024);
 });
 
 test('document versions and settings keys are stable', () => {

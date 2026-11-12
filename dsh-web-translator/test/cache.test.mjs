@@ -25,6 +25,7 @@ const baseKey = {
   model: 'deepseek-flash',
   targetLanguage: 'zh-CN',
   system: 'system prompt',
+  user: 'user template ["hello"]',
   userTemplate: 'user template {{segmentsJson}}',
   sourceLanguage: 'auto',
   textsJson: '["hello"]',
@@ -54,13 +55,13 @@ test('LRU updates existing keys without growing', () => {
   cache.clear();
 });
 
-test('default capacity is 512 batches', () => {
-  assert.equal(TRANSLATION_CACHE_SIZE, 512);
+test('default capacity is 2048 batches', () => {
+  assert.equal(TRANSLATION_CACHE_SIZE, 2048);
   const cache = createLruCache();
-  for (let index = 0; index < 520; index += 1) cache.set(`key-${index}`, index);
-  assert.equal(cache.size, 512);
+  for (let index = 0; index < 2056; index += 1) cache.set(`key-${index}`, index);
+  assert.equal(cache.size, 2048);
   assert.equal(cache.get('key-0'), undefined);
-  assert.equal(cache.get('key-519'), 519);
+  assert.equal(cache.get('key-2055'), 2055);
 });
 
 test('cache key follows provider|model|target|sha1 format', () => {
@@ -68,10 +69,19 @@ test('cache key follows provider|model|target|sha1 format', () => {
   assert.match(key, /^modelhub\|deepseek-flash\|zh-CN\|[0-9a-f]{40}$/);
   assert.ok(key.endsWith(sha1([
     baseKey.system,
-    baseKey.userTemplate,
+    baseKey.user,
     baseKey.sourceLanguage,
     baseKey.textsJson,
   ].join('\u0000'))));
+});
+
+test('cache key includes rendered user context so context cannot cause a false hit', () => {
+  const key = createBatchCacheKey(baseKey);
+  assert.notEqual(key, createBatchCacheKey({
+    ...baseKey,
+    user: baseKey.user + '\nPage context: Rust traits',
+  }));
+  assert.equal(key, createBatchCacheKey({ ...baseKey, userTemplate: 'ignored when user is present' }));
 });
 
 test('cache key changes with provider/model/target/prompts/source/texts', () => {
@@ -80,7 +90,7 @@ test('cache key changes with provider/model/target/prompts/source/texts', () => 
   assert.notEqual(key, createBatchCacheKey({ ...baseKey, model: 'other' }));
   assert.notEqual(key, createBatchCacheKey({ ...baseKey, targetLanguage: 'ja' }));
   assert.notEqual(key, createBatchCacheKey({ ...baseKey, system: 'changed' }));
-  assert.notEqual(key, createBatchCacheKey({ ...baseKey, userTemplate: 'changed' }));
+  assert.notEqual(key, createBatchCacheKey({ ...baseKey, user: 'changed' }));
   assert.notEqual(key, createBatchCacheKey({ ...baseKey, sourceLanguage: 'en' }));
   assert.notEqual(key, createBatchCacheKey({ ...baseKey, textsJson: '["hello","world"]' }));
   assert.equal(key, createBatchCacheKey({ ...baseKey }));
@@ -118,20 +128,20 @@ function setupPersistent({ store = createMemoryStore(), now = () => 10_000, ...o
   return { cache, store, logger };
 }
 
-test('persistent cache defaults: 1000 entries, 7 day TTL, ~4MB cap, 300ms debounce', () => {
-  assert.equal(PERSISTENT_CACHE_MAX, 1000);
-  assert.equal(LIMITS.translationCacheEntries, 1000);
+test('persistent cache defaults: 3000 entries, 7 day TTL, ~8MB cap, 300ms debounce', () => {
+  assert.equal(PERSISTENT_CACHE_MAX, 3000);
+  assert.equal(LIMITS.translationCacheEntries, 3000);
   assert.equal(PERSISTENT_CACHE_TTL_MS, 7 * 24 * 60 * 60 * 1000);
   assert.equal(LIMITS.translationCacheTtlMs, PERSISTENT_CACHE_TTL_MS);
-  assert.equal(PERSISTENT_CACHE_MAX_BYTES, 4 * 1024 * 1024);
+  assert.equal(PERSISTENT_CACHE_MAX_BYTES, 8 * 1024 * 1024);
   assert.equal(LIMITS.translationCacheFileBytes, PERSISTENT_CACHE_MAX_BYTES);
   assert.equal(PERSISTENT_FLUSH_DELAY_MS, 300);
-  assert.equal(PERSISTENT_CACHE_VERSION, 1);
+  assert.equal(PERSISTENT_CACHE_VERSION, 2);
 
   const { cache } = setupPersistent();
   assert.deepEqual(cache.stats(), {
     entries: 0,
-    max: 1000,
+    max: 3000,
     ttlMs: PERSISTENT_CACHE_TTL_MS,
     persisted: false,
     dirty: false,
@@ -224,7 +234,7 @@ test('persistent cache hydrate never overwrites entries written after startup', 
 });
 
 test('persistent cache hydrate tolerates broken documents and only runs once', async () => {
-  const foreign = setupPersistent({ store: createMemoryStore({ v: 2, entries: { a: [1, ['x']] } }) });
+  const foreign = setupPersistent({ store: createMemoryStore({ v: 999, entries: { a: [1, ['x']] } }) });
   assert.equal(await foreign.cache.hydrate(), false);
   assert.equal(foreign.cache.stats().entries, 0);
   assert.equal(foreign.logger.lines.warn.length, 1);
@@ -283,7 +293,7 @@ test('persistent cache writes a real cache.json through the JSON store', async (
   cache.set('k', ['甲', '乙']);
   assert.equal(await cache.flush(), true);
   const raw = JSON.parse(await readFile(file, 'utf8'));
-  assert.deepEqual(raw, { v: 1, savedAt: 42_000, entries: { k: [42_000, ['甲', '乙']] } });
+  assert.deepEqual(raw, { v: 2, savedAt: 42_000, entries: { k: [42_000, ['甲', '乙']] } });
 
   // A fresh cache over the same file restores the entry (the persistence goal).
   const restored = createPersistentBatchCache({ store: makeStore(), now: () => 42_500, logger });
@@ -351,12 +361,12 @@ test('persistent cache drops the oldest entries when the envelope exceeds the si
   assert.equal(cache.stats().entries, keys.length, 'memory is pruned in step with the file');
 });
 
-test('persistent cache keeps the newest 1000 entries by LRU order', async () => {
+test('persistent cache keeps the newest 3000 entries by LRU order', async () => {
   const { cache, store } = setupPersistent({ flushDelayMs: 10_000 });
-  for (let index = 0; index < 1020; index += 1) cache.set(`key-${index}`, [`译文 ${index}`]);
-  assert.equal(cache.stats().entries, 1000);
+  for (let index = 0; index < 3020; index += 1) cache.set(`key-${index}`, [`译文 ${index}`]);
+  assert.equal(cache.stats().entries, 3000);
   assert.equal(cache.get('key-0'), undefined);
-  assert.deepEqual(cache.get('key-1019'), ['译文 1019']);
+  assert.deepEqual(cache.get('key-3019'), ['译文 3019']);
   assert.equal(await cache.flush(), true);
-  assert.equal(Object.keys(store.state.data.entries).length, 1000);
+  assert.equal(Object.keys(store.state.data.entries).length, 3000);
 });

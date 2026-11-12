@@ -15,18 +15,18 @@ import { createHash } from 'node:crypto';
 import { LIMITS } from './constants.js';
 
 /** Capacity from DESIGN §4.2 ("进程内 LRU（512 批）"). */
-export const TRANSLATION_CACHE_SIZE = 512;
+export const TRANSLATION_CACHE_SIZE = 2048;
 
 /** On-disk translation-cache envelope version (DESIGN-CACHE §2). */
-export const PERSISTENT_CACHE_VERSION = 1;
+export const PERSISTENT_CACHE_VERSION = 2;
 
-/** Default persistent capacity, in batch entries (DESIGN-CACHE §2: 1000). */
+/** Default persistent capacity, in batch entries (DESIGN-CACHE §2: 3000). */
 export const PERSISTENT_CACHE_MAX = LIMITS.translationCacheEntries;
 
 /** Default persistent entry TTL: 7 days (DESIGN-CACHE §2). */
 export const PERSISTENT_CACHE_TTL_MS = LIMITS.translationCacheTtlMs;
 
-/** Serialized-envelope cap; oldest entries are dropped beyond it (DESIGN-CACHE §2: ~4 MB). */
+/** Serialized-envelope cap; oldest entries are dropped beyond it (DESIGN-CACHE §2: ~8 MB). */
 export const PERSISTENT_CACHE_MAX_BYTES = LIMITS.translationCacheFileBytes;
 
 /** Coalescing window for the writes scheduled by `set` (DESIGN-CACHE §3: ~300 ms). */
@@ -76,18 +76,21 @@ export function createLruCache({ max = TRANSLATION_CACHE_SIZE } = {}) {
 
 /**
  * Build the cache key from DESIGN §4.2:
- * `provider|model|target|sha1(system|userTemplate|textsJson)`.
+ * `provider|model|target|sha1(system|user|sourceLanguage|textsJson)`.
  *
- * The source language joins the hash material because it changes the rendered
+ * `user` is the fully rendered user prompt (including page/style context), so
+ * moving dynamic context between system and user cannot cause a false hit. The
+ * source language joins the hash material because it changes the rendered
  * prompt without otherwise changing the key. Placeholders are rendered before
  * hashing, so editing a prompt invalidates cached translations.
  * @param {{provider: string, model: string, targetLanguage: string,
- *   system: string, userTemplate: string, sourceLanguage?: string,
+ *   system: string, user?: string, userTemplate?: string, sourceLanguage?: string,
  *   textsJson: string}} input - request identity.
  * @returns {string}
  */
-export function createBatchCacheKey({ provider, model, targetLanguage, system, userTemplate, sourceLanguage = '', textsJson }) {
-  const material = [system, userTemplate, sourceLanguage, textsJson].join('\u0000');
+export function createBatchCacheKey({ provider, model, targetLanguage, system, user, userTemplate, sourceLanguage = '', textsJson }) {
+  const userMaterial = typeof user === 'string' ? user : (userTemplate ?? '');
+  const material = [system, userMaterial, sourceLanguage, textsJson].join('\u0000');
   const digest = createHash('sha1').update(material).digest('hex');
   return `${provider}|${model}|${targetLanguage}|${digest}`;
 }

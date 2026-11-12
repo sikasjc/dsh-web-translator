@@ -185,15 +185,24 @@ export function renderTranslatePrompts({ systemPrompt, userTemplate, texts, targ
     pageContext: contextText,
   };
   const baseSystem = renderTemplate(systemPrompt ?? DEFAULT_SYSTEM_PROMPT, values);
+  const renderedUser = renderTemplate(userTemplate ?? DEFAULT_USER_TEMPLATE, values);
   const hasLinkMarkers = segments.some((text) => typeof text === 'string' && /\[\[\s*\d+\s*\]\]/.test(text));
   const linkNote = hasLinkMarkers
     ? 'Inline link/code markers look like [[1]]...[[/1]]: preserve each marker pair exactly, translate only the text between them, and keep code marker contents literal (file names, commands, identifiers).'
     : '';
-  let system = contextText.length > 0 ? contextText + '\n\n' + baseSystem : baseSystem;
+  let system = baseSystem;
   if (linkNote.length > 0) system += '\n\n' + linkNote;
+  // Keep the static system prompt as a stable prefix for provider prompt caching.
+  // Dynamic page/style context goes into the user message instead (before the
+  // segments), unless a custom template already renders {{pageContext}} itself.
+  const userHasContext = /\{\{\s*pageContext\s*\}\}/.test(userTemplate ?? '');
+  const systemHasContext = /\{\{\s*pageContext\s*\}\}/.test(systemPrompt ?? '');
+  const user = contextText.length > 0 && !userHasContext && !systemHasContext
+    ? contextText + '\n\n' + renderedUser
+    : renderedUser;
   return {
     system,
-    user: renderTemplate(userTemplate ?? DEFAULT_USER_TEMPLATE, values),
+    user,
     textsJson,
     segmentCount: segments.length,
   };
