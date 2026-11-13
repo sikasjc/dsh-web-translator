@@ -9,7 +9,9 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.13.0** · **browser extension 1.17.14**. Recent changes:
+> Current versions: **DSH plugin 1.13.1** · **browser extension 1.17.14**. Recent changes:
+> the Floating-ball page is now also available on the left-toolbar "dsh翻译" page, so hidden
+> domains can be managed there too (plugin 1.13.1);
 > terminology now supports multiple libraries — built-in packs (Rust, general programming/network)
 > plus user-created custom libraries — which can be enabled/disabled on demand, and custom
 > libraries support term entries (source → fixed Chinese rendering / keep original); a Terminology
@@ -58,7 +60,7 @@ under [Data and privacy](#data-and-privacy).
 
 | Component | Directory | Role | Required |
 |---|---|---|---|
-| **DSH plugin** | [`dsh-web-translator/`](dsh-web-translator/) | Translation / lookup backend (calls DSH models), token ledger and stats, translation-result cache, wordbook persistence; full "dsh翻译" page in the DSH left toolbar (Overview / Traces / Settings / Wordbook / Terminology) | ✅ Required (the extension cannot work without it) |
+| **DSH plugin** | [`dsh-web-translator/`](dsh-web-translator/) | Translation / lookup backend (calls DSH models), token ledger and stats, translation-result cache, wordbook persistence; full "dsh翻译" page in the DSH left toolbar (Overview / Traces / Settings / Wordbook / Terminology / Floating ball) | ✅ Required (the extension cannot work without it) |
 | **Browser extension** | [`dsh-web-translator-extension/`](dsh-web-translator-extension/) | Page translation (original / bilingual / translation-only), context menu, selection/double-click lookup, follow-page translation, floating ball, token display in the popup | ✅ Required (does the work on web pages) |
 
 > Plugin only = you get the DSH stats/settings pages, but pages are not translated. Extension only =
@@ -129,8 +131,9 @@ under [Data and privacy](#data-and-privacy).
   - **Settings**: model, reasoning effort, target language, translation style, system prompt, user
     template, batching parameters, **third-party dictionary provider**, **image vision model** and test
     translation; a **Floating ball** page lists the domains that hide the ball and lets you remove or
-    manually add them; a **Terminology** page (left-toolbar page and settings page) manages built-in term
-    packs and custom terminology libraries (enable/disable per library, add/remove custom entries);
+    manually add them; the same **Floating ball** page is also available on the left-toolbar page; a
+    **Terminology** page (left-toolbar page and settings page) manages built-in term packs and custom
+    terminology libraries (enable/disable per library, add/remove custom entries);
   - **Image translation backend**: captures one image, sends it to an image-capable model, returns
     OCR blocks with normalized bounding boxes, records image tokens in the ledger and one DSH turn per
     image, then deletes the temporary image attachment;
@@ -204,7 +207,7 @@ the `web` profile.)
 ### Verify the install
 
 1. A **dsh翻译** icon appears in the DSH left toolbar (below "插件市场"); clicking it shows
-   Overview / Traces / Settings / Wordbook / Terminology;
+   Overview / Traces / Settings / Wordbook / Terminology / Floating ball;
 2. "dsh翻译" appears in the DSH Settings list;
 3. Check the local API from a terminal:
 
