@@ -17,6 +17,11 @@ import {
   looksLikeTechnicalContent,
   renderPageContext,
 } from '../lib/prompts.js';
+import { BUILTIN_TERM_LIBRARIES, buildTerminologyRules } from '../lib/terms.js';
+
+/** Real terminology hints produced from the built-in packs (no custom libraries). */
+const TERMINOLOGY_FULL = buildTerminologyRules({ builtin: BUILTIN_TERM_LIBRARIES }, { technical: true }).hint(false);
+const TERMINOLOGY_COMPACT = buildTerminologyRules({ builtin: BUILTIN_TERM_LIBRARIES }, { technical: true }).hint(true);
 
 test('renderTemplate substitutes known placeholders and keeps unknown ones', () => {
   const rendered = renderTemplate('A {{targetLanguage}} B {{unknown}} C', { targetLanguage: 'zh-CN' });
@@ -96,6 +101,7 @@ test('lookup prompts are plain-text oriented and include context when present', 
       title: 'Never type - The Rust Reference',
       url: 'https://doc.rust-lang.org/reference/types/never.html',
       technical: true,
+      terminologyHint: TERMINOLOGY_COMPACT,
     },
   });
   assert.ok(technicalLookup.user.includes('uninhabited type'));
@@ -110,6 +116,7 @@ test('page context is prepended for technical pages and not for generic pages', 
       title: 'Traits: Defining Shared Behavior - The Rust Programming Language',
       url: 'https://doc.rust-lang.org/book/ch10-02-traits.html',
       technical: true,
+      terminologyHint: TERMINOLOGY_FULL,
     },
   });
   assert.ok(technical.user.includes('Page context'));
@@ -137,7 +144,13 @@ test('explicit translation styles inject domain rules instead of auto detection'
   const programming = renderTranslatePrompts({
     texts: ['A plain sentence'],
     targetLanguage: 'zh-CN',
-    pageContext: { title: 'A generic page', url: 'https://example.com/a', style: 'programming', technical: true },
+    pageContext: {
+      title: 'A generic page',
+      url: 'https://example.com/a',
+      style: 'programming',
+      technical: true,
+      terminologyHint: TERMINOLOGY_FULL,
+    },
   });
   assert.ok(programming.user.includes('trait'));
   assert.ok(programming.user.includes('programming documentation'));
@@ -168,6 +181,28 @@ test('explicit translation styles inject domain rules instead of auto detection'
   });
   assert.equal(general.user.includes('DSH_KEEP'), false);
   assert.equal(general.user.includes('编程'), false);
+});
+
+test('custom terminology hints apply even when the page is not technical', () => {
+  const hint = 'Mandatory terminology for this translation (user-defined terminology libraries): translate "behavior tree" as "行为树" (use exactly this wording).';
+  const rendered = renderTranslatePrompts({
+    texts: ['A behavior tree is a tree.'],
+    targetLanguage: 'zh-CN',
+    pageContext: { title: 'Game AI', url: 'https://example.com/ai', style: 'general', technical: false, terminologyHint: hint },
+  });
+  assert.ok(rendered.user.includes('behavior tree'));
+  assert.ok(rendered.user.includes('行为树'));
+  assert.equal(rendered.user.includes('software/programming'),
+    false, 'no technical prefix expected from a custom-only hint');
+
+  // With no terminology hint a technical page keeps only the light style hint.
+  const noLibraries = renderTranslatePrompts({
+    texts: ['Rust traits'],
+    targetLanguage: 'zh-CN',
+    pageContext: { title: 'Rust', url: 'https://doc.rust-lang.org', technical: true },
+  });
+  assert.ok(noLibraries.user.includes('Prefer standard technical Chinese terminology'));
+  assert.equal(noLibraries.user.includes('端口'), false);
 });
 
 test('looksLikeTechnicalContent detects docs hosts and repeated technical terms', () => {

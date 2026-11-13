@@ -68,9 +68,46 @@ function createStubApi(overrides = {}) {
       return { items: [], stats: {} };
     },
     getTerms: async () => ({
-      terms: [{ id: 'uninhabited-type', source: 'uninhabited type / uninhabited types', policy: 'translate', target: '无值类型', badRenderings: [] }],
-      appliesTo: { styles: ['auto', 'programming'], endpoints: ['translate', 'lookup'] },
+      libraries: [{
+        id: 'rust',
+        name: 'Rust 编程',
+        description: 'Rust terms',
+        builtin: true,
+        enabled: true,
+        updatedAt: 0,
+        terms: [{ id: 'uninhabited-type', source: 'uninhabited type / uninhabited types', policy: 'translate', target: '无值类型', badRenderings: [] }],
+      }],
+      limits: { libraries: 20, termsPerLibrary: 200, nameChars: 40, sourceChars: 120, targetChars: 120 },
+      appliesTo: { styles: ['auto', 'programming'], endpoints: ['translate', 'lookup'], builtinScope: 'technical-pages', customScope: 'always' },
     }),
+    addTermLibrary: async (body) => {
+      calls.push({ op: 'addTermLibrary', body });
+      return { libraries: [], limits: {}, appliesTo: {}, id: 'tl_new' };
+    },
+    updateTermLibrary: async (body) => {
+      calls.push({ op: 'updateTermLibrary', body });
+      return { libraries: [], limits: {}, appliesTo: {}, id: body.id };
+    },
+    removeTermLibrary: async (body) => {
+      calls.push({ op: 'removeTermLibrary', body });
+      return { libraries: [], limits: {}, appliesTo: {}, id: body.id };
+    },
+    toggleTermLibrary: async (body) => {
+      calls.push({ op: 'toggleTermLibrary', body });
+      return { libraries: [], limits: {}, appliesTo: {}, id: body.id, enabled: body.enabled };
+    },
+    addTermEntry: async (body) => {
+      calls.push({ op: 'addTermEntry', body });
+      return { libraries: [], limits: {}, appliesTo: {}, libraryId: body.libraryId, entryId: 'te_new' };
+    },
+    updateTermEntry: async (body) => {
+      calls.push({ op: 'updateTermEntry', body });
+      return { libraries: [], limits: {}, appliesTo: {}, libraryId: body.libraryId, entryId: body.entryId };
+    },
+    removeTermEntry: async (body) => {
+      calls.push({ op: 'removeTermEntry', body });
+      return { libraries: [], limits: {}, appliesTo: {}, libraryId: body.libraryId, entryId: body.entryId };
+    },
     addWordbookEntry: async (body) => ({ item: { id: 'wb_1', word: body.word }, existed: false }),
     updateWordbookEntry: async (body) => ({ item: { id: body.id } }),
     reviewWordbookEntry: async (body) => ({ item: { id: body.id } }),
@@ -211,6 +248,13 @@ test('dispatches GET/PUT/POST routes with parsed bodies and signals', async () =
     ['/models', 'GET'],
     ['/settings', 'GET'],
     ['/terms', 'GET'],
+    ['/terms/libraries/add', 'POST'],
+    ['/terms/libraries/update', 'POST'],
+    ['/terms/libraries/remove', 'POST'],
+    ['/terms/libraries/toggle', 'POST'],
+    ['/terms/entries/add', 'POST'],
+    ['/terms/entries/update', 'POST'],
+    ['/terms/entries/remove', 'POST'],
     ['/usage', 'GET'],
     ['/usage/events', 'GET'],
     ['/usage/turns', 'GET'],
@@ -224,19 +268,44 @@ test('dispatches GET/PUT/POST routes with parsed bodies and signals', async () =
   }
 });
 
-test('GET /terms returns the built-in glossary envelope', async () => {
+test('GET /terms returns the terminology-library envelope', async () => {
   const handler = createHttpHandler(createStubApi(), {});
   const response = await invokeHandler(handler, fakeRequest({ url: '/dsh-immersive/api/terms' }));
   assert.equal(response.statusCode, 200);
   const body = response.json();
   assert.equal(body.ok, true);
-  assert.equal(body.terms[0].id, 'uninhabited-type');
-  assert.equal(body.terms[0].target, '无值类型');
+  assert.equal(body.libraries[0].id, 'rust');
+  assert.equal(body.libraries[0].builtin, true);
+  assert.equal(body.libraries[0].enabled, true);
+  assert.equal(body.libraries[0].terms[0].target, '无值类型');
+  assert.equal(body.appliesTo.customScope, 'always');
 
   const wrongMethod = await invokeHandler(handler, fakeRequest({ method: 'POST', url: '/dsh-immersive/api/terms', body: {} }));
   assert.equal(wrongMethod.statusCode, 405);
   assert.equal(wrongMethod.json().error.code, 'METHOD_NOT_ALLOWED');
   assert.equal(wrongMethod.headers.allow, 'GET');
+});
+
+test('POST /terms/* dispatches mutations with parsed bodies', async () => {
+  const api = createStubApi();
+  const handler = createHttpHandler(api, {});
+  const cases = [
+    ['/terms/libraries/add', { name: '项目术语' }, { op: 'addTermLibrary', match: (body) => body.name === '项目术语' }],
+    ['/terms/libraries/update', { id: 'tl_1', name: '改名' }, { op: 'updateTermLibrary', match: (body) => body.id === 'tl_1' && body.name === '改名' }],
+    ['/terms/libraries/remove', { id: 'tl_1' }, { op: 'removeTermLibrary', match: (body) => body.id === 'tl_1' }],
+    ['/terms/libraries/toggle', { id: 'rust', enabled: false }, { op: 'toggleTermLibrary', match: (body) => body.id === 'rust' && body.enabled === false }],
+    ['/terms/entries/add', { libraryId: 'tl_1', source: 'behavior tree', policy: 'translate', target: '行为树' }, { op: 'addTermEntry', match: (body) => body.source === 'behavior tree' }],
+    ['/terms/entries/update', { libraryId: 'tl_1', entryId: 'te_1', target: '行为树结构' }, { op: 'updateTermEntry', match: (body) => body.entryId === 'te_1' }],
+    ['/terms/entries/remove', { libraryId: 'tl_1', entryId: 'te_1' }, { op: 'removeTermEntry', match: (body) => body.libraryId === 'tl_1' }],
+  ];
+  for (const [path, body, expectation] of cases) {
+    const response = await invokeHandler(handler, fakeRequest({ method: 'POST', url: API_BASE + path, body }));
+    assert.equal(response.statusCode, 200, path);
+    assert.equal(response.json().ok, true, path);
+    const call = api.calls.find((entry) => entry.op === expectation.op);
+    assert.ok(call, `${path} dispatches ${expectation.op}`);
+    assert.ok(expectation.match(call.body), `${path} body`);
+  }
 });
 
 test('dispatches the usage endpoints with query params and DELETE', async () => {

@@ -35,7 +35,7 @@ import {
   normalizeSettingsPatch,
 } from './settings.js';
 import { createJsonStore, resolveDataDir, resolveDshHome } from './store.js';
-import { TECHNICAL_GLOSSARY } from './terms.js';
+import { createTermLibrariesService, TERM_LIBRARIES_VERSION } from './term-libraries.js';
 import { createTranslateService } from './translate.js';
 import { recognizeImage as recognizeLocalImage } from './local-ocr.js';
 import { createUsageService } from './usage.js';
@@ -587,6 +587,11 @@ export function createApi({
     defaultValue: () => ({ version: BALL_SITES_VERSION, sites: [], updatedAt: 0 }),
     logger: log,
   });
+  const termLibrariesStore = createJsonStore(join(directory, 'term-libraries.json'), {
+    // An absent file means "defaults": every built-in pack enabled (see term-libraries.js).
+    defaultValue: () => ({ version: TERM_LIBRARIES_VERSION }),
+    logger: log,
+  });
   const usageStore = createJsonStore(join(directory, 'usage.json'), {
     defaultValue: () => ({ version: USAGE_VERSION }),
     logger: log,
@@ -679,11 +684,13 @@ export function createApi({
       }
     })
     .catch(() => {});
+  const termLibraries = createTermLibrariesService({ store: termLibrariesStore, now: clock });
   const translateService = createTranslateService({
     resolveSelection,
     cache,
     logger: log,
     dictionary,
+    termLibraries,
     timeoutMs,
   });
 
@@ -1580,16 +1587,47 @@ export function createApi({
   }
 
   /**
-   * `GET /terms` (DESIGN §5.7.3): built-in terminology rules, read-only.
-   * The glossary lives in lib/terms.js so the prompt hints, the deterministic
-   * fallback and the settings page cannot document different rules.
-   * @returns {object}
+   * `GET /terms` (DESIGN §5.7.3): built-in packs + custom terminology libraries
+   * with their enabled flags, limits and prompt scope.
+   * @returns {Promise<object>}
    */
-  function getTerms() {
-    return {
-      terms: TECHNICAL_GLOSSARY,
-      appliesTo: { styles: ['auto', 'programming'], endpoints: ['translate', 'lookup'] },
-    };
+  async function getTerms() {
+    return termLibraries.list();
+  }
+
+  /** `POST /terms/libraries/add` (DESIGN §5.7.3). */
+  async function addTermLibrary(body) {
+    return termLibraries.addLibrary(body);
+  }
+
+  /** `POST /terms/libraries/update` (DESIGN §5.7.3). */
+  async function updateTermLibrary(body) {
+    return termLibraries.renameLibrary(body);
+  }
+
+  /** `POST /terms/libraries/remove` (DESIGN §5.7.3). */
+  async function removeTermLibrary(body) {
+    return termLibraries.removeLibrary(body);
+  }
+
+  /** `POST /terms/libraries/toggle` (DESIGN §5.7.3). */
+  async function toggleTermLibrary(body) {
+    return termLibraries.setEnabled(body);
+  }
+
+  /** `POST /terms/entries/add` (DESIGN §5.7.3). */
+  async function addTermEntry(body) {
+    return termLibraries.addEntry(body);
+  }
+
+  /** `POST /terms/entries/update` (DESIGN §5.7.3). */
+  async function updateTermEntry(body) {
+    return termLibraries.updateEntry(body);
+  }
+
+  /** `POST /terms/entries/remove` (DESIGN §5.7.3). */
+  async function removeTermEntry(body) {
+    return termLibraries.removeEntry(body);
   }
 
   /**
@@ -1626,6 +1664,13 @@ export function createApi({
     addBallSite: (body) => ballSites.add(body),
     removeBallSite: (body) => ballSites.remove(body),
     getTerms,
+    addTermLibrary,
+    updateTermLibrary,
+    removeTermLibrary,
+    toggleTermLibrary,
+    addTermEntry,
+    updateTermEntry,
+    removeTermEntry,
     listWordbook,
     addWordbookEntry: (body) => wordbook.add(body),
     updateWordbookEntry: (body) => wordbook.update(body),

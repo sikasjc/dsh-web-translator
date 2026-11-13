@@ -35,6 +35,13 @@ const ROUTES = Object.freeze({
   '/lookup': Object.freeze(['POST']),
   '/image-translate': Object.freeze(['POST']),
   '/terms': Object.freeze(['GET']),
+  '/terms/libraries/add': Object.freeze(['POST']),
+  '/terms/libraries/update': Object.freeze(['POST']),
+  '/terms/libraries/remove': Object.freeze(['POST']),
+  '/terms/libraries/toggle': Object.freeze(['POST']),
+  '/terms/entries/add': Object.freeze(['POST']),
+  '/terms/entries/update': Object.freeze(['POST']),
+  '/terms/entries/remove': Object.freeze(['POST']),
   '/ball-sites': Object.freeze(['GET']),
   '/ball-sites/add': Object.freeze(['POST']),
   '/ball-sites/remove': Object.freeze(['POST']),
@@ -289,6 +296,20 @@ async function dispatchWrite(path, body, api, signal) {
       return api.lookup(body, { signal });
     case '/image-translate':
       return api.imageTranslate(body, { signal });
+    case '/terms/libraries/add':
+      return api.addTermLibrary(body);
+    case '/terms/libraries/update':
+      return api.updateTermLibrary(body);
+    case '/terms/libraries/remove':
+      return api.removeTermLibrary(body);
+    case '/terms/libraries/toggle':
+      return api.toggleTermLibrary(body);
+    case '/terms/entries/add':
+      return api.addTermEntry(body);
+    case '/terms/entries/update':
+      return api.updateTermEntry(body);
+    case '/terms/entries/remove':
+      return api.removeTermEntry(body);
     case '/ball-sites/add':
       return api.addBallSite(body);
     case '/ball-sites/remove':

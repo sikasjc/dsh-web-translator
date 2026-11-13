@@ -13,7 +13,7 @@ import { apiError } from './errors.js';
 import { BATCH_TIMEOUT_MS, callModel, estimateMaxTokens, userMessage } from './llm.js';
 import { plainTextTranslation, parseTranslations } from './parse.js';
 import { CORRECTION_MESSAGE, looksLikeTechnicalContent, renderLookupPrompts, renderTranslatePrompts } from './prompts.js';
-import { applyTechnicalFallback, protectTechnicalTerms, restoreTechnicalTerms } from './terms.js';
+import { buildTerminologyRules } from './terms.js';
 import {
   isPlainObject,
   normalizeHttpUrl,
@@ -95,7 +95,7 @@ export function normalizeSegmentText(value) {
     .trim();
 }
 
-export function createTranslateService({ resolveSelection, cache, logger, dictionary, timeoutMs = BATCH_TIMEOUT_MS } = {}) {
+export function createTranslateService({ resolveSelection, cache, logger, dictionary, termLibraries, timeoutMs = BATCH_TIMEOUT_MS } = {}) {
   /**
    * Log the first 200 characters of an unusable model answer; never returned to
    * the client (DESIGN §4.3 step 5).
@@ -107,6 +107,41 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
     } catch {
       // Diagnostics only.
     }
+  }
+
+  /**
+   * Build the terminology rules for one request from the enabled libraries.
+   * Built-in packs apply on technical pages; custom libraries apply everywhere.
+   * A broken custom-library document must never fail a translation: log and
+   * continue without terminology rules instead.
+   * @param {{technical: boolean}} pageContext - current page context.
+   * @returns {Promise<null | object>}
+   */
+  async function resolveTerminology(pageContext) {
+    if (!termLibraries || typeof termLibraries.activeLibraries !== 'function') return null;
+    try {
+      const libraries = await termLibraries.activeLibraries();
+      return buildTerminologyRules(libraries, { technical: pageContext?.technical === true });
+    } catch (error) {
+      try {
+        logger?.warn?.(`[dsh-web-translator] terminology rules unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      } catch {
+        // Diagnostics only.
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Protect keep-terms with opaque tokens (empty protection when no library is
+   * enabled).
+   * @param {object | null} terminology - rules from resolveTerminology().
+   * @param {readonly string[]} segments - batch segments.
+   * @returns {{texts: string[], tokens: object[]}}
+   */
+  function protectSegments(terminology, segments) {
+    if (terminology && typeof terminology.protect === 'function') return terminology.protect(segments);
+    return { texts: Array.from(segments), tokens: [] };
   }
 
   /**
@@ -201,6 +236,8 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         technical: style === 'programming'
           || (style === 'auto' && looksLikeTechnicalContent({ title: sourceTitle, url: sourceUrl, texts })),
       };
+      const terminology = await resolveTerminology(pageContext);
+      if (terminology !== null) pageContext.terminologyHint = terminology.hint(false);
 
       const entries = [];
       texts.forEach((text, index) => {
@@ -225,9 +262,7 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       });
       const plans = batches.map((batch) => {
         const segments = batch.map((entry) => entry.text);
-        const protection = pageContext.technical
-          ? protectTechnicalTerms(segments)
-          : { texts: segments, tokens: [] };
+        const protection = protectSegments(terminology, segments);
         const rendered = renderTranslatePrompts({
           systemPrompt: settings.systemPrompt,
           userTemplate: settings.userTemplate,
@@ -261,10 +296,14 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       const misses = plans.filter((plan) => plan.cached === undefined);
       await runPool(misses, clampConcurrency(settings.concurrency), async (plan) => {
         const result = await translateBatch(plan, { llm, provider, model, reasoningEffort, modelInfo }, signal);
-        const finalized = result.translations.map((value, index) => applyTechnicalFallback(
-          plan.segments[index] ?? '',
-          restoreTechnicalTerms(value, plan.protection.tokens),
-        ));
+        const finalized = result.translations.map((value, index) => {
+          const restored = terminology !== null
+            ? terminology.restore(value, plan.protection.tokens)
+            : value;
+          return terminology !== null
+            ? terminology.applyFallback(plan.segments[index] ?? '', restored)
+            : restored;
+        });
         plan.translations = finalized;
         plan.usage = result.usage;
         plan.retries = result.retries;
@@ -341,10 +380,10 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         technical: style === 'programming'
           || (style === 'auto' && looksLikeTechnicalContent({ title: sourceTitle, url: sourceUrl, texts: [text, context ?? ''] })),
       };
+      const terminology = await resolveTerminology(pageContext);
+      if (terminology !== null) pageContext.terminologyHint = terminology.hint(true);
 
-      const lookupProtection = pageContext.technical
-        ? protectTechnicalTerms([text])
-        : { texts: [text], tokens: [] };
+      const lookupProtection = protectSegments(terminology, [text]);
       const rendered = renderLookupPrompts({ text: lookupProtection.texts[0], context, targetLanguage, pageContext });
       const options = buildGenerateOptions({
         provider: selection.provider,
@@ -362,9 +401,16 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         dictionaryLookup,
       ]);
 
-      const rawTranslation = plainTextTranslation(generated.text);
-      const restoredTranslation = rawTranslation === null ? null : restoreTechnicalTerms(rawTranslation, lookupProtection.tokens);
-      const translation = restoredTranslation === null ? null : normalizeSegmentText(applyTechnicalFallback(text, restoredTranslation));
+      // Restore keep-tokens BEFORE the plain-text parse: a reply that starts with a
+      // protected term begins with "[[DSH_KEEP_...]]", which plainTextTranslation
+      // would otherwise reject as JSON-looking ("[") and turn into a 502.
+      const restoredReply = terminology !== null
+        ? terminology.restore(generated.text, lookupProtection.tokens)
+        : generated.text;
+      const rawTranslation = plainTextTranslation(restoredReply);
+      const translation = rawTranslation === null
+        ? null
+        : normalizeSegmentText(terminology !== null ? terminology.applyFallback(text, rawTranslation) : rawTranslation);
       if (translation === null) {
         logInvalidOutput(generated.text);
         throw apiError('INVALID_MODEL_OUTPUT', 'the model returned an empty translation');

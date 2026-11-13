@@ -3,7 +3,7 @@
 一套运行在本机的网页翻译方案：
 
 - **浏览器扩展（Chrome/Edge MV3）**：在任意真实网页上做**原文 / 双语对照 / 仅译文**三种模式的网页翻译；右键菜单「dsh翻译」直达三种模式；划词、双击查词（可开关）；一键加入单词本；翻译后面板自动收起只留悬浮球；**浮窗内实时显示本页 / 今日 token 消耗**。
-- **DSH 插件**：提供**翻译后端**（使用你在 DSH 中配置的模型，模型可切换、提示词可调整）、**页面上下文与翻译风格**（自动/通用/编程/科技/金融；技术页面保护 Rust `trait`/`crate`/`impl` 原文、`port`→端口、`uninhabited type`→无值类型）、**token 账本与轨迹统计**、**单词本持久化**、**图片翻译后端**（右键图片 → OCR + 原位译文，图片用完即删）、**翻译记录开关与一键清理**；在 DSH **左侧工具栏**提供「dsh翻译」整页（概览 / 轨迹 / 设置 / 单词本），并在 DSH「设置」中保留同名页面。插件页会检测当前浏览器是否安装扩展：未检测到时弹出安装引导（GitHub 安装步骤 + 重新检测）。
+- **DSH 插件**：提供**翻译后端**（使用你在 DSH 中配置的模型，模型可切换、提示词可调整）、**页面上下文与翻译风格**（自动/通用/编程/科技/金融；技术页面保护 Rust `trait`/`crate`/`impl` 原文、`port`→端口、`uninhabited type`→无值类型；**术语库支持多个内置术语包 + 自定义术语库，可按需勾选启用**）、**token 账本与轨迹统计**、**单词本持久化**、**图片翻译后端**（右键图片 → OCR + 原位译文，图片用完即删）、**翻译记录开关与一键清理**；在 DSH **左侧工具栏**提供「dsh翻译」整页（概览 / 轨迹 / 设置 / 单词本 / 术语库），并在 DSH「设置」中保留同名页面。插件页会检测当前浏览器是否安装扩展：未检测到时弹出安装引导（GitHub 安装步骤 + 重新检测）。
 
 不需要任何第三方翻译 API key：翻译经由本机 DSH 的模型服务完成；扩展只与 `http://127.0.0.1:3080` 上的本地接口通信。
 
@@ -77,8 +77,9 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | **设置** | 模型、推理强度、目标语言、**翻译风格（自动/通用/编程/科技/金融）**、system 提示词、user 模板、批次参数、测试翻译（与设置页同源实现）；**翻译记录**：关闭记录开关（默认记录）+ 清理所有记录（清空 token/轨迹并归档隐藏 DSH「dsh翻译记录」会话） |
 | **单词本** | 单词列表、复习、发音练习（与设置页同源实现） |
 | **悬浮球**（DSH 设置页 Tab） | 不展示悬浮球的域名列表：查看、移除、手动添加（扩展在面板/右键菜单添加，Host 持久化到 `ball-sites.json`） |
-| **术语库**（左侧工具栏页面 + DSH 设置页 Tab，只读） | 内置技术页面术语规则：`trait`/`crate`/`impl` 保留原文、`port`→端口、`uninhabited type`→无值类型及相应的兜底纠正（无兜底的词条只保留原文）；数据来自 `GET /terms`，与提示词/兜底行为一致并由单测校验 |
+| **术语库**（左侧工具栏页面 + DSH 设置页 Tab） | 多个内置术语包（Rust 编程、通用编程/网络）+ 自定义术语库；勾选启用哪些库；内置包只读，自定义库可新建/重命名/删除并增删词条（原文 → 固定译法 / 保留原文）；数据来自 `GET /terms`，写操作走 `POST /terms/*` |
 
+> **术语库**：内置包 `rust`（trait/crate/impl 保留原文、uninhabited type→无值类型）与 `programming`（port→端口）只读，可在「术语库」页勾选停用；自定义库可新建多个，添加「原文 → 固定译法 / 保留原文」词条（每库最多 200 条）。内置包仅在技术/编程页面生效，自定义库对所有页面生效；规则进入提示词——内置规则的已知误译有确定性兜底，自定义词条的 keep 由占位符保护、固定译法由提示词约束；启用状态/词条改动会自然使旧翻译缓存失效。
 > **翻译结果缓存（v1.7.0 起持久化）**：相同原文 / 提示词 / 模型再次翻译时直接复用译文（0 token）；缓存写本机 `<dataDir>/cache.json`，保留 7 天、最多 3000 批（约 8MB），跨 DSH 重启有效；「概览」页底部可「清空翻译结果缓存」；缓存损坏/读写失败只告警，不影响翻译。
 > Token 统计来自模型服务返回的真实 usage（输入 / 输出 / 缓存读 / 缓存写四项），按本地日期聚合、保留最近 90 天与最近 500 条事件；缓存命中的请求 tokens 记 0 但仍计数。插件账本与 DSH 原生统计口径一致。
 > **复用 DSH 原生轨迹**：扩展为每次翻译动作/查词生成 `turnId`，Host 用它在本地创建一条 DSH 会话（标题「翻译 · 页面标题 / 站点」，会话 id 形如 `translation-<turnId>`），每个模型请求写成该会话的一轮原生对话（`user/message` + `assistant/message`，含 usage）。轨迹页的「打开 DSH 轨迹」按钮通过 `uiWorkspace.openSession(sessionId)` 打开该会话，即可使用 DSH 原生「对话 / 轨迹 / 统计」。会话统一归入插件自建的 DSH workspace **「dsh翻译记录」**（目录 `$DSH_HOME/immersive-translate/conversations/`，历史会话首次启动时自动回填；侧边栏直接可见）；空闲 15 分钟后释放 agent，再次打开会自动从持久化恢复。页面原文/译文只写入**本机** DSH 会话日志，不会被额外发送。
@@ -145,7 +146,14 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | GET | `/models/resolve?provider=&model=` | 单模型能力（上下文/输出上限/推理强度） |
 | GET | `/settings` | 生效设置 + 默认值 + 选中模型信息 |
 | PUT | `/settings` | 更新设置（模型/提示词/语言/翻译风格/第三方词典/批量参数/`recordHistory`） |
-| GET | `/terms` | 内置技术页面术语库（只读）：`{terms:[{id,source,policy,target?,badRenderings,note}], appliesTo:{styles,endpoints}}`，供设置页「术语库」Tab 展示 |
+| GET | `/terms` | 术语库列表：`{libraries:[{id,name,description,builtin,enabled,terms:[...]}], limits, appliesTo}`，供「术语库」页展示 |
+| POST | `/terms/libraries/add` `{name}` | 新建自定义术语库（默认启用，最多 20 个） |
+| POST | `/terms/libraries/update` `{id, name}` | 重命名自定义术语库 |
+| POST | `/terms/libraries/remove` `{id}` | 删除自定义术语库 |
+| POST | `/terms/libraries/toggle` `{id, enabled}` | 启用/停用术语库（内置包也可停用） |
+| POST | `/terms/entries/add` `{libraryId, source, policy, target?}` | 添加词条（`policy`: `keep`/`translate`，最多 200 条/库） |
+| POST | `/terms/entries/update` `{libraryId, entryId, source?, policy?, target?}` | 修改词条 |
+| POST | `/terms/entries/remove` `{libraryId, entryId}` | 删除词条 |
 | DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 归档隐藏「dsh翻译记录」会话 |
 | POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?}`，响应含 `usage` 四字段与 `cached` |
 | POST | `/lookup` | 查词/查句 + 英文词典信息，响应含 `usage`；接受相同可选元数据 |
@@ -178,6 +186,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
   - `usage.json`：Token 账本与最近 500 条事件（可在「轨迹」页清空）；
   - `cache.json`：翻译结果缓存（原文批次 → 译文，7 天 / 3000 批，可在「概览」页清空）；
   - `ball-sites.json`：不展示悬浮球的域名列表；
+  - `term-libraries.json`：自定义术语库与启用状态（`active`）；
   - `conversations/`：翻译会话的 workspace 目录（会话日志由 DSH 自己持久化）。
 - 图片翻译只在用户右键图片时发生：默认先在本机用跨平台 Tesseract WASM OCR，只有文字进入翻译链路；本地 OCR 不可用/置信度低或用户显式选择图片模型时，才把图片当前可见区域发给所选视觉模型。Host 在请求结束（成功或失败）后尽力删除临时附件与请求变体缓存；图片不写入 DSH 会话记录、不写入插件翻译缓存，只有 OCR 文本/译文进入本地结果缓存；
 - 扩展只保存自己的 UI 偏好（`chrome.storage.local`），不保存页面内容；

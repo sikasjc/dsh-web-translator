@@ -40,7 +40,7 @@
     ├── manifest.json  background.js  content.js  options.html  options.js  icons/*.png  README.md
 ```
 
-数据结构落盘：`$DSH_HOME/immersive-translate/settings.json`、`wordbook.json`（Host 半原子写；不写 profile）。
+数据结构落盘：`$DSH_HOME/immersive-translate/settings.json`、`wordbook.json`、`term-libraries.json` 等（Host 半原子写；不写 profile）。
 
 ## 3. 架构
 
@@ -249,8 +249,15 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ### 5.7.1 `GET /ball-sites` / `POST /ball-sites/add|remove`
 悬浮球域名隐藏列表：GET 返回 `{sites, updatedAt}`；add/remove 请求 `{domain}`，域名统一小写、去掉协议/路径/端口/`www.` 前缀，去重且最多 200 个。
 
-### 5.7.3 `GET /terms`
-内置技术页面术语库（只读）：返回 `{terms:[{id, source, policy:'keep'|'translate', target?, badRenderings:[...], note}], appliesTo:{styles:['auto','programming'], endpoints:['translate','lookup']}}`。数据来自 `lib/terms.js` 的 `TECHNICAL_GLOSSARY`，逐条描述 `prompts.js` 的强制术语提示与 `applyTechnicalFallback` 的确定性兜底；术语单测会校验 `badRenderings` 与兜底实际替换一致，避免 UI 文档漂移。`appliesTo` 描述提示词规则的生效范围（`auto` 技术页检测 / `programming` 风格）；确定性兜底按源短语命中生效，不受页面检测门控。DSH 设置页「术语库」Tab 只读展示，不支持编辑。
+### 5.7.3 术语库（`GET /terms` / `POST /terms/*`）
+
+术语按**库**组织：内置包定义在 `lib/terms.js`（`rust` / `programming`，只读、不可改名/删除/增删词条，但可停用），自定义库由 `lib/term-libraries.js` 持久化到 `term-libraries.json`（`{version:1, active:string[], libraries:[{id,name,createdAt,updatedAt,terms:[{id,source,policy:'keep'|'translate',target,createdAt,updatedAt}]}]}`；文件不存在时默认启用全部内置包，新建自定义库默认启用）。
+
+- `GET /terms` → `{libraries:[{id,name,description,builtin,enabled,updatedAt,terms:[{id,source,policy,target,badRenderings}]}], limits:{libraries:20,termsPerLibrary:200,nameChars:40,sourceChars:120,targetChars:120}, appliesTo:{styles:['auto','programming'],endpoints:['translate','lookup'],builtinScope:'technical-pages',customScope:'always'}}`。
+- 写操作（JSON body；均返回与 GET 相同 payload + 动作 id，供客户端整体替换）：`POST /terms/libraries/add {name}`、`/terms/libraries/update {id,name}`、`/terms/libraries/remove {id}`、`/terms/libraries/toggle {id,enabled}`、`/terms/entries/add {libraryId,source,policy,target?}`、`/terms/entries/update {libraryId,entryId,source?,policy?,target?}`、`/terms/entries/remove {libraryId,entryId}`。校验失败 400 `BAD_REQUEST`，库/词条不存在 404 `NOT_FOUND`，内置包不可编辑。
+- 生效范围：内置包仅在技术页面生效（风格 `programming`，或 `auto` 且 `looksLikeTechnicalContent()` 命中）；自定义库对所有页面生效（用户显式选择）。翻译/查词时 `resolveTerminology()` 读取启用库，`buildTerminologyRules({builtin,custom}, {technical})` 生成三样东西：`terminologyHint`（注入 `pageContext`，供 `prompts.js` 渲染）、keep 词的占位符 token（`[[DSH_KEEP_*]]`，返回后还原）、已知 `badRenderings` 的确定性兜底；`target` 以「类型」结尾时整词替换 `bad(的)?类型`，避免出现「无值类型类型」这类名词重复。
+- 缓存：`terminologyHint` 进入渲染后的 prompts、keep token 进入 segments，启用/停用库或改动词条会自然改变缓存 key，旧缓存不会串用。查词链路先还原 keep token 再做纯文本解析（`plainTextTranslation()` 会把以 `[` 开头的回答当作 JSON 拒绝），否则以受保护词开头的查词答案会被误判成 `INVALID_MODEL_OUTPUT`。
+- 自定义词条匹配：`compileTermPattern()` 对 ASCII 词/短语加词边界并容忍复数 `s`，短语内空白匹配任意空白串；CJK/含标点词条按字面匹配（大小写不敏感）。
 
 ### 5.8 单词本
 
@@ -297,8 +304,9 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
   - 推理强度：auto/各 effort；目标语言 select；「保存」按钮（PUT /settings），脏状态提示；
   - 提示词：systemPrompt textarea（≥6 行）+ userTemplate textarea + 「恢复默认」；侧注说明 JSON 输出要求；
   - 测试：文本框 + 「测试翻译」→ POST /translate，显示结果/耗时/模型/错误；空文本禁用。
-- **术语库**（只读）：
-  - 顶部标题 + 条目数 chip + 生效范围说明（技术/编程页面，整页翻译与查词）；每条显示英文术语、处理策略（保留原文/固定译法）、目标译法、兜底纠正列表与说明；数据缺字段/请求失败时降级为空态/错误态（可重试）。
+- **术语库**（管理 UI）：
+  - 顶部「新建术语库」输入 + 创建（上限 20 个自定义库）；卡片列表按内置包 → 自定义库排序，每个库显示启用 checkbox、名称、内置/自定义 chip、词条数、说明。内置库只读（可停用但不可改名/删除/增删词条），自定义库可重命名、二次确认删除。
+  - 词条行显示原文、处理策略（保留原文/固定译法）、目标译法、内置词的兜底纠正列表；自定义库提供内联添加词条表单（原文/策略/译法，上限 200 条）与逐条删除。所有写操作有 busy 态 + 成功/失败 notice，成功后用响应 payload 整体替换列表；数据缺字段/请求失败时降级为空态/错误态（可重试）。
 - **单词本**：
   - 顶部统计（总数/待复习/已掌握）+ 搜索框 + 过滤 tab（待复习/全部/已掌握）；
   - 列表：单词、音标、译文、下次复习、发音按钮（🔊）、编辑备注、标记掌握、删除；

@@ -128,18 +128,55 @@ window.__ModuleLoader__.load({
       'ball.removed': '已移除 {domain}',
       'ball.invalid': '请输入有效域名（如 example.com）',
       'ball.loadFailed': '无法加载悬浮球域名列表',
-      'terms.title': '内置术语库',
-      'terms.hint': '技术/编程页面自动应用以下术语规则（翻译风格为「自动」且识别为技术页面，或选择「编程」时）；整页翻译与划词查词都生效。规则内置在 Host，本页只读；修改规则需升级插件。',
-      'terms.count': '共 {count} 条',
+      'terms.title': '术语库',
+      'terms.hint': '勾选启用的术语库会应用到翻译与划词查词：内置库仅技术/编程页面自动生效，自定义库对所有页面生效。',
+      'terms.count': '共 {count} 条词条',
+      'terms.libraryCount': '共 {count} 个库',
+      'terms.termsCount': '{count} 条词条',
       'terms.policy.keep': '保留原文',
       'terms.policy.translate': '固定译法',
       'terms.bad': '兜底纠正：{list}',
-      'terms.empty': '暂无内置术语',
+      'terms.empty': '暂无术语库',
+      'terms.emptyHint': '创建一个自定义库，或刷新页面等待内置库加载。',
+      'terms.emptyLibrary': '该库暂无术语',
       'terms.loadFailed': '无法加载术语库',
-      'terms.note.trait': 'Rust 的 trait/traits 保留英文原文；模型若误译为「特征/特质」，兜底改回原文。',
-      'terms.note.crate-impl': 'crate、impl 以及代码标识符、语言关键字保持原样，不翻译。',
-      'terms.note.port': '网络/编程语境下的 port 译为「端口」；误译为「港口/口岸」时兜底纠正。',
-      'terms.note.uninhabited-type': '类型论术语（没有值的类型，例如 Rust 的 !）译为「无值类型」；「不可居住/不可继承」等直译会被兜底纠正。',
+      'terms.newLibrary': '新建自定义库',
+      'terms.newLibraryPlaceholder': '术语库名称',
+      'terms.create': '创建',
+      'terms.builtin': '内置',
+      'terms.custom': '自定义',
+      'terms.enable': '启用',
+      'terms.enabled': '已启用',
+      'terms.disabled': '已停用',
+      'terms.rename': '重命名',
+      'terms.renamePlaceholder': '新的名称',
+      'terms.delete': '删除',
+      'terms.deleteConfirm': '删除后无法恢复，确认删除「{name}」？',
+      'terms.deleteYes': '确认删除',
+      'terms.addEntry': '添加词条',
+      'terms.entrySource': '原文',
+      'terms.entrySourcePlaceholder': '原文，例如 trait / traits',
+      'terms.entryPolicy': '策略',
+      'terms.entryPolicyKeep': '保留原文（不翻译）',
+      'terms.entryPolicyTranslate': '固定译法（指定译文）',
+      'terms.entryTarget': '译文',
+      'terms.entryTargetPlaceholder': '固定译文，例如「端口」',
+      'terms.entryAdd': '添加',
+      'terms.libraryCreated': '已创建术语库「{name}」',
+      'terms.libraryRemoved': '已删除术语库「{name}」',
+      'terms.libraryRenamed': '已重命名术语库「{name}」',
+      'terms.libraryEnabled': '已启用「{name}」',
+      'terms.libraryDisabled': '已停用「{name}」',
+      'terms.entryAdded': '已添加词条「{source}」',
+      'terms.entryRemoved': '已删除词条「{source}」',
+      'terms.limitLibraries': '自定义库上限 {max} 个，名称最多 {nameChars} 个字符',
+      'terms.limitTerms': '每个库最多 {max} 条词条',
+      'terms.scopeBuiltin': '仅技术/编程页面',
+      'terms.scopeCustom': '所有页面',
+      'terms.lib.rust.name': 'Rust 编程',
+      'terms.lib.rust.desc': 'Rust 语言与类型论术语：trait/traits、crate、impl 保留原文，uninhabited type 固定译为「无值类型」；误译会被兜底纠正。',
+      'terms.lib.programming.name': '通用编程 / 网络',
+      'terms.lib.programming.desc': '通用编程与网络语境术语：网络语境的 port 固定译为「端口」；误译会被兜底纠正。',
       'common.loading': '加载中…',
       'common.retry': '重试',
       'common.save': '保存',
@@ -503,18 +540,55 @@ window.__ModuleLoader__.load({
       'ball.removed': 'Removed {domain}',
       'ball.invalid': 'Enter a valid domain (e.g. example.com)',
       'ball.loadFailed': 'Could not load the hidden-domain list',
-      'terms.title': 'Built-in terminology',
-      'terms.hint': 'These rules apply automatically on technical/programming pages (style "Auto" detected as technical, or "Programming"), for both page translation and word lookup. The rules live in the host plugin, so this page is read-only; changing them requires a plugin upgrade.',
+      'terms.title': 'Terminology',
+      'terms.hint': 'Enabled terminology libraries apply to translation and word lookup: built-in libraries only on technical/programming pages, custom libraries on every page.',
       'terms.count': '{count} entries',
+      'terms.libraryCount': '{count} libraries',
+      'terms.termsCount': '{count} entries',
       'terms.policy.keep': 'Keep original',
       'terms.policy.translate': 'Fixed rendering',
       'terms.bad': 'Fallback fixes: {list}',
-      'terms.empty': 'No built-in terms',
-      'terms.loadFailed': 'Could not load the terminology list',
-      'terms.note.trait': 'Rust trait/traits stay in English; literal 特征/特质 renderings are fixed back to the source spelling.',
-      'terms.note.crate-impl': 'crate, impl, code identifiers and language keywords stay unchanged.',
-      'terms.note.port': 'port in the networking/programming sense becomes 端口; 港口/口岸 renderings are fixed.',
-      'terms.note.uninhabited-type': 'The type-theory term (a type with no values, e.g. Rust !) becomes 无值类型; literal 不可居住/不可继承 renderings are fixed.',
+      'terms.empty': 'No terminology libraries yet',
+      'terms.emptyHint': 'Create a custom library, or refresh the page to load the built-in ones.',
+      'terms.emptyLibrary': 'No entries in this library yet',
+      'terms.loadFailed': 'Could not load terminology libraries',
+      'terms.newLibrary': 'New custom library',
+      'terms.newLibraryPlaceholder': 'Library name',
+      'terms.create': 'Create',
+      'terms.builtin': 'Built-in',
+      'terms.custom': 'Custom',
+      'terms.enable': 'Enable',
+      'terms.enabled': 'Enabled',
+      'terms.disabled': 'Disabled',
+      'terms.rename': 'Rename',
+      'terms.renamePlaceholder': 'New name',
+      'terms.delete': 'Delete',
+      'terms.deleteConfirm': 'This cannot be undone. Delete “{name}”?',
+      'terms.deleteYes': 'Confirm delete',
+      'terms.addEntry': 'Add entry',
+      'terms.entrySource': 'Source',
+      'terms.entrySourcePlaceholder': 'Source, e.g. trait / traits',
+      'terms.entryPolicy': 'Policy',
+      'terms.entryPolicyKeep': 'Keep original (no translation)',
+      'terms.entryPolicyTranslate': 'Fixed rendering (specify target)',
+      'terms.entryTarget': 'Target',
+      'terms.entryTargetPlaceholder': 'Fixed translation, e.g. 端口',
+      'terms.entryAdd': 'Add',
+      'terms.libraryCreated': 'Created library “{name}”',
+      'terms.libraryRemoved': 'Deleted library “{name}”',
+      'terms.libraryRenamed': 'Renamed library to “{name}”',
+      'terms.libraryEnabled': 'Enabled “{name}”',
+      'terms.libraryDisabled': 'Disabled “{name}”',
+      'terms.entryAdded': 'Added entry “{source}”',
+      'terms.entryRemoved': 'Deleted entry “{source}”',
+      'terms.limitLibraries': 'Up to {max} custom libraries, {nameChars} characters per name',
+      'terms.limitTerms': 'Up to {max} entries per library',
+      'terms.scopeBuiltin': 'Technical/programming pages only',
+      'terms.scopeCustom': 'Every page',
+      'terms.lib.rust.name': 'Rust programming',
+      'terms.lib.rust.desc': 'Rust language and type-theory terminology: trait/traits, crate and impl stay in English, uninhabited type becomes 无值类型; mistranslations are fixed automatically.',
+      'terms.lib.programming.name': 'General programming / networking',
+      'terms.lib.programming.desc': 'General programming and networking terminology: port in the networking sense becomes 端口; mistranslations are fixed automatically.',
       'common.loading': 'Loading…',
       'common.retry': 'Retry',
       'common.save': 'Save',
@@ -5353,16 +5427,166 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // #region terminology
+    /** Frozen-contract fallback caps, used when the payload omits `limits`. */
+    const TERMS_DEFAULT_LIMITS = {
+      libraries: 20,
+      termsPerLibrary: 200,
+      nameChars: 40,
+      sourceChars: 120,
+      targetChars: 120,
+    };
+    /** Window event used to refresh the other TermsPage mount after a mutation. */
+    const TERMS_SYNC_EVENT = 'dsh-it-terms-changed';
+
+    /** Coerce one Host cap to a positive integer. */
+    function normalizeTermLimit(value, fallback) {
+      const number = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 0;
+      return number > 0 ? number : fallback;
+    }
+
+    /** Sanitized caps for the new-library and add-entry forms. */
+    function normalizeTermLimits(limits) {
+      const source = limits && typeof limits === 'object' ? limits : {};
+      return {
+        libraries: normalizeTermLimit(source.libraries, TERMS_DEFAULT_LIMITS.libraries),
+        termsPerLibrary: normalizeTermLimit(source.termsPerLibrary, TERMS_DEFAULT_LIMITS.termsPerLibrary),
+        nameChars: normalizeTermLimit(source.nameChars, TERMS_DEFAULT_LIMITS.nameChars),
+        sourceChars: normalizeTermLimit(source.sourceChars, TERMS_DEFAULT_LIMITS.sourceChars),
+        targetChars: normalizeTermLimit(source.targetChars, TERMS_DEFAULT_LIMITS.targetChars),
+      };
+    }
+
+    /** Trimmed non-empty strings (deduped) from an untrusted array. */
+    function normalizeTermStrings(list) {
+      const result = [];
+      if (!Array.isArray(list)) return result;
+      for (let index = 0; index < list.length; index += 1) {
+        const value = typeof list[index] === 'string' ? list[index].trim() : '';
+        if (value && result.indexOf(value) < 0) result.push(value);
+      }
+      return result;
+    }
+
+    /** Sanitize one library's entries; entries without a stable id are dropped. */
+    function normalizeTermEntries(list) {
+      const result = [];
+      if (!Array.isArray(list)) return result;
+      const seen = Object.create(null);
+      for (let index = 0; index < list.length; index += 1) {
+        const entry = list[index];
+        if (!entry || typeof entry !== 'object') continue;
+        const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+        if (!id || seen[id]) continue;
+        seen[id] = true;
+        result.push({
+          id: id,
+          source: typeof entry.source === 'string' && entry.source.length > 0 ? entry.source : id,
+          policy: entry.policy === 'keep' ? 'keep' : 'translate',
+          target: typeof entry.target === 'string' ? entry.target : '',
+          badRenderings: normalizeTermStrings(entry.badRenderings),
+        });
+      }
+      return result;
+    }
+
+    /** Sanitize the untrusted `libraries` payload; never throws on malformed data. */
+    function normalizeTermLibraries(list) {
+      const result = [];
+      if (!Array.isArray(list)) return result;
+      const seen = Object.create(null);
+      for (let index = 0; index < list.length; index += 1) {
+        const library = list[index];
+        if (!library || typeof library !== 'object') continue;
+        const id = typeof library.id === 'string' ? library.id.trim() : '';
+        if (!id || seen[id]) continue;
+        seen[id] = true;
+        const builtin = typeof library.builtin === 'boolean' ? library.builtin : id === 'rust' || id === 'programming';
+        result.push({
+          id: id,
+          name: typeof library.name === 'string' && library.name.trim() ? library.name.trim() : id,
+          description: typeof library.description === 'string' ? library.description : '',
+          builtin: builtin,
+          enabled: library.enabled !== false,
+          updatedAt: typeof library.updatedAt === 'number' && Number.isFinite(library.updatedAt) ? library.updatedAt : 0,
+          terms: normalizeTermEntries(library.terms),
+        });
+      }
+      return result;
+    }
+
+    /** Localized built-in library copy (`terms.lib.<id>.<field>`), Host payload fallback. */
+    function termLibraryText(library, field, t) {
+      if (library && library.builtin) {
+        const key = 'terms.lib.' + library.id + '.' + field;
+        const text = t(key);
+        if (typeof text === 'string' && text !== key) return text;
+      }
+      return field === 'name' ? library.name : library.description;
+    }
+
+    /** Tell the other mounted TermsPage (settings tab / left-toolbar page) about fresh data. */
+    function broadcastTermsPayload(payload) {
+      if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+      const EventConstructor = typeof window.CustomEvent === 'function' ? window.CustomEvent : null;
+      if (!EventConstructor) return;
+      try {
+        const data = payload && typeof payload === 'object' ? payload : {};
+        window.dispatchEvent(
+          new EventConstructor(TERMS_SYNC_EVENT, { detail: { libraries: data.libraries, limits: data.limits } }),
+        );
+      } catch (error) {
+        /* older runtimes fall back to each mount loading its own data */
+      }
+    }
+
     /**
-     * 内置术语库（只读）：GET /terms 返回 Host 内置的技术页面术语规则。
-     * 数据来自 lib/terms.js（与提示词/兜底同一来源），本页不做编辑。
+     * 术语库：GET /terms 返回内置库 + 自定义库；POST terms/libraries/* 与
+     * terms/entries/* 管理启用、重命名、删除和词条增删。设置页与左侧工具栏
+     * 整页两处挂载复用同一组件，成功后通过 window 事件互相同步。
      */
     function TermsPage() {
       const t = useT();
       const [phase, setPhase] = useState('loading');
       const [loadError, setLoadError] = useState(null);
       const [reloadToken, setReloadToken] = useState(0);
-      const [terms, setTerms] = useState([]);
+      const [libraries, setLibraries] = useState([]);
+      const [limits, setLimits] = useState(TERMS_DEFAULT_LIMITS);
+      const [busy, setBusy] = useState(false);
+      const [notice, setNotice] = useState(null);
+      const [newName, setNewName] = useState('');
+      const [renamingId, setRenamingId] = useState('');
+      const [renameName, setRenameName] = useState('');
+      const [confirmingId, setConfirmingId] = useState('');
+      const [entryDrafts, setEntryDrafts] = useState({});
+      const mountedRef = useRef(true);
+      const busyRef = useRef(false);
+      const noticeTimerRef = useRef(null);
+
+      /** Replace the whole libraries/limits state from one GET/POST payload. */
+      function applyPayload(data) {
+        if (!data || typeof data !== 'object') return;
+        if (Array.isArray(data.libraries)) setLibraries(normalizeTermLibraries(data.libraries));
+        setLimits(normalizeTermLimits(data.limits));
+      }
+
+      /** Transient success/error notice (BallSitesPage pattern). */
+      function showNotice(kind, text) {
+        if (!mountedRef.current) return;
+        setNotice({ kind: kind === 'ok' ? 'ok' : 'error', text: String(text || '') });
+        if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = setTimeout(() => {
+          if (mountedRef.current) setNotice(null);
+        }, 4000);
+      }
+
+      useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+          mountedRef.current = false;
+          if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+        };
+      }, []);
 
       useEffect(() => {
         let cancelled = false;
@@ -5371,12 +5595,12 @@ window.__ModuleLoader__.load({
         api
           .get('terms')
           .then((data) => {
-            if (cancelled) return;
-            setTerms(normalizeTerms(data && data.terms));
+            if (cancelled || !mountedRef.current) return;
+            applyPayload(data);
             setPhase('ready');
           })
           .catch((error) => {
-            if (cancelled) return;
+            if (cancelled || !mountedRef.current) return;
             setPhase('error');
             setLoadError(error);
           });
@@ -5385,38 +5609,439 @@ window.__ModuleLoader__.load({
         };
       }, [reloadToken]);
 
-      /** Sanitize the untrusted glossary payload into renderable entries. */
-      function normalizeTerms(list) {
-        const result = [];
-        if (!Array.isArray(list)) return result;
-        for (const entry of list) {
-          if (!entry || typeof entry !== 'object') continue;
-          const id = typeof entry.id === 'string' ? entry.id.trim() : '';
-          if (!id) continue;
-          if (result.some((existing) => existing.id === id)) continue;
-          const badRenderings = Array.isArray(entry.badRenderings)
-            ? entry.badRenderings
-                .filter((item) => typeof item === 'string')
-                .map((item) => item.trim())
-                .filter((item) => item.length > 0)
-            : [];
-          result.push({
-            id: id,
-            source: typeof entry.source === 'string' && entry.source.length > 0 ? entry.source : id,
-            policy: entry.policy === 'keep' ? 'keep' : 'translate',
-            target: typeof entry.target === 'string' ? entry.target : '',
-            note: typeof entry.note === 'string' ? entry.note : '',
-            badRenderings: badRenderings,
-          });
+      // Keep both mounts consistent: a mutation in one instance broadcasts the
+      // fresh payload to the other (same document, e.g. Settings over the panel).
+      useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined;
+        const onExternalChange = (event) => {
+          if (!mountedRef.current) return;
+          const detail = event && event.detail ? event.detail : null;
+          if (!detail || typeof detail !== 'object') return;
+          applyPayload(detail);
+        };
+        window.addEventListener(TERMS_SYNC_EVENT, onExternalChange);
+        return () => {
+          window.removeEventListener(TERMS_SYNC_EVENT, onExternalChange);
+        };
+      }, []);
+
+      /**
+       * Run one POST terms/* mutation. On success the whole libraries/limits
+       * state is replaced by the response payload; failures only show a notice
+       * and keep the current data.
+       * @returns {Promise<boolean>} whether the mutation succeeded.
+       */
+      async function runTermMutation(name, body, successText, onSuccess) {
+        if (busyRef.current) return false;
+        busyRef.current = true;
+        setBusy(true);
+        try {
+          const data = await api.post(name, body);
+          if (!mountedRef.current) return false;
+          applyPayload(data);
+          if (typeof onSuccess === 'function') onSuccess(data);
+          showNotice('ok', successText);
+          broadcastTermsPayload(data);
+          return true;
+        } catch (error) {
+          if (mountedRef.current) showNotice('error', describeError(error, t));
+          return false;
+        } finally {
+          busyRef.current = false;
+          if (mountedRef.current) setBusy(false);
         }
-        return result;
       }
 
-      /** Localized note for a glossary id; falls back to the host-provided note. */
-      function noteOf(entry) {
-        const key = 'terms.note.' + entry.id;
-        const text = t(key);
-        return text !== key ? text : entry.note;
+      /** Localized library name (built-ins come from the client dictionary). */
+      function libraryNameOf(library) {
+        return termLibraryText(library, 'name', t);
+      }
+
+      /** Create a custom library from the header form. */
+      function createLibrary() {
+        const name = newName.trim();
+        if (!name || busyRef.current || libraryLimitReached) return;
+        void runTermMutation(
+          'terms/libraries/add',
+          { name: name },
+          t('terms.libraryCreated', { name: name }),
+          () => setNewName(''),
+        );
+      }
+
+      /** Start renaming one custom library inline. */
+      function startRename(library) {
+        setConfirmingId('');
+        setRenamingId(library.id);
+        setRenameName(libraryNameOf(library));
+      }
+      function cancelRename() {
+        setRenamingId('');
+        setRenameName('');
+      }
+      function saveRename(library) {
+        const name = renameName.trim();
+        if (!name) return;
+        if (name === library.name) {
+          cancelRename();
+          return;
+        }
+        void runTermMutation(
+          'terms/libraries/update',
+          { id: library.id, name: name },
+          t('terms.libraryRenamed', { name: name }),
+          () => cancelRename(),
+        );
+      }
+
+      /** Two-step delete confirmation for a custom library. */
+      function requestDeleteLibrary(library) {
+        setRenamingId('');
+        setConfirmingId(library.id);
+      }
+      function cancelDeleteLibrary() {
+        setConfirmingId('');
+      }
+      function confirmDeleteLibrary(library) {
+        void runTermMutation(
+          'terms/libraries/remove',
+          { id: library.id },
+          t('terms.libraryRemoved', { name: libraryNameOf(library) }),
+          () => setConfirmingId(''),
+        );
+      }
+
+      /** Toggle one library through POST terms/libraries/toggle. */
+      function toggleLibrary(library, nextEnabled) {
+        const enabled = nextEnabled === true;
+        const name = libraryNameOf(library);
+        void runTermMutation(
+          'terms/libraries/toggle',
+          { id: library.id, enabled: enabled },
+          enabled ? t('terms.libraryEnabled', { name: name }) : t('terms.libraryDisabled', { name: name }),
+        );
+      }
+
+      /** Per-library add-entry draft (kept across renders). */
+      function draftFor(libraryId) {
+        const draft = entryDrafts[libraryId];
+        if (draft && typeof draft === 'object') {
+          return {
+            source: typeof draft.source === 'string' ? draft.source : '',
+            policy: draft.policy === 'keep' ? 'keep' : 'translate',
+            target: typeof draft.target === 'string' ? draft.target : '',
+          };
+        }
+        return { source: '', policy: 'translate', target: '' };
+      }
+      function updateDraft(libraryId, patch) {
+        setEntryDrafts((current) => {
+          const previous = current[libraryId] && typeof current[libraryId] === 'object' ? current[libraryId] : {};
+          const next = Object.assign({}, current);
+          next[libraryId] = Object.assign({ source: '', policy: 'translate', target: '' }, previous, patch);
+          return next;
+        });
+      }
+
+      /** Add one entry to a custom library. */
+      function addEntry(library) {
+        const draft = draftFor(library.id);
+        const source = draft.source.trim();
+        const target = draft.target.trim();
+        if (!source) return;
+        if (draft.policy === 'translate' && !target) return;
+        const body = { libraryId: library.id, source: source, policy: draft.policy };
+        if (draft.policy === 'translate') body.target = target;
+        void runTermMutation(
+          'terms/entries/add',
+          body,
+          t('terms.entryAdded', { source: source }),
+          () => updateDraft(library.id, { source: '', target: '' }),
+        );
+      }
+
+      /** Remove one entry from a custom library. */
+      function removeEntry(library, entry) {
+        void runTermMutation(
+          'terms/entries/remove',
+          { libraryId: library.id, entryId: entry.id },
+          t('terms.entryRemoved', { source: entry.source }),
+        );
+      }
+
+      const customCount = libraries.reduce((count, library) => (library.builtin ? count : count + 1), 0);
+      const totalTerms = libraries.reduce((count, library) => count + library.terms.length, 0);
+      const libraryLimitReached = customCount >= limits.libraries;
+
+      /** One term row inside a library card. */
+      function renderTerm(library, entry) {
+        return h(
+          'li',
+          { key: 'terms-entry-' + library.id + '-' + entry.id, className: 'dsh-it-term-item' },
+          h(
+            'div',
+            { className: 'dsh-it-term-head' },
+            h('code', { className: 'dsh-it-term-source' }, entry.source),
+            h(
+              'span',
+              { className: 'dsh-it-chip' },
+              entry.policy === 'keep' ? t('terms.policy.keep') : t('terms.policy.translate'),
+            ),
+            entry.policy === 'translate' && entry.target
+              ? h('span', { className: 'dsh-it-chip' }, '→ ' + entry.target)
+              : null,
+            library.builtin
+              ? null
+              : h(
+                  'span',
+                  { className: 'dsh-it-term-actions' },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-it-btn dsh-it-btn-ghost dsh-it-btn-danger',
+                      title: t('terms.delete'),
+                      disabled: busy,
+                      onClick: () => removeEntry(library, entry),
+                    },
+                    t('terms.delete'),
+                  ),
+                ),
+          ),
+          entry.badRenderings.length > 0
+            ? h('p', { className: 'dsh-it-hint' }, t('terms.bad', { list: entry.badRenderings.join(' / ') }))
+            : null,
+        );
+      }
+
+      /** Inline add-entry form for one custom library. */
+      function renderEntryForm(library) {
+        const draft = draftFor(library.id);
+        const termsAtLimit = library.terms.length >= limits.termsPerLibrary;
+        const controlsDisabled = busy || termsAtLimit;
+        const canAdd =
+          !controlsDisabled &&
+          draft.source.trim().length > 0 &&
+          (draft.policy === 'keep' || draft.target.trim().length > 0);
+        const onEntryKeyDown = (event) => {
+          if (!event || event.key !== 'Enter') return;
+          event.preventDefault();
+          if (canAdd) addEntry(library);
+        };
+        return h(
+          'div',
+          { className: 'dsh-it-entry-form-wrap' },
+          h(
+            'div',
+            { className: 'dsh-it-entry-form-head' },
+            h('span', { className: 'dsh-it-label' }, t('terms.addEntry')),
+            h(
+              'span',
+              { className: 'dsh-it-hint' + (termsAtLimit ? ' dsh-it-hint-error' : '') },
+              t('terms.limitTerms', { max: limits.termsPerLibrary }),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'dsh-it-entry-form' },
+            h('input', {
+              className: 'dsh-it-input',
+              type: 'text',
+              value: draft.source,
+              maxLength: limits.sourceChars,
+              placeholder: t('terms.entrySourcePlaceholder'),
+              'aria-label': t('terms.entrySource'),
+              spellCheck: false,
+              disabled: controlsDisabled,
+              onChange: (event) =>
+                updateDraft(library.id, { source: event && event.target ? String(event.target.value) : '' }),
+              onKeyDown: onEntryKeyDown,
+            }),
+            h(
+              'select',
+              {
+                className: 'dsh-it-select',
+                value: draft.policy,
+                'aria-label': t('terms.entryPolicy'),
+                disabled: controlsDisabled,
+                onChange: (event) =>
+                  updateDraft(library.id, {
+                    policy: event && event.target && event.target.value === 'keep' ? 'keep' : 'translate',
+                  }),
+              },
+              h('option', { value: 'keep' }, t('terms.entryPolicyKeep')),
+              h('option', { value: 'translate' }, t('terms.entryPolicyTranslate')),
+            ),
+            draft.policy === 'translate'
+              ? h('input', {
+                  className: 'dsh-it-input',
+                  type: 'text',
+                  value: draft.target,
+                  maxLength: limits.targetChars,
+                  placeholder: t('terms.entryTargetPlaceholder'),
+                  'aria-label': t('terms.entryTarget'),
+                  spellCheck: false,
+                  disabled: controlsDisabled,
+                  onChange: (event) =>
+                    updateDraft(library.id, { target: event && event.target ? String(event.target.value) : '' }),
+                  onKeyDown: onEntryKeyDown,
+                })
+              : null,
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-it-btn dsh-it-btn-primary',
+                disabled: !canAdd,
+                title: t('terms.entryAdd'),
+                onClick: () => addEntry(library),
+              },
+              t('terms.entryAdd'),
+            ),
+          ),
+        );
+      }
+
+      /** One library card: enable toggle, chips, edit actions, terms and add form. */
+      function renderLibrary(library) {
+        const localizedName = libraryNameOf(library);
+        const description = termLibraryText(library, 'desc', t);
+        const renaming = renamingId === library.id;
+        const confirming = confirmingId === library.id;
+        return h(
+          'div',
+          {
+            key: 'terms-library-' + library.id,
+            className: 'dsh-it-lib',
+            'data-enabled': library.enabled ? 'true' : 'false',
+          },
+          h(
+            'div',
+            { className: 'dsh-it-lib-head' },
+            h(
+              'label',
+              { className: 'dsh-it-check-row dsh-it-lib-toggle' },
+              h('input', {
+                type: 'checkbox',
+                checked: library.enabled,
+                disabled: busy,
+                'aria-label': t('terms.enable') + ' ' + localizedName,
+                onChange: (event) => toggleLibrary(library, !!(event && event.target && event.target.checked)),
+              }),
+              h('span', null, t('terms.enable')),
+            ),
+            h(
+              'div',
+              { className: 'dsh-it-lib-head-main' },
+              h('h4', { className: 'dsh-it-lib-title' }, localizedName),
+              h(
+                'span',
+                {
+                  className: 'dsh-it-chip',
+                  title: library.builtin ? t('terms.scopeBuiltin') : t('terms.scopeCustom'),
+                },
+                library.builtin ? t('terms.builtin') : t('terms.custom'),
+              ),
+              h('span', { className: 'dsh-it-chip' }, t('terms.termsCount', { count: library.terms.length })),
+              h(
+                'span',
+                { className: 'dsh-it-chip ' + (library.enabled ? 'dsh-it-chip-ok' : 'dsh-it-chip-dirty') },
+                library.enabled ? t('terms.enabled') : t('terms.disabled'),
+              ),
+            ),
+            library.builtin
+              ? null
+              : h(
+                  'div',
+                  { className: 'dsh-it-lib-actions' },
+                  renaming
+                    ? null
+                    : h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dsh-it-btn dsh-it-btn-ghost',
+                          disabled: busy,
+                          onClick: () => startRename(library),
+                        },
+                        t('terms.rename'),
+                      ),
+                  confirming
+                    ? null
+                    : h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dsh-it-btn dsh-it-btn-ghost dsh-it-btn-danger',
+                          disabled: busy,
+                          onClick: () => requestDeleteLibrary(library),
+                        },
+                        t('terms.delete'),
+                      ),
+                ),
+          ),
+          description ? h('p', { className: 'dsh-it-hint' }, description) : null,
+          renaming
+            ? h(
+                'div',
+                { className: 'dsh-it-lib-rename' },
+                h('input', {
+                  className: 'dsh-it-input',
+                  type: 'text',
+                  value: renameName,
+                  maxLength: limits.nameChars,
+                  placeholder: t('terms.renamePlaceholder'),
+                  'aria-label': t('terms.rename'),
+                  spellCheck: false,
+                  disabled: busy,
+                  onChange: (event) => setRenameName(event && event.target ? String(event.target.value) : ''),
+                  onKeyDown: (event) => {
+                    if (!event) return;
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      saveRename(library);
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault();
+                      cancelRename();
+                    }
+                  },
+                }),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dsh-it-btn dsh-it-btn-primary',
+                    disabled: busy || !renameName.trim(),
+                    onClick: () => saveRename(library),
+                  },
+                  t('common.save'),
+                ),
+                h('button', { type: 'button', className: 'dsh-it-btn', disabled: busy, onClick: cancelRename }, t('common.cancel')),
+              )
+            : null,
+          confirming
+            ? h(
+                'div',
+                { className: 'dsh-it-lib-confirm' },
+                h('p', { className: 'dsh-it-lib-confirm-text' }, t('terms.deleteConfirm', { name: localizedName })),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dsh-it-btn dsh-it-btn-danger',
+                    disabled: busy,
+                    onClick: () => confirmDeleteLibrary(library),
+                  },
+                  t('terms.deleteYes'),
+                ),
+                h('button', { type: 'button', className: 'dsh-it-btn', disabled: busy, onClick: cancelDeleteLibrary }, t('common.cancel')),
+              )
+            : null,
+          library.terms.length === 0
+            ? h('p', { className: 'dsh-it-hint' }, t('terms.emptyLibrary'))
+            : h('ul', { className: 'dsh-it-term-list' }, library.terms.map((entry) => renderTerm(library, entry))),
+          library.builtin ? null : renderEntryForm(library),
+        );
       }
 
       if (phase === 'loading') {
@@ -5451,45 +6076,72 @@ window.__ModuleLoader__.load({
         { className: 'dsh-it-panel' },
         h(
           'section',
-          { className: 'dsh-it-card', 'aria-labelledby': 'dsh-it-terms-heading' },
+          { className: 'dsh-it-card', 'aria-labelledby': 'dsh-it-terms-heading', 'aria-busy': busy ? 'true' : 'false' },
           h(
             'div',
             { className: 'dsh-it-card-header' },
             h('h3', { className: 'dsh-it-card-title', id: 'dsh-it-terms-heading' }, t('terms.title')),
-            h('span', { className: 'dsh-it-chip' }, t('terms.count', { count: terms.length })),
+            h(
+              'div',
+              { className: 'dsh-it-row' },
+              h('span', { className: 'dsh-it-chip' }, t('terms.libraryCount', { count: libraries.length })),
+              h('span', { className: 'dsh-it-chip' }, t('terms.count', { count: totalTerms })),
+            ),
           ),
           h('p', { className: 'dsh-it-hint' }, t('terms.hint')),
-          terms.length === 0
-            ? h(EmptyState, { title: t('terms.empty') })
-            : h(
-                'ul',
-                { className: 'dsh-it-term-list' },
-                terms.map((entry) => {
-                  const note = noteOf(entry);
-                  return h(
-                    'li',
-                    { key: 'term-' + entry.id, className: 'dsh-it-term-item' },
-                    h(
-                      'div',
-                      { className: 'dsh-it-term-head' },
-                      h('code', { className: 'dsh-it-term-source' }, entry.source),
-                      h(
-                        'span',
-                        { className: 'dsh-it-chip' },
-                        entry.policy === 'keep' ? t('terms.policy.keep') : t('terms.policy.translate'),
-                      ),
-                      entry.target ? h('span', { className: 'dsh-it-chip' }, '→ ' + entry.target) : null,
-                    ),
-                    note ? h('p', { className: 'dsh-it-hint' }, note) : null,
-                    entry.badRenderings.length > 0
-                      ? h('p', { className: 'dsh-it-hint' }, t('terms.bad', { list: entry.badRenderings.join(' / ') }))
-                      : null,
-                  );
-                }),
-              ),
+          notice
+            ? h(
+                'p',
+                {
+                  className: 'dsh-it-hint ' + (notice.kind === 'ok' ? 'dsh-it-hint-ok' : 'dsh-it-hint-error'),
+                  role: 'status',
+                  'aria-live': 'polite',
+                },
+                notice.text,
+              )
+            : null,
+          h(
+            'div',
+            { className: 'dsh-it-lib-create' },
+            h('input', {
+              className: 'dsh-it-input',
+              type: 'text',
+              value: newName,
+              maxLength: limits.nameChars,
+              placeholder: t('terms.newLibraryPlaceholder'),
+              'aria-label': t('terms.newLibrary'),
+              spellCheck: false,
+              disabled: busy,
+              onChange: (event) => setNewName(event && event.target ? String(event.target.value) : ''),
+              onKeyDown: (event) => {
+                if (!event || event.key !== 'Enter') return;
+                event.preventDefault();
+                createLibrary();
+              },
+            }),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-it-btn dsh-it-btn-primary',
+                disabled: busy || libraryLimitReached || !newName.trim(),
+                onClick: createLibrary,
+              },
+              t('terms.create'),
+            ),
+            h(
+              'span',
+              { className: 'dsh-it-hint dsh-it-lib-create-hint' + (libraryLimitReached ? ' dsh-it-hint-error' : '') },
+              t('terms.limitLibraries', { max: limits.libraries, nameChars: limits.nameChars }),
+            ),
+          ),
+          libraries.length === 0
+            ? h(EmptyState, { title: t('terms.empty') }, t('terms.emptyHint'))
+            : h('div', { className: 'dsh-it-lib-list' }, libraries.map((library) => renderLibrary(library))),
         ),
       );
     }
+    // #endregion
 
     /** DSH 插件页扩展检测：未安装/未启用时弹出安装引导。 */
     function ExtensionReminder() {
@@ -5769,6 +6421,27 @@ window.__ModuleLoader__.load({
 .dsh-it-term-item{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-base)}
 .dsh-it-term-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dsh-it-term-source{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:20px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:1px 8px;overflow-wrap:anywhere}
+.dsh-it-term-actions{display:flex;align-items:center;gap:4px;margin-left:auto;flex:none}
+.dsh-it-lib-create{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.dsh-it-lib-create .dsh-it-input{flex:1 1 200px;width:auto;min-width:160px}
+.dsh-it-lib-create-hint{flex:1 1 100%}
+.dsh-it-lib-list{display:flex;flex-direction:column;gap:12px;min-width:0}
+.dsh-it-lib{display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-base)}
+.dsh-it-lib[data-enabled="false"]{border-style:dashed}
+.dsh-it-lib-head{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;justify-content:space-between;min-width:0}
+.dsh-it-lib-toggle{flex:none}
+.dsh-it-lib-head-main{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;flex:1 1 320px}
+.dsh-it-lib-title{margin:0;font-size:13px;line-height:20px;font-weight:600;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.dsh-it-lib-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.dsh-it-lib-rename{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.dsh-it-lib-rename .dsh-it-input{flex:1 1 200px;width:auto;min-width:160px}
+.dsh-it-lib-confirm{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--dsw-alias-state-error-primary);background:var(--dsw-alias-bg-layer-1)}
+.dsh-it-lib-confirm-text{margin:0;flex:1 1 220px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}
+.dsh-it-entry-form-wrap{display:flex;flex-direction:column;gap:8px;min-width:0;padding-top:10px;border-top:1px dashed var(--dsw-alias-border-l1)}
+.dsh-it-entry-form-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-width:0}
+.dsh-it-entry-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.dsh-it-entry-form .dsh-it-input{flex:1 1 150px;width:auto;min-width:130px}
+.dsh-it-entry-form .dsh-it-select{flex:none;width:auto;min-width:150px;max-width:100%}
 .dsh-it-hint-ok{color:var(--dsw-alias-state-success-primary)}
 .dsh-it-hint-error{color:var(--dsw-alias-state-error-primary)}
 .dsh-it-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}

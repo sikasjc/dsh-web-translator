@@ -342,16 +342,156 @@ test('explicit reasoningEffort passes through and auto picks the least effort', 
   assert.equal(second.llm.state.streamCalls[0].reasoningEffort, 'low');
 });
 
-test('getTerms exposes the built-in technical glossary read-only', async (t) => {
+test('getTerms exposes built-in packs plus custom libraries with limits', async (t) => {
   const { api } = await setupApi(t);
   const payload = await api.getTerms();
-  assert.ok(Array.isArray(payload.terms) && payload.terms.length >= 4);
-  const uninhabited = payload.terms.find((entry) => entry.id === 'uninhabited-type');
+  assert.ok(Array.isArray(payload.libraries) && payload.libraries.length >= 2);
+  const rust = payload.libraries.find((library) => library.id === 'rust');
+  assert.equal(rust.builtin, true);
+  assert.equal(rust.enabled, true);
+  assert.ok(rust.description.length > 0);
+  const uninhabited = rust.terms.find((entry) => entry.id === 'uninhabited-type');
   assert.equal(uninhabited.policy, 'translate');
   assert.equal(uninhabited.target, '无值类型');
   assert.ok(uninhabited.badRenderings.includes('不可继承'));
+  const programming = payload.libraries.find((library) => library.id === 'programming');
+  assert.equal(programming.builtin, true);
+  assert.ok(programming.terms.some((entry) => entry.target === '端口'));
+  assert.deepEqual(payload.limits, { libraries: 20, termsPerLibrary: 200, nameChars: 40, sourceChars: 120, targetChars: 120 });
   assert.deepEqual(payload.appliesTo.styles, ['auto', 'programming']);
   assert.deepEqual(payload.appliesTo.endpoints, ['translate', 'lookup']);
+  assert.equal(payload.appliesTo.builtinScope, 'technical-pages');
+  assert.equal(payload.appliesTo.customScope, 'always');
+});
+
+test('custom terminology libraries can be created, edited, toggled and removed', async (t) => {
+  const { api } = await setupApi(t);
+  const created = await api.addTermLibrary({ name: '项目术语' });
+  const libraryId = created.id;
+  assert.ok(typeof libraryId === 'string' && libraryId.length > 0);
+  let library = created.libraries.find((library) => library.id === libraryId);
+  assert.equal(library.name, '项目术语');
+  assert.equal(library.builtin, false);
+  assert.equal(library.enabled, true, 'a new library starts enabled');
+  assert.deepEqual(library.terms, []);
+
+  const withEntry = await api.addTermEntry({ libraryId, source: 'behavior tree', policy: 'translate', target: '行为树' });
+  library = withEntry.libraries.find((item) => item.id === libraryId);
+  assert.equal(library.terms.length, 1);
+  assert.equal(library.terms[0].source, 'behavior tree');
+  assert.equal(library.terms[0].target, '行为树');
+  const entryId = withEntry.entryId;
+
+  const renamed = await api.updateTermLibrary({ id: libraryId, name: '游戏术语' });
+  assert.equal(renamed.libraries.find((item) => item.id === libraryId).name, '游戏术语');
+
+  const updatedEntry = await api.updateTermEntry({ libraryId, entryId, target: '行为树结构' });
+  assert.equal(updatedEntry.libraries.find((item) => item.id === libraryId).terms[0].target, '行为树结构');
+
+  const disabled = await api.toggleTermLibrary({ id: libraryId, enabled: false });
+  assert.equal(disabled.libraries.find((item) => item.id === libraryId).enabled, false);
+  const enabled = await api.toggleTermLibrary({ id: libraryId, enabled: true });
+  assert.equal(enabled.libraries.find((item) => item.id === libraryId).enabled, true);
+
+  const removedEntry = await api.removeTermEntry({ libraryId, entryId });
+  assert.deepEqual(removedEntry.libraries.find((item) => item.id === libraryId).terms, []);
+  const removed = await api.removeTermLibrary({ id: libraryId });
+  assert.equal(removed.libraries.some((item) => item.id === libraryId), false);
+});
+
+test('terminology writes validate limits and protect built-in packs', async (t) => {
+  const { api } = await setupApi(t);
+  await assert.rejects(() => api.updateTermLibrary({ id: 'rust', name: 'x' }), /term library not found/);
+  await assert.rejects(() => api.removeTermLibrary({ id: 'rust' }), /term library not found/);
+  await assert.rejects(() => api.addTermEntry({ libraryId: 'rust', source: 'x', policy: 'keep' }), /term library not found/);
+  await assert.rejects(() => api.addTermLibrary({ name: '  ' }), /name must not be empty/);
+  await assert.rejects(() => api.toggleTermLibrary({ id: 'rust', enabled: 'yes' }), /enabled must be a boolean/);
+  await assert.rejects(() => api.addTermLibrary({ name: 'x'.repeat(41) }), /exceeds 40/);
+
+  const created = await api.addTermLibrary({ name: '校验库' });
+  const libraryId = created.id;
+  await assert.rejects(() => api.addTermLibrary({ name: '校验库' }), /already exists/);
+  await assert.rejects(
+    () => api.addTermEntry({ libraryId, source: 'behavior tree', policy: 'translate' }),
+    /target is required/,
+  );
+  await assert.rejects(
+    () => api.addTermEntry({ libraryId, source: 'behavior tree', policy: 'explode', target: 'x' }),
+    /policy must be one of/,
+  );
+  await assert.rejects(
+    () => api.addTermEntry({ libraryId, source: 'x'.repeat(121), policy: 'keep' }),
+    /exceeds 120/,
+  );
+  await api.addTermEntry({ libraryId, source: 'behavior tree', policy: 'translate', target: '行为树' });
+  await assert.rejects(
+    () => api.addTermEntry({ libraryId, source: 'Behavior Tree', policy: 'translate', target: '行为树' }),
+    /already exists/,
+  );
+});
+
+test('enabled custom libraries change prompts and protection; disabling restores the default', async (t) => {
+  const prompts = [];
+  const stream = (options) => {
+    const userText = options.messages[0].content[0].text;
+    prompts.push(userText);
+    const tokenMatch = userText.match(/\[\[DSH_KEEP_FEATURE_FLAG\]\]/);
+    if (tokenMatch) return textStream(JSON.stringify({ translations: [`使用 ${tokenMatch[0]} 控制`] }));
+    return textStream(JSON.stringify({ translations: ['【译文】行为树'] }));
+  };
+  const { api } = await setupApi(t, { streams: [stream, stream, stream] });
+  const created = await api.addTermLibrary({ name: '项目术语' });
+  const libraryId = created.id;
+  await api.addTermEntry({ libraryId, source: 'feature flag', policy: 'keep' });
+  await api.addTermEntry({ libraryId, source: 'behavior tree', policy: 'translate', target: '行为树' });
+
+  const enabledResult = await api.translate({ texts: ['A feature flag and a behavior tree'], sourceUrl: 'https://example.com/blog' });
+  assert.equal(enabledResult.translations[0], '使用 feature flag 控制');
+  assert.ok(prompts[0].includes('keep "feature flag" in English'));
+  assert.ok(prompts[0].includes('translate "behavior tree" as "行为树"'));
+  assert.ok(prompts[0].includes('[[DSH_KEEP_'));
+
+  await api.toggleTermLibrary({ id: libraryId, enabled: false });
+  const disabledResult = await api.translate({ texts: ['A feature flag and a behavior tree'], sourceUrl: 'https://example.com/blog' });
+  assert.equal(disabledResult.translations[0], '【译文】行为树');
+  assert.equal(prompts[1].includes('feature flag'), true, 'the segment itself still contains the source text');
+  assert.equal(prompts[1].includes('keep "feature flag" in English'), false);
+  assert.equal(prompts[1].includes('translate "behavior tree"'), false);
+});
+
+test('disabling a built-in pack removes its prompt hints and deterministic fallbacks', async (t) => {
+  const stream = () => textStream(JSON.stringify({ translations: ['Rust 特征'] }));
+  const { api } = await setupApi(t, { streams: [stream, stream] });
+  const rustEnabled = await api.translate({
+    texts: ['Rust traits'],
+    sourceTitle: 'Rust traits',
+    sourceUrl: 'https://doc.rust-lang.org/book/ch10-02-traits.html',
+  });
+  assert.deepEqual(rustEnabled.translations, ['Rust traits']);
+
+  await api.toggleTermLibrary({ id: 'rust', enabled: false });
+  const rustDisabled = await api.translate({
+    texts: ['Rust traits'],
+    sourceTitle: 'Rust traits',
+    sourceUrl: 'https://doc.rust-lang.org/book/ch10-02-traits.html',
+  });
+  assert.deepEqual(rustDisabled.translations, ['Rust 特征']);
+});
+
+test('lookup restores keep tokens before plain-text parsing (no false INVALID_MODEL_OUTPUT)', async (t) => {
+  const tokenStream = (options) => {
+    const userText = options.messages[0].content[0].text;
+    const tokenMatch = userText.match(/\[\[DSH_KEEP_FEATURE_FLAG\]\]/);
+    assert.ok(tokenMatch, 'the keep term must be protected before the model call');
+    // A lookup answer whose first characters are the protected token: the
+    // plain-text parser must not mistake "[[" for a JSON payload.
+    return textStream(`${tokenMatch[0]} 的用法`);
+  };
+  const { api } = await setupApi(t, { streams: [tokenStream] });
+  const created = await api.addTermLibrary({ name: '项目术语' });
+  await api.addTermEntry({ libraryId: created.id, source: 'feature flag', policy: 'keep' });
+  const lookup = await api.lookup({ text: 'feature flag usage', context: 'feature flag usage' });
+  assert.equal(lookup.result.translation, 'feature flag 的用法');
 });
 
 test('lookup translates and attaches a trimmed dictionary for English words', async (t) => {

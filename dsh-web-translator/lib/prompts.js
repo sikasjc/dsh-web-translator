@@ -122,7 +122,7 @@ export function looksLikeTechnicalContent({ title = '', url = '', texts = [] } =
 /**
  * Context block prepended to prompts. Metadata is not translated; the technical
  * hint only nudges terminology and is not used for non-programming pages.
- * @param {{title?: string, url?: string, technical?: boolean}} [pageContext]
+ * @param {{title?: string, url?: string, technical?: boolean, terminologyHint?: string}} [pageContext]
  * @param {{compact?: boolean}} [options]
  * @returns {string}
  */
@@ -131,20 +131,27 @@ export function renderPageContext(pageContext = {}, { compact = false } = {}) {
   const url = typeof pageContext?.url === 'string' ? pageContext.url.trim().slice(0, 2048) : '';
   const style = TRANSLATION_STYLES.includes(pageContext?.style) ? pageContext.style : 'auto';
   const technical = pageContext?.technical === true || style === 'programming';
+  // Rendered by lib/terms.js from the terminology libraries the user enabled:
+  // built-in packs only on technical pages, custom libraries on every page.
+  const terminologyHint = typeof pageContext?.terminologyHint === 'string' ? pageContext.terminologyHint.trim() : '';
   const lines = [];
   if (title.length > 0 || url.length > 0) {
     lines.push('Page context (do not translate this metadata; use it only to disambiguate terminology):');
     if (title.length > 0) lines.push(`- Page title: ${title}`);
     if (url.length > 0) lines.push(`- Page URL: ${url}`);
   }
-  if (technical && (style === 'auto' || style === 'programming')) {
+  if (terminologyHint.length > 0) {
+    if (lines.length === 0) lines.push('Page context:');
+    lines.push(terminologyHint);
+  } else if (technical && (style === 'auto' || style === 'programming')) {
     if (lines.length === 0) lines.push('Page context:');
     lines.push(
       compact
-        ? 'This is software/programming content. Mandatory terminology: keep "trait"/"traits" in English (never 特征/特质), keep "crate"/"impl" unchanged; translate "port" in networking as 端口; translate the type-theory term "uninhabited type" as 无值类型 (never 不可居住/不可继承). Apply the same rule in headings.'
-        : 'This page appears to be software/programming documentation. Prefer standard technical Chinese terminology and follow these mandatory rules even in prose/headings: keep "trait" and "traits" in English exactly (never translate them as "特征" or "特质"); keep "crate", "impl" and language keywords unchanged when they are identifiers; translate "port" in a networking/programming context as "端口"; translate the type-theory term "uninhabited type" as "无值类型" (a type with no values; never render it as "不可居住" or "不可继承"). For example, the heading "Defining Shared Behavior" with "Traits" must keep "Traits" as "Traits". Protected terms may appear as tokens like [[DSH_KEEP_0_0]]; copy every token verbatim into the translation and never translate or remove it.',
+        ? 'This is software/programming content.'
+        : 'This page appears to be software/programming documentation. Prefer standard technical Chinese terminology.',
     );
-  } else if (style === 'tech') {
+  }
+  if (style === 'tech') {
     if (lines.length === 0) lines.push('Page context:');
     lines.push(
       compact
@@ -166,7 +173,7 @@ export function renderPageContext(pageContext = {}, { compact = false } = {}) {
  * Render the system + user prompts for one translation batch (DESIGN §4.1).
  * @param {{systemPrompt?: string, userTemplate?: string, texts: readonly string[],
  *   targetLanguage: string, sourceLanguage?: string,
- *   pageContext?: {title?: string, url?: string, technical?: boolean}}} input - batch context.
+ *   pageContext?: {title?: string, url?: string, technical?: boolean, terminologyHint?: string}}} input - batch context.
  * @returns {{system: string, user: string, textsJson: string, segmentCount: number}}
  */
 export function renderTranslatePrompts({ systemPrompt, userTemplate, texts, targetLanguage, sourceLanguage = 'auto', pageContext }) {
