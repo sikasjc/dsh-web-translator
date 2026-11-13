@@ -162,6 +162,66 @@ function publicCustomLibrary(library, enabled) {
 }
 
 /**
+ * Find a non-colliding display name for an imported/created library.
+ * Existing names are matched case-insensitively; collisions get a " (n)" suffix.
+ * @param {string} base - requested name.
+ * @param {Set<string>} usedNames - lowercased names already in use (mutated by caller).
+ * @param {number} max - name length cap.
+ * @returns {string}
+ */
+function uniqueLibraryName(base, usedNames, max) {
+  let candidate = base.slice(0, max);
+  if (!usedNames.has(candidate.toLowerCase())) return candidate;
+  for (let index = 2; index < 1000; index += 1) {
+    const suffix = ` (${index})`;
+    candidate = base.slice(0, Math.max(1, max - suffix.length)) + suffix;
+    if (!usedNames.has(candidate.toLowerCase())) return candidate;
+  }
+  return base.slice(0, max);
+}
+
+/**
+ * Strictly validate one imported library entry (no silent data loss: any invalid
+ * name/term rejects the whole import).
+ * @param {unknown} raw - imported library.
+ * @param {number} index - index for error messages.
+ * @returns {{name: string, terms: Array<{source: string, policy: string, target: string}>}}
+ */
+function validateImportedLibrary(raw, index) {
+  if (!raw || typeof raw !== 'object') throw apiError('BAD_REQUEST', `libraries[${index}] must be an object`);
+  const name = normalizeName(raw.name);
+  const rawTerms = Array.isArray(raw.terms) ? raw.terms : null;
+  if (!rawTerms || rawTerms.length === 0) {
+    throw apiError('BAD_REQUEST', `libraries[${index}].terms must be a non-empty array`);
+  }
+  if (rawTerms.length > TERM_LIBRARY_LIMITS.termsPerLibrary) {
+    throw apiError('BAD_REQUEST', `libraries[${index}] exceeds ${TERM_LIBRARY_LIMITS.termsPerLibrary} terms`);
+  }
+  const terms = [];
+  const seen = new Set();
+  rawTerms.forEach((term, termIndex) => {
+    if (!term || typeof term !== 'object') {
+      throw apiError('BAD_REQUEST', `libraries[${index}].terms[${termIndex}] must be an object`);
+    }
+    let source;
+    let policy;
+    let target;
+    try {
+      source = normalizeSource(term.source);
+      policy = normalizePolicy(term.policy);
+      target = normalizeTarget(term.target, policy);
+    } catch (error) {
+      throw apiError('BAD_REQUEST', `libraries[${index}].terms[${termIndex}]: ${error.message}`);
+    }
+    const key = source.toLowerCase();
+    if (seen.has(key)) throw apiError('BAD_REQUEST', `libraries[${index}] has duplicate term source: ${source}`);
+    seen.add(key);
+    terms.push({ source, policy, target });
+  });
+  return { name, terms };
+}
+
+/**
  * Build the terminology-library service over one JSON store.
  * @param {{store: {read: Function, mutate: Function}, now?: () => number}} options
  * @returns {object}
@@ -386,6 +446,54 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     });
   }
 
+  /**
+   * `POST /terms/import`: atomically import one or more libraries.
+   * Names may collide with existing ones; those get a " (n)" suffix and the
+   * final names are returned in `imported`. Imported libraries start enabled.
+   * @param {object} body - `{libraries:[{name, terms:[{source,policy,target?}]}]}`.
+   * @returns {Promise<object>}
+   */
+  async function importLibraries(body) {
+    const rawLibraries = Array.isArray(body?.libraries) ? body.libraries : null;
+    if (rawLibraries === null || rawLibraries.length === 0) {
+      throw apiError('BAD_REQUEST', 'libraries must be a non-empty array');
+    }
+    // Validate the entire payload up front; a single invalid entry aborts the import.
+    const incoming = rawLibraries.map((raw, index) => validateImportedLibrary(raw, index));
+    const state = await readState();
+    return store.mutate((draft) => {
+      const next = prepareDraft(draft, state);
+      if (next.libraries.length + incoming.length > TERM_LIBRARY_LIMITS.libraries) {
+        throw apiError('BAD_REQUEST', `at most ${TERM_LIBRARY_LIMITS.libraries} custom libraries are allowed`);
+      }
+      const usedNames = new Set(next.libraries.map((library) => library.name.toLowerCase()));
+      const timestamp = clock();
+      const imported = [];
+      for (const item of incoming) {
+        const finalName = uniqueLibraryName(item.name, usedNames, TERM_LIBRARY_LIMITS.nameChars);
+        usedNames.add(finalName.toLowerCase());
+        const library = {
+          id: newLibraryId(),
+          name: finalName,
+          terms: item.terms.map((term) => ({
+            id: newEntryId(),
+            source: term.source,
+            policy: term.policy,
+            target: term.target,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          })),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        next.libraries.push(library);
+        next.active.push(library.id);
+        imported.push({ id: library.id, name: finalName });
+      }
+      return { ...snapshot(readDoc(next)), imported };
+    });
+  }
+
   /** `POST /terms/entries/remove` */
   async function removeEntry(body) {
     const libraryId = typeof body?.libraryId === 'string' ? body.libraryId.trim() : '';
@@ -414,5 +522,6 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     addEntry,
     updateEntry,
     removeEntry,
+    importLibraries,
   };
 }

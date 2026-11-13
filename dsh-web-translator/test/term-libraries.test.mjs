@@ -121,6 +121,59 @@ test('activeLibraries returns only enabled libraries and includes custom ones', 
   assert.deepEqual(withoutCustom.custom, []);
 });
 
+test('importLibraries creates enabled libraries atomically with name dedupe', async (t) => {
+  const { service } = await setupService(t);
+  await service.addLibrary({ name: '已有库' });
+  const imported = await service.importLibraries({
+    libraries: [
+      { name: '项目术语', terms: [{ source: 'behavior tree', policy: 'translate', target: '行为树' }, { source: 'feature flag', policy: 'keep' }] },
+      { name: '已有库', terms: [{ source: 'port', policy: 'translate', target: '端口' }] },
+    ],
+  });
+  assert.deepEqual(imported.imported.map((item) => item.name), ['项目术语', '已有库 (2)'], 'existing names get a suffix');
+  const project = imported.libraries.find((library) => library.name === '项目术语');
+  assert.equal(project.builtin, false);
+  assert.equal(project.enabled, true, 'imported libraries start enabled');
+  assert.deepEqual(project.terms.map((term) => term.policy), ['translate', 'keep']);
+  const active = await service.activeLibraries();
+  assert.equal(active.custom.length, 3);
+
+  const before = (await service.list()).libraries.length;
+  await assert.rejects(
+    () => service.importLibraries({ libraries: [{ name: '坏库', terms: [{ source: 'x', policy: 'translate' }] }] }),
+    /target is required/,
+  );
+  assert.equal((await service.list()).libraries.length, before, 'a rejected import writes nothing');
+
+  await assert.rejects(
+    () => service.importLibraries({ libraries: [{ name: '重复源', terms: [{ source: 'x', policy: 'keep' }, { source: 'X', policy: 'keep' }] }] }),
+    /duplicate term source/,
+  );
+  await assert.rejects(() => service.importLibraries({ libraries: [] }), /non-empty array/);
+  await assert.rejects(
+    () => service.importLibraries({ libraries: [{ name: '超量', terms: Array.from({ length: 201 }, (_, index) => ({ source: `term ${index}`, policy: 'keep' })) }] }),
+    /exceeds 200 terms/,
+  );
+});
+
+test('importLibraries respects the custom-library cap', async (t) => {
+  const { service } = await setupService(t);
+  for (let index = 0; index < 19; index += 1) {
+    await service.addLibrary({ name: `库 ${index}` });
+  }
+  await assert.rejects(
+    () => service.importLibraries({
+      libraries: [
+        { name: '新库 A', terms: [{ source: 'a', policy: 'keep' }] },
+        { name: '新库 B', terms: [{ source: 'b', policy: 'keep' }] },
+      ],
+    }),
+    /at most 20 custom libraries/,
+  );
+  const ok = await service.importLibraries({ libraries: [{ name: '新库 C', terms: [{ source: 'c', policy: 'keep' }] }] });
+  assert.equal(ok.imported.length, 1);
+});
+
 test('library limits are enforced', async (t) => {
   const { service } = await setupService(t);
   for (let index = 0; index < 20; index += 1) {

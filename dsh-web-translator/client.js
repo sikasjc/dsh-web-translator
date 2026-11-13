@@ -177,6 +177,22 @@ window.__ModuleLoader__.load({
       'terms.lib.rust.desc': 'Rust 语言与类型论术语：trait/traits、crate、impl 保留原文，uninhabited type 固定译为「无值类型」；误译会被兜底纠正。',
       'terms.lib.programming.name': '通用编程 / 网络',
       'terms.lib.programming.desc': '通用编程与网络语境术语：网络语境的 port 固定译为「端口」；误译会被兜底纠正。',
+      'terms.exportAll': '导出全部',
+      'terms.exportJson': '导出 JSON',
+      'terms.exportCsv': '导出 CSV',
+      'terms.exported': '已导出 {filename}',
+      'terms.exportFailed': '导出失败，当前环境不支持文件下载',
+      'terms.exportEmpty': '没有可导出的自定义库',
+      'terms.import': '导入',
+      'terms.importing': '导入中…',
+      'terms.importTitle': '导入术语库',
+      'terms.importTip': '支持导出的 JSON 或 CSV；导入为新的自定义库，默认启用。',
+      'terms.importSuccess': '已导入 {count} 个术语库',
+      'terms.importedCount': '新增 {count} 条词条',
+      'terms.importInvalidFile': '无法解析该文件，请选择导出的 JSON 或 CSV',
+      'terms.importEmpty': '文件中没有可导入的术语库或词条',
+      'terms.importFailed': '导入失败，请重试',
+      'terms.importDefaultName': '导入的术语库',
       'common.loading': '加载中…',
       'common.retry': '重试',
       'common.save': '保存',
@@ -590,6 +606,22 @@ window.__ModuleLoader__.load({
       'terms.lib.rust.desc': 'Rust language and type-theory terminology: trait/traits, crate and impl stay in English, uninhabited type becomes 无值类型; mistranslations are fixed automatically.',
       'terms.lib.programming.name': 'General programming / networking',
       'terms.lib.programming.desc': 'General programming and networking terminology: port in the networking sense becomes 端口; mistranslations are fixed automatically.',
+      'terms.exportAll': 'Export all',
+      'terms.exportJson': 'Export JSON',
+      'terms.exportCsv': 'Export CSV',
+      'terms.exported': 'Exported {filename}',
+      'terms.exportFailed': 'Export failed; file download is not supported here',
+      'terms.exportEmpty': 'No custom libraries to export',
+      'terms.import': 'Import',
+      'terms.importing': 'Importing…',
+      'terms.importTitle': 'Import terminology libraries',
+      'terms.importTip': 'Accepts exported JSON or CSV; imported libraries are created as custom libraries and start enabled.',
+      'terms.importSuccess': 'Imported {count} libraries',
+      'terms.importedCount': '{count} entries added',
+      'terms.importInvalidFile': 'Could not parse this file; choose an exported JSON or CSV',
+      'terms.importEmpty': 'The file contains no importable libraries or entries',
+      'terms.importFailed': 'Import failed; try again',
+      'terms.importDefaultName': 'Imported library',
       'common.loading': 'Loading…',
       'common.retry': 'Retry',
       'common.save': 'Save',
@@ -5554,10 +5586,412 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** Export envelope version written by the client (the Host import ignores it). */
+    const TERMS_EXPORT_VERSION = 1;
+    /** UTF-8 BOM prepended to CSV exports so Excel detects the encoding. */
+    const TERMS_CSV_BOM = '\uFEFF';
+
+    /** `version`/`exportedAt` fields shared by both JSON export envelopes. */
+    function termsExportHeader(now) {
+      const date = now instanceof Date && Number.isFinite(now.getTime()) ? now : new Date();
+      return { version: TERMS_EXPORT_VERSION, exportedAt: date.toISOString() };
+    }
+
+    /** YYYYMMDD stamp for exported file names. */
+    function termsExportStamp(now) {
+      const date = now instanceof Date && Number.isFinite(now.getTime()) ? now : new Date();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return String(date.getFullYear()) + month + day;
+    }
+
+    /** Filesystem-friendly fragment for an exported file name. */
+    function termsFileSlug(name) {
+      const text = String(name === null || name === undefined ? '' : name).trim().toLowerCase();
+      const slug = text.replace(/[^a-z0-9\u3400-\u9fff]+/g, '-').replace(/^-+|-+$/g, '');
+      return slug ? slug.slice(0, 32) : 'library';
+    }
+
+    /** Terms array for JSON exports (`target` is '' for keep entries). */
+    function termsForExport(list) {
+      const result = [];
+      for (const entry of Array.isArray(list) ? list : []) {
+        if (!entry || typeof entry !== 'object') continue;
+        const source = typeof entry.source === 'string' ? entry.source.trim() : '';
+        if (!source) continue;
+        const policy = entry.policy === 'translate' ? 'translate' : 'keep';
+        result.push({
+          source: source,
+          policy: policy,
+          target: policy === 'translate' && typeof entry.target === 'string' ? entry.target : '',
+        });
+      }
+      return result;
+    }
+
+    /** JSON export envelope for all custom libraries (built-in packs are excluded). */
+    function buildTermsExportAll(libraries, now) {
+      const header = termsExportHeader(now);
+      const custom = [];
+      for (const library of Array.isArray(libraries) ? libraries : []) {
+        if (!library || typeof library !== 'object' || library.builtin) continue;
+        custom.push({
+          name: typeof library.name === 'string' ? library.name : '',
+          enabled: library.enabled !== false,
+          terms: termsForExport(library.terms),
+        });
+      }
+      return { version: header.version, exportedAt: header.exportedAt, libraries: custom };
+    }
+
+    /** JSON export envelope for one custom library. */
+    function buildTermsLibraryExport(library, now) {
+      const header = termsExportHeader(now);
+      return {
+        version: header.version,
+        exportedAt: header.exportedAt,
+        name: library && typeof library.name === 'string' ? library.name : '',
+        enabled: !library || library.enabled !== false,
+        terms: termsForExport(library && library.terms),
+      };
+    }
+
+    /** Quote one CSV field per RFC4180 (only when needed; `""` escapes a quote). */
+    function csvQuoteTermField(value) {
+      const text = value === null || value === undefined ? '' : String(value);
+      if (/[",\r\n]/.test(text) || text !== text.trim()) {
+        return '"' + text.replace(/"/g, '""') + '"';
+      }
+      return text;
+    }
+
+    /** CSV text (CRLF rows) for one term list, without the UTF-8 BOM. */
+    function buildTermsCsv(terms) {
+      const rows = ['source,policy,target'];
+      for (const entry of Array.isArray(terms) ? terms : []) {
+        if (!entry || typeof entry !== 'object') continue;
+        const source = typeof entry.source === 'string' ? entry.source.trim() : '';
+        if (!source) continue;
+        const policy = entry.policy === 'translate' ? 'translate' : 'keep';
+        const target = policy === 'translate' && typeof entry.target === 'string' ? entry.target : '';
+        rows.push(csvQuoteTermField(source) + ',' + csvQuoteTermField(policy) + ',' + csvQuoteTermField(target));
+      }
+      return rows.join('\r\n') + '\r\n';
+    }
+
+    /**
+     * Parse RFC4180-ish CSV into rows of string cells. Supports CRLF/LF/CR,
+     * quoted fields, escaped `""` quotes and newlines inside quotes.
+     * @returns {string[][]|null} null when the text contains an unterminated quote.
+     */
+    function parseTermsCsvRows(text) {
+      const source = String(text === null || text === undefined ? '' : text).replace(/^\uFEFF/, '');
+      const rows = [];
+      let row = [];
+      let field = '';
+      let inQuotes = false;
+      let index = 0;
+      while (index < source.length) {
+        const character = source.charAt(index);
+        if (inQuotes) {
+          if (character === '"') {
+            if (source.charAt(index + 1) === '"') {
+              field += '"';
+              index += 2;
+              continue;
+            }
+            inQuotes = false;
+            index += 1;
+            continue;
+          }
+          field += character;
+          index += 1;
+          continue;
+        }
+        if (character === '"') {
+          inQuotes = true;
+          index += 1;
+          continue;
+        }
+        if (character === ',') {
+          row.push(field);
+          field = '';
+          index += 1;
+          continue;
+        }
+        if (character === '\r' || character === '\n') {
+          row.push(field);
+          rows.push(row);
+          row = [];
+          field = '';
+          index += character === '\r' && source.charAt(index + 1) === '\n' ? 2 : 1;
+          continue;
+        }
+        field += character;
+        index += 1;
+      }
+      if (inQuotes) return null;
+      if (field.length > 0 || row.length > 0) {
+        row.push(field);
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    /** Map parsed CSV rows to import terms; an optional `source,...` header is skipped. */
+    function termsCsvRowsToTerms(rows, limits) {
+      const terms = [];
+      if (!Array.isArray(rows) || rows.length === 0) return terms;
+      const caps = limits && typeof limits === 'object' ? limits : TERMS_DEFAULT_LIMITS;
+      const sourceChars = caps.sourceChars || TERMS_DEFAULT_LIMITS.sourceChars;
+      const targetChars = caps.targetChars || TERMS_DEFAULT_LIMITS.targetChars;
+      const termLimit = caps.termsPerLibrary || TERMS_DEFAULT_LIMITS.termsPerLibrary;
+      const seen = Object.create(null);
+      const firstRow = rows[0];
+      const firstCell =
+        firstRow && firstRow.length > 0 && firstRow[0] !== null && firstRow[0] !== undefined
+          ? String(firstRow[0]).trim().toLowerCase()
+          : '';
+      const start = firstCell === 'source' ? 1 : 0;
+      for (let index = start; index < rows.length; index += 1) {
+        if (terms.length >= termLimit) break;
+        const row = Array.isArray(rows[index]) ? rows[index] : [];
+        const source = row[0] === null || row[0] === undefined ? '' : String(row[0]).trim();
+        if (!source || source.length > sourceChars) continue;
+        const policyText = row[1] === null || row[1] === undefined ? '' : String(row[1]).trim().toLowerCase();
+        const target = row[2] === null || row[2] === undefined ? '' : String(row[2]).trim();
+        const policy = policyText === 'translate' || policyText === 'keep' ? policyText : target ? 'translate' : 'keep';
+        if (policy === 'translate' && (!target || target.length > targetChars)) continue;
+        const key = source.toLowerCase();
+        if (seen[key]) continue;
+        seen[key] = true;
+        terms.push(
+          policy === 'translate'
+            ? { source: source, policy: 'translate', target: target }
+            : { source: source, policy: 'keep' },
+        );
+      }
+      return terms;
+    }
+
+    /** Normalize one untrusted imported term; null when it cannot be imported. */
+    function normalizeImportedTerm(raw, limits) {
+      if (!raw || typeof raw !== 'object') return null;
+      const caps = limits && typeof limits === 'object' ? limits : TERMS_DEFAULT_LIMITS;
+      const sourceChars = caps.sourceChars || TERMS_DEFAULT_LIMITS.sourceChars;
+      const targetChars = caps.targetChars || TERMS_DEFAULT_LIMITS.targetChars;
+      const source = typeof raw.source === 'string' ? raw.source.trim() : '';
+      if (!source || source.length > sourceChars) return null;
+      const policyText = typeof raw.policy === 'string' ? raw.policy.trim().toLowerCase() : '';
+      const target = typeof raw.target === 'string' ? raw.target.trim() : '';
+      const policy = policyText === 'translate' || policyText === 'keep' ? policyText : target ? 'translate' : 'keep';
+      if (policy === 'translate' && (!target || target.length > targetChars)) return null;
+      return policy === 'translate'
+        ? { source: source, policy: 'translate', target: target }
+        : { source: source, policy: 'keep' };
+    }
+
+    /** Normalize one untrusted imported library; null when no valid term remains. */
+    function normalizeImportedLibrary(raw, fallbackName, defaultName, limits) {
+      if (!raw || typeof raw !== 'object') return null;
+      const caps = limits && typeof limits === 'object' ? limits : TERMS_DEFAULT_LIMITS;
+      const nameChars = caps.nameChars || TERMS_DEFAULT_LIMITS.nameChars;
+      const termLimit = caps.termsPerLibrary || TERMS_DEFAULT_LIMITS.termsPerLibrary;
+      const explicitName = typeof raw.name === 'string' ? raw.name.trim() : '';
+      const fallback = typeof fallbackName === 'string' ? fallbackName.trim() : '';
+      const name = (explicitName || fallback || (typeof defaultName === 'string' ? defaultName : '')).slice(0, nameChars);
+      if (!name) return null;
+      const terms = [];
+      const seen = Object.create(null);
+      const rawTerms = Array.isArray(raw.terms) ? raw.terms : [];
+      for (let index = 0; index < rawTerms.length; index += 1) {
+        if (terms.length >= termLimit) break;
+        const term = normalizeImportedTerm(rawTerms[index], caps);
+        if (term === null) continue;
+        const key = term.source.toLowerCase();
+        if (seen[key]) continue;
+        seen[key] = true;
+        terms.push(term);
+      }
+      if (terms.length === 0) return null;
+      return { name: name, terms: terms };
+    }
+
+    /** Collect candidate raw libraries from any accepted JSON import shape. */
+    function collectTermsImportCandidates(value, fallbackName) {
+      if (Array.isArray(value)) {
+        const libraryLike = value.some((item) => item && typeof item === 'object' && Array.isArray(item.terms));
+        const termLike = value.some((item) => item && typeof item === 'object' && typeof item.source === 'string');
+        if (!libraryLike && termLike) return [{ name: fallbackName, terms: value }];
+        return value;
+      }
+      if (!value || typeof value !== 'object') return null;
+      if (Array.isArray(value.libraries)) return value.libraries;
+      if (value.library && typeof value.library === 'object') return [value.library];
+      return [value];
+    }
+
+    /**
+     * Parse a JSON import file: export envelopes, single-library envelope, bare
+     * library/term array, or a `{libraries,...}` superset.
+     * @returns {Array<{name:string,terms:object[]}>|null} null when unparseable.
+     */
+    function parseTermsImportJson(text, fallbackName, defaultName, limits) {
+      let value;
+      try {
+        value = JSON.parse(String(text === null || text === undefined ? '' : text).replace(/^\uFEFF/, ''));
+      } catch (error) {
+        return null;
+      }
+      const candidates = collectTermsImportCandidates(value, fallbackName);
+      if (candidates === null) return null;
+      const result = [];
+      for (let index = 0; index < candidates.length; index += 1) {
+        const library = normalizeImportedLibrary(candidates[index], fallbackName, defaultName, limits);
+        if (library !== null) result.push(library);
+      }
+      return result;
+    }
+
+    /** Parse a CSV import file into one library named after the picked file. */
+    function parseTermsImportCsv(text, fallbackName, defaultName, limits) {
+      const rows = parseTermsCsvRows(text);
+      if (rows === null) return null;
+      const caps = limits && typeof limits === 'object' ? limits : TERMS_DEFAULT_LIMITS;
+      const terms = termsCsvRowsToTerms(rows, caps);
+      if (terms.length === 0) return [];
+      const name = (fallbackName || defaultName || '').trim().slice(0, caps.nameChars || TERMS_DEFAULT_LIMITS.nameChars);
+      return [{ name: name, terms: terms }];
+    }
+
+    /** Strip directories/extensions from a picked file name. */
+    function termsFileBaseName(filename) {
+      const text = typeof filename === 'string' ? filename : '';
+      const base = text.replace(/^.*[\\/]/, '');
+      return base.replace(/\.[^.]+$/, '').trim();
+    }
+
+    /** json|csv detection from extension/MIME, falling back to the first non-space character. */
+    function termsImportFileKind(file, text) {
+      const name = file && typeof file.name === 'string' ? file.name.toLowerCase() : '';
+      const type = file && typeof file.type === 'string' ? file.type.toLowerCase() : '';
+      if (name.length > 4 && name.slice(-4) === '.csv') return 'csv';
+      if (name.length > 5 && name.slice(-5) === '.json') return 'json';
+      if (type === 'text/csv' || type === 'application/csv') return 'csv';
+      if (type === 'application/json' || type === 'text/json') return 'json';
+      const head = String(text === null || text === undefined ? '' : text).replace(/^\uFEFF/, '').replace(/^\s+/, '').charAt(0);
+      return head === '{' || head === '[' ? 'json' : 'csv';
+    }
+
+    /** Read a picked File as UTF-8 text (File.text preferred, FileReader fallback). */
+    function readTermsFileText(file) {
+      return new Promise((resolve, reject) => {
+        if (!file) {
+          reject(new Error('missing file'));
+          return;
+        }
+        if (typeof file.text === 'function') {
+          try {
+            Promise.resolve(file.text()).then(
+              (text) => resolve(typeof text === 'string' ? text : String(text === null || text === undefined ? '' : text)),
+              (error) => reject(error),
+            );
+          } catch (error) {
+            reject(error);
+          }
+          return;
+        }
+        const FileReaderConstructor =
+          typeof FileReader === 'function'
+            ? FileReader
+            : typeof window !== 'undefined' && typeof window.FileReader === 'function'
+              ? window.FileReader
+              : null;
+        if (!FileReaderConstructor) {
+          reject(new Error('file reader unavailable'));
+          return;
+        }
+        try {
+          const reader = new FileReaderConstructor();
+          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+          reader.onerror = () => reject(reader.error || new Error('file read failed'));
+          reader.readAsText(file);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+
+    /** Trigger a client-side download; false when the runtime cannot download files. */
+    function downloadTermsFile(filename, text, mimeType) {
+      if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+      const BlobConstructor = typeof Blob === 'function' ? Blob : typeof window.Blob === 'function' ? window.Blob : null;
+      const UrlApi = typeof URL === 'function' ? URL : typeof window.URL === 'function' ? window.URL : null;
+      if (!BlobConstructor || !UrlApi || typeof UrlApi.createObjectURL !== 'function') return false;
+      if (typeof document.createElement !== 'function') return false;
+      let url = '';
+      try {
+        const blob = new BlobConstructor([String(text === null || text === undefined ? '' : text)], {
+          type: mimeType || 'application/octet-stream',
+        });
+        url = UrlApi.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        if (!anchor || typeof anchor.click !== 'function') return false;
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.rel = 'noopener';
+        if (anchor.style) anchor.style.display = 'none';
+        const container = document.body || document.documentElement || null;
+        if (container && typeof container.appendChild === 'function') {
+          try {
+            container.appendChild(anchor);
+          } catch (error) {
+            /* a detached anchor still downloads in most browsers */
+          }
+        }
+        anchor.click();
+        if (container && typeof container.removeChild === 'function') {
+          try {
+            container.removeChild(anchor);
+          } catch (error) {
+            /* ignore */
+          }
+        }
+        if (typeof UrlApi.revokeObjectURL === 'function') {
+          if (typeof setTimeout === 'function') {
+            setTimeout(() => {
+              try {
+                UrlApi.revokeObjectURL(url);
+              } catch (error) {
+                /* ignore */
+              }
+            }, 0);
+          } else {
+            try {
+              UrlApi.revokeObjectURL(url);
+            } catch (error) {
+              /* ignore */
+            }
+          }
+        }
+        return true;
+      } catch (error) {
+        if (url && typeof UrlApi.revokeObjectURL === 'function') {
+          try {
+            UrlApi.revokeObjectURL(url);
+          } catch (ignored) {
+            /* ignore */
+          }
+        }
+        return false;
+      }
+    }
+
     /**
      * 术语库：GET /terms 返回内置库 + 自定义库；POST terms/libraries/* 与
-     * terms/entries/* 管理启用、重命名、删除和词条增删。设置页与左侧工具栏
-     * 整页两处挂载复用同一组件，成功后通过 window 事件互相同步。
+     * terms/entries/* 管理启用、重命名、删除和词条增删，POST terms/import 批量
+     * 导入。设置页与左侧工具栏整页两处挂载复用同一组件，成功后通过 window
+     * 事件互相同步；导出在客户端生成 JSON/CSV 并直接下载。
      */
     function TermsPage() {
       const t = useT();
@@ -5567,6 +6001,7 @@ window.__ModuleLoader__.load({
       const [libraries, setLibraries] = useState([]);
       const [limits, setLimits] = useState(TERMS_DEFAULT_LIMITS);
       const [busy, setBusy] = useState(false);
+      const [importing, setImporting] = useState(false);
       const [notice, setNotice] = useState(null);
       const [newName, setNewName] = useState('');
       const [renamingId, setRenamingId] = useState('');
@@ -5575,6 +6010,8 @@ window.__ModuleLoader__.load({
       const [entryDrafts, setEntryDrafts] = useState({});
       const mountedRef = useRef(true);
       const busyRef = useRef(false);
+      const importingRef = useRef(false);
+      const importInputRef = useRef(null);
       const noticeTimerRef = useRef(null);
 
       /** Replace the whole libraries/limits state from one GET/POST payload. */
@@ -5654,7 +6091,7 @@ window.__ModuleLoader__.load({
           if (!mountedRef.current) return false;
           applyPayload(data);
           if (typeof onSuccess === 'function') onSuccess(data);
-          showNotice('ok', successText);
+          if (typeof successText === 'string' && successText.length > 0) showNotice('ok', successText);
           broadcastTermsPayload(data);
           return true;
         } catch (error) {
@@ -5783,9 +6220,136 @@ window.__ModuleLoader__.load({
         );
       }
 
+      /** Export all custom libraries as one JSON file (client-side only). */
+      function exportAllLibraries() {
+        const now = new Date();
+        const payload = buildTermsExportAll(libraries, now);
+        if (payload.libraries.length === 0) {
+          showNotice('error', t('terms.exportEmpty'));
+          return;
+        }
+        const filename = 'dsh-terminology-' + termsExportStamp(now) + '.json';
+        if (downloadTermsFile(filename, JSON.stringify(payload, null, 2) + '\n', 'application/json;charset=utf-8')) {
+          showNotice('ok', t('terms.exported', { filename: filename }));
+        } else {
+          showNotice('error', t('terms.exportFailed'));
+        }
+      }
+
+      /** Export one custom library as JSON (single-library envelope). */
+      function exportLibraryJson(library) {
+        const now = new Date();
+        const payload = buildTermsLibraryExport(library, now);
+        const filename = 'dsh-terminology-' + termsFileSlug(payload.name) + '-' + termsExportStamp(now) + '.json';
+        if (downloadTermsFile(filename, JSON.stringify(payload, null, 2) + '\n', 'application/json;charset=utf-8')) {
+          showNotice('ok', t('terms.exported', { filename: filename }));
+        } else {
+          showNotice('error', t('terms.exportFailed'));
+        }
+      }
+
+      /** Export one custom library as RFC4180 CSV with a UTF-8 BOM (Excel-friendly). */
+      function exportLibraryCsv(library) {
+        const now = new Date();
+        const filename = 'dsh-terminology-' + termsFileSlug(library && library.name) + '-' + termsExportStamp(now) + '.csv';
+        const text = TERMS_CSV_BOM + buildTermsCsv(library && library.terms);
+        if (downloadTermsFile(filename, text, 'text/csv;charset=utf-8')) {
+          showNotice('ok', t('terms.exported', { filename: filename }));
+        } else {
+          showNotice('error', t('terms.exportFailed'));
+        }
+      }
+
+      /** Open the native picker of the hidden file input. */
+      function triggerImportPicker() {
+        const input = importInputRef.current;
+        if (!input || typeof input.click !== 'function' || busyRef.current || importingRef.current) return;
+        try {
+          input.click();
+        } catch (error) {
+          showNotice('error', t('terms.importFailed'));
+        }
+      }
+
+      /** Read + normalize one picked JSON/CSV file and POST terms/import. */
+      async function importTermsFile(event) {
+        const input = event && event.target ? event.target : null;
+        const file = input && input.files && input.files.length > 0 ? input.files[0] : null;
+        // Reset the picker so choosing the same file again fires another change event.
+        if (input) {
+          try {
+            input.value = '';
+          } catch (error) {
+            /* some webviews expose a read-only value */
+          }
+        }
+        if (!file || busyRef.current || importingRef.current) return;
+        importingRef.current = true;
+        setImporting(true);
+        try {
+          let text = '';
+          try {
+            text = await readTermsFileText(file);
+          } catch (error) {
+            if (mountedRef.current) showNotice('error', t('terms.importInvalidFile'));
+            return;
+          }
+          if (!mountedRef.current) return;
+          const fallbackName = termsFileBaseName(file && typeof file.name === 'string' ? file.name : '');
+          const defaultName = t('terms.importDefaultName');
+          const kind = termsImportFileKind(file, text);
+          const importLibraries =
+            kind === 'csv'
+              ? parseTermsImportCsv(text, fallbackName, defaultName, limits)
+              : parseTermsImportJson(text, fallbackName, defaultName, limits);
+          if (importLibraries === null) {
+            showNotice('error', t('terms.importInvalidFile'));
+            return;
+          }
+          if (importLibraries.length === 0) {
+            showNotice('error', t('terms.importEmpty'));
+            return;
+          }
+          const requestedCount = importLibraries.length;
+          await runTermMutation(
+            'terms/import',
+            { libraries: importLibraries },
+            '',
+            (data) => {
+              const imported = data && Array.isArray(data.imported) ? data.imported : [];
+              const count = imported.length > 0 ? imported.length : requestedCount;
+              let addedTerms = 0;
+              if (imported.length > 0 && data && Array.isArray(data.libraries)) {
+                const importedIds = Object.create(null);
+                for (let index = 0; index < imported.length; index += 1) {
+                  const item = imported[index];
+                  if (item && typeof item.id === 'string' && item.id) importedIds[item.id] = true;
+                }
+                for (const library of data.libraries) {
+                  if (library && importedIds[library.id] && Array.isArray(library.terms)) addedTerms += library.terms.length;
+                }
+              } else {
+                for (const library of importLibraries) addedTerms += library.terms.length;
+              }
+              showNotice(
+                'ok',
+                t('terms.importSuccess', { count: count }) + ' · ' + t('terms.importedCount', { count: addedTerms }),
+              );
+            },
+          );
+        } catch (error) {
+          if (mountedRef.current) showNotice('error', t('terms.importFailed'));
+        } finally {
+          importingRef.current = false;
+          if (mountedRef.current) setImporting(false);
+        }
+      }
+
       const customCount = libraries.reduce((count, library) => (library.builtin ? count : count + 1), 0);
       const totalTerms = libraries.reduce((count, library) => count + library.terms.length, 0);
       const libraryLimitReached = customCount >= limits.libraries;
+      /** Mutating controls also wait while a picked file is being read/imported. */
+      const actionsBusy = busy || importing;
 
       /** One term row inside a library card. */
       function renderTerm(library, entry) {
@@ -5815,7 +6379,7 @@ window.__ModuleLoader__.load({
                       type: 'button',
                       className: 'dsh-it-btn dsh-it-btn-ghost dsh-it-btn-danger',
                       title: t('terms.delete'),
-                      disabled: busy,
+                      disabled: actionsBusy,
                       onClick: () => removeEntry(library, entry),
                     },
                     t('terms.delete'),
@@ -5832,7 +6396,7 @@ window.__ModuleLoader__.load({
       function renderEntryForm(library) {
         const draft = draftFor(library.id);
         const termsAtLimit = library.terms.length >= limits.termsPerLibrary;
-        const controlsDisabled = busy || termsAtLimit;
+        const controlsDisabled = actionsBusy || termsAtLimit;
         const canAdd =
           !controlsDisabled &&
           draft.source.trim().length > 0 &&
@@ -5938,7 +6502,7 @@ window.__ModuleLoader__.load({
               h('input', {
                 type: 'checkbox',
                 checked: library.enabled,
-                disabled: busy,
+                disabled: actionsBusy,
                 'aria-label': t('terms.enable') + ' ' + localizedName,
                 onChange: (event) => toggleLibrary(library, !!(event && event.target && event.target.checked)),
               }),
@@ -5968,6 +6532,28 @@ window.__ModuleLoader__.load({
               : h(
                   'div',
                   { className: 'dsh-it-lib-actions' },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-it-btn dsh-it-btn-ghost',
+                      disabled: busy,
+                      title: t('terms.exportJson'),
+                      onClick: () => exportLibraryJson(library),
+                    },
+                    t('terms.exportJson'),
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-it-btn dsh-it-btn-ghost',
+                      disabled: busy,
+                      title: t('terms.exportCsv'),
+                      onClick: () => exportLibraryCsv(library),
+                    },
+                    t('terms.exportCsv'),
+                  ),
                   renaming
                     ? null
                     : h(
@@ -5975,7 +6561,7 @@ window.__ModuleLoader__.load({
                         {
                           type: 'button',
                           className: 'dsh-it-btn dsh-it-btn-ghost',
-                          disabled: busy,
+                          disabled: actionsBusy,
                           onClick: () => startRename(library),
                         },
                         t('terms.rename'),
@@ -5987,7 +6573,7 @@ window.__ModuleLoader__.load({
                         {
                           type: 'button',
                           className: 'dsh-it-btn dsh-it-btn-ghost dsh-it-btn-danger',
-                          disabled: busy,
+                          disabled: actionsBusy,
                           onClick: () => requestDeleteLibrary(library),
                         },
                         t('terms.delete'),
@@ -6007,7 +6593,7 @@ window.__ModuleLoader__.load({
                   placeholder: t('terms.renamePlaceholder'),
                   'aria-label': t('terms.rename'),
                   spellCheck: false,
-                  disabled: busy,
+                  disabled: actionsBusy,
                   onChange: (event) => setRenameName(event && event.target ? String(event.target.value) : ''),
                   onKeyDown: (event) => {
                     if (!event) return;
@@ -6025,12 +6611,12 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'dsh-it-btn dsh-it-btn-primary',
-                    disabled: busy || !renameName.trim(),
+                    disabled: actionsBusy || !renameName.trim(),
                     onClick: () => saveRename(library),
                   },
                   t('common.save'),
                 ),
-                h('button', { type: 'button', className: 'dsh-it-btn', disabled: busy, onClick: cancelRename }, t('common.cancel')),
+                h('button', { type: 'button', className: 'dsh-it-btn', disabled: actionsBusy, onClick: cancelRename }, t('common.cancel')),
               )
             : null,
           confirming
@@ -6043,12 +6629,12 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'dsh-it-btn dsh-it-btn-danger',
-                    disabled: busy,
+                    disabled: actionsBusy,
                     onClick: () => confirmDeleteLibrary(library),
                   },
                   t('terms.deleteYes'),
                 ),
-                h('button', { type: 'button', className: 'dsh-it-btn', disabled: busy, onClick: cancelDeleteLibrary }, t('common.cancel')),
+                h('button', { type: 'button', className: 'dsh-it-btn', disabled: actionsBusy, onClick: cancelDeleteLibrary }, t('common.cancel')),
               )
             : null,
           library.terms.length === 0
@@ -6090,7 +6676,7 @@ window.__ModuleLoader__.load({
         { className: 'dsh-it-panel' },
         h(
           'section',
-          { className: 'dsh-it-card', 'aria-labelledby': 'dsh-it-terms-heading', 'aria-busy': busy ? 'true' : 'false' },
+          { className: 'dsh-it-card', 'aria-labelledby': 'dsh-it-terms-heading', 'aria-busy': busy || importing ? 'true' : 'false' },
           h(
             'div',
             { className: 'dsh-it-card-header' },
@@ -6103,6 +6689,44 @@ window.__ModuleLoader__.load({
             ),
           ),
           h('p', { className: 'dsh-it-hint' }, t('terms.hint')),
+          h(
+            'div',
+            { className: 'dsh-it-terms-toolbar' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-it-btn',
+                disabled: busy,
+                title: t('terms.exportAll'),
+                onClick: exportAllLibraries,
+              },
+              t('terms.exportAll'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-it-btn',
+                disabled: busy || importing,
+                title: t('terms.importTip'),
+                'aria-label': t('terms.importTitle'),
+                onClick: triggerImportPicker,
+              },
+              importing ? t('terms.importing') : t('terms.import'),
+            ),
+            h('input', {
+              ref: importInputRef,
+              type: 'file',
+              accept: '.json,.csv,application/json,text/csv',
+              style: { display: 'none' },
+              tabIndex: -1,
+              'aria-hidden': 'true',
+              'aria-label': t('terms.importTitle'),
+              onChange: importTermsFile,
+            }),
+            h('span', { className: 'dsh-it-hint dsh-it-terms-toolbar-hint' }, t('terms.importTip')),
+          ),
           notice
             ? h(
                 'p',
@@ -6125,7 +6749,7 @@ window.__ModuleLoader__.load({
               placeholder: t('terms.newLibraryPlaceholder'),
               'aria-label': t('terms.newLibrary'),
               spellCheck: false,
-              disabled: busy,
+              disabled: actionsBusy,
               onChange: (event) => setNewName(event && event.target ? String(event.target.value) : ''),
               onKeyDown: (event) => {
                 if (!event || event.key !== 'Enter') return;
@@ -6138,7 +6762,7 @@ window.__ModuleLoader__.load({
               {
                 type: 'button',
                 className: 'dsh-it-btn dsh-it-btn-primary',
-                disabled: busy || libraryLimitReached || !newName.trim(),
+                disabled: actionsBusy || libraryLimitReached || !newName.trim(),
                 onClick: createLibrary,
               },
               t('terms.create'),
@@ -6436,6 +7060,8 @@ window.__ModuleLoader__.load({
 .dsh-it-term-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .dsh-it-term-source{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:20px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:1px 8px;overflow-wrap:anywhere}
 .dsh-it-term-actions{display:flex;align-items:center;gap:4px;margin-left:auto;flex:none}
+.dsh-it-terms-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.dsh-it-terms-toolbar-hint{flex:1 1 220px;min-width:0}
 .dsh-it-lib-create{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .dsh-it-lib-create .dsh-it-input{flex:1 1 200px;width:auto;min-width:160px}
 .dsh-it-lib-create-hint{flex:1 1 100%}

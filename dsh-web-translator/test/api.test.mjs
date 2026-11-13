@@ -399,6 +399,28 @@ test('custom terminology libraries can be created, edited, toggled and removed',
   assert.equal(removed.libraries.some((item) => item.id === libraryId), false);
 });
 
+test('importTermLibraries bulk-imports custom libraries atomically', async (t) => {
+  const { api } = await setupApi(t);
+  const imported = await api.importTermLibraries({
+    libraries: [
+      { name: '项目术语', terms: [{ source: 'behavior tree', policy: 'translate', target: '行为树' }, { source: 'feature flag', policy: 'keep' }] },
+      { name: 'Rust 备注', terms: [{ source: 'cargo', policy: 'keep' }] },
+    ],
+  });
+  assert.equal(imported.imported.length, 2);
+  const project = imported.libraries.find((library) => library.name === '项目术语');
+  assert.equal(project.enabled, true);
+  assert.equal(project.terms.length, 2);
+
+  const before = (await api.getTerms()).libraries.length;
+  await assert.rejects(
+    () => api.importTermLibraries({ libraries: [{ name: '坏库', terms: [{ source: 'x', policy: 'translate' }] }] }),
+    /target is required/,
+  );
+  assert.equal((await api.getTerms()).libraries.length, before, 'validation failure imports nothing');
+  await assert.rejects(() => api.importTermLibraries({ libraries: [] }), /non-empty array/);
+});
+
 test('terminology writes validate limits and protect built-in packs', async (t) => {
   const { api } = await setupApi(t);
   await assert.rejects(() => api.updateTermLibrary({ id: 'rust', name: 'x' }), /term library not found/);

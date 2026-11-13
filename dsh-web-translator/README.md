@@ -77,9 +77,9 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | **设置** | 模型、推理强度、目标语言、**翻译风格（自动/通用/编程/科技/金融）**、system 提示词、user 模板、批次参数、测试翻译（与设置页同源实现）；**翻译记录**：关闭记录开关（默认记录）+ 清理所有记录（清空 token/轨迹并归档隐藏 DSH「dsh翻译记录」会话） |
 | **单词本** | 单词列表、复习、发音练习（与设置页同源实现） |
 | **悬浮球**（左侧工具栏页面 + DSH 设置页 Tab） | 不展示悬浮球的域名列表：查看、移除、手动添加（扩展在面板/右键菜单添加，Host 持久化到 `ball-sites.json`） |
-| **术语库**（左侧工具栏页面 + DSH 设置页 Tab） | 多个内置术语包（Rust 编程、通用编程/网络）+ 自定义术语库；勾选启用哪些库；内置包只读，自定义库可新建/重命名/删除并增删词条（原文 → 固定译法 / 保留原文）；数据来自 `GET /terms`，写操作走 `POST /terms/*` |
+| **术语库**（左侧工具栏页面 + DSH 设置页 Tab） | 多个内置术语包（Rust 编程、通用编程/网络）+ 自定义术语库；勾选启用哪些库；内置包只读，自定义库可新建/重命名/删除并增删词条（原文 → 固定译法 / 保留原文）；支持**导入 / 导出**（JSON / CSV，单库或全部）；数据来自 `GET /terms`，写操作走 `POST /terms/*` |
 
-> **术语库**：内置包 `rust`（trait/crate/impl 保留原文、uninhabited type→无值类型）与 `programming`（port→端口）只读，可在「术语库」页勾选停用；自定义库可新建多个，添加「原文 → 固定译法 / 保留原文」词条（每库最多 200 条）。内置包仅在技术/编程页面生效，自定义库对所有页面生效；规则进入提示词——内置规则的已知误译有确定性兜底，自定义词条的 keep 由占位符保护、固定译法由提示词约束；启用状态/词条改动会自然使旧翻译缓存失效。
+> **术语库**：内置包 `rust`（trait/crate/impl 保留原文、uninhabited type→无值类型）与 `programming`（port→端口）只读，可在「术语库」页勾选停用；自定义库可新建多个，添加「原文 → 固定译法 / 保留原文」词条（每库最多 200 条）。内置包仅在技术/编程页面生效，自定义库对所有页面生效；规则进入提示词——内置规则的已知误译有确定性兜底，自定义词条的 keep 由占位符保护、固定译法由提示词约束；启用状态/词条改动会自然使旧翻译缓存失效。术语库页支持导出为 JSON/CSV、从 JSON/CSV 导入（导入会自动去重命名并默认启用，方便跨设备或团队共享）。
 > **翻译结果缓存（v1.7.0 起持久化）**：相同原文 / 提示词 / 模型再次翻译时直接复用译文（0 token）；缓存写本机 `<dataDir>/cache.json`，保留 7 天、最多 3000 批（约 8MB），跨 DSH 重启有效；「概览」页底部可「清空翻译结果缓存」；缓存损坏/读写失败只告警，不影响翻译。
 > Token 统计来自模型服务返回的真实 usage（输入 / 输出 / 缓存读 / 缓存写四项），按本地日期聚合、保留最近 90 天与最近 500 条事件；缓存命中的请求 tokens 记 0 但仍计数。插件账本与 DSH 原生统计口径一致。
 > **复用 DSH 原生轨迹**：扩展为每次翻译动作/查词生成 `turnId`，Host 用它在本地创建一条 DSH 会话（标题「翻译 · 页面标题 / 站点」，会话 id 形如 `translation-<turnId>`），每个模型请求写成该会话的一轮原生对话（`user/message` + `assistant/message`，含 usage）。轨迹页的「打开 DSH 轨迹」按钮通过 `uiWorkspace.openSession(sessionId)` 打开该会话，即可使用 DSH 原生「对话 / 轨迹 / 统计」。会话统一归入插件自建的 DSH workspace **「dsh翻译记录」**（目录 `$DSH_HOME/immersive-translate/conversations/`，历史会话首次启动时自动回填；侧边栏直接可见）；空闲 15 分钟后释放 agent，再次打开会自动从持久化恢复。页面原文/译文只写入**本机** DSH 会话日志，不会被额外发送。
@@ -154,6 +154,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | POST | `/terms/entries/add` `{libraryId, source, policy, target?}` | 添加词条（`policy`: `keep`/`translate`，最多 200 条/库） |
 | POST | `/terms/entries/update` `{libraryId, entryId, source?, policy?, target?}` | 修改词条 |
 | POST | `/terms/entries/remove` `{libraryId, entryId}` | 删除词条 |
+| POST | `/terms/import` `{libraries:[{name, terms:[{source, policy, target?}]}]}` | 批量导入自定义术语库（原子：任一非法整体拒绝；重名自动加序号；导入库默认启用；返回 `imported` 列表） |
 | DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 归档隐藏「dsh翻译记录」会话 |
 | POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?}`，响应含 `usage` 四字段与 `cached` |
 | POST | `/lookup` | 查词/查句 + 英文词典信息，响应含 `usage`；接受相同可选元数据 |

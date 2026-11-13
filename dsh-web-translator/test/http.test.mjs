@@ -108,6 +108,10 @@ function createStubApi(overrides = {}) {
       calls.push({ op: 'removeTermEntry', body });
       return { libraries: [], limits: {}, appliesTo: {}, libraryId: body.libraryId, entryId: body.entryId };
     },
+    importTermLibraries: async (body) => {
+      calls.push({ op: 'importTermLibraries', body });
+      return { libraries: [], limits: {}, appliesTo: {}, imported: (body.libraries || []).map((library, index) => ({ id: 'tl_' + index, name: library.name })) };
+    },
     addWordbookEntry: async (body) => ({ item: { id: 'wb_1', word: body.word }, existed: false }),
     updateWordbookEntry: async (body) => ({ item: { id: body.id } }),
     reviewWordbookEntry: async (body) => ({ item: { id: body.id } }),
@@ -255,6 +259,7 @@ test('dispatches GET/PUT/POST routes with parsed bodies and signals', async () =
     ['/terms/entries/add', 'POST'],
     ['/terms/entries/update', 'POST'],
     ['/terms/entries/remove', 'POST'],
+    ['/terms/import', 'POST'],
     ['/usage', 'GET'],
     ['/usage/events', 'GET'],
     ['/usage/turns', 'GET'],
@@ -297,6 +302,7 @@ test('POST /terms/* dispatches mutations with parsed bodies', async () => {
     ['/terms/entries/add', { libraryId: 'tl_1', source: 'behavior tree', policy: 'translate', target: '行为树' }, { op: 'addTermEntry', match: (body) => body.source === 'behavior tree' }],
     ['/terms/entries/update', { libraryId: 'tl_1', entryId: 'te_1', target: '行为树结构' }, { op: 'updateTermEntry', match: (body) => body.entryId === 'te_1' }],
     ['/terms/entries/remove', { libraryId: 'tl_1', entryId: 'te_1' }, { op: 'removeTermEntry', match: (body) => body.libraryId === 'tl_1' }],
+    ['/terms/import', { libraries: [{ name: '导入库', terms: [{ source: 'x', policy: 'keep' }] }] }, { op: 'importTermLibraries', match: (body) => Array.isArray(body.libraries) && body.libraries[0].name === '导入库' }],
   ];
   for (const [path, body, expectation] of cases) {
     const response = await invokeHandler(handler, fakeRequest({ method: 'POST', url: API_BASE + path, body }));

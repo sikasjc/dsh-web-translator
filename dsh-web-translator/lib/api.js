@@ -1630,6 +1630,11 @@ export function createApi({
     return termLibraries.removeEntry(body);
   }
 
+  /** `POST /terms/import` (DESIGN §5.7.3): bulk-import custom libraries atomically. */
+  async function importTermLibraries(body) {
+    return termLibraries.importLibraries(body);
+  }
+
   /**
    * `GET /wordbook` (DESIGN §5.8).
    * @param {object} query - query parameters.
@@ -1671,6 +1676,7 @@ export function createApi({
     addTermEntry,
     updateTermEntry,
     removeTermEntry,
+    importTermLibraries,
     listWordbook,
     addWordbookEntry: (body) => wordbook.add(body),
     updateWordbookEntry: (body) => wordbook.update(body),

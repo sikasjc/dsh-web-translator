@@ -9,7 +9,10 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.13.1** · **browser extension 1.17.14**. Recent changes:
+> Current versions: **DSH plugin 1.14.0** · **browser extension 1.17.14**. Recent changes:
+> terminology libraries can now be exported (all custom libraries as JSON, one library as JSON or
+> CSV) and imported from JSON/CSV, with automatic name dedupe and enabled-by-default imports
+> (plugin 1.14.0);
 > the Floating-ball page is now also available on the left-toolbar "dsh翻译" page, so hidden
 > domains can be managed there too (plugin 1.13.1);
 > terminology now supports multiple libraries — built-in packs (Rust, general programming/network)
@@ -133,7 +136,8 @@ under [Data and privacy](#data-and-privacy).
     translation; a **Floating ball** page lists the domains that hide the ball and lets you remove or
     manually add them; the same **Floating ball** page is also available on the left-toolbar page; a
     **Terminology** page (left-toolbar page and settings page) manages built-in term packs and custom
-    terminology libraries (enable/disable per library, add/remove custom entries);
+    terminology libraries (enable/disable per library, add/remove custom entries, JSON/CSV import and
+    export);
   - **Image translation backend**: captures one image, sends it to an image-capable model, returns
     OCR blocks with normalized bounding boxes, records image tokens in the ledger and one DSH turn per
     image, then deletes the temporary image attachment;
@@ -356,7 +360,7 @@ the extension, then refresh the pages that are already open.
 ## Development and tests
 
 ```bash
-# DSH plugin (host + unit tests) — currently 311/311
+# DSH plugin (host + unit tests) — currently 314/314
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/
