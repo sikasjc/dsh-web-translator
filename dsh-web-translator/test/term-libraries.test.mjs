@@ -150,6 +150,17 @@ test('importLibraries creates enabled libraries atomically with name dedupe', as
     /duplicate term source/,
   );
   await assert.rejects(() => service.importLibraries({ libraries: [] }), /non-empty array/);
+  // Custom names must not shadow built-in pack display names.
+  await assert.rejects(() => service.addLibrary({ name: 'Rust 编程' }), /already exists/);
+  const builtinCollision = await service.importLibraries({
+    libraries: [{ name: 'Rust 编程', terms: [{ source: 'cargo', policy: 'keep' }] }],
+  });
+  assert.equal(builtinCollision.imported[0].name, 'Rust 编程 (2)');
+  const existingCustom = builtinCollision.imported[0].id;
+  await assert.rejects(
+    () => service.renameLibrary({ id: existingCustom, name: 'rust 编程' }),
+    /already exists/,
+  );
   await assert.rejects(
     () => service.importLibraries({ libraries: [{ name: '超量', terms: Array.from({ length: 201 }, (_, index) => ({ source: `term ${index}`, policy: 'keep' })) }] }),
     /exceeds 200 terms/,

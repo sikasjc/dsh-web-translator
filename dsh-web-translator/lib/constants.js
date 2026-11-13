@@ -75,6 +75,8 @@ export const LIMITS = Object.freeze({
   concurrency: Object.freeze({ min: 1, max: 4, default: 2 }),
   /** JSON request body cap (DESIGN §5: 1 MiB). */
   bodyBytes: 1024 * 1024,
+  /** `POST /terms/import` body cap: full terminology-library backups can exceed 1 MiB. */
+  termImportBytes: 8 * 1024 * 1024,
   /** Wordbook file cap (DESIGN §5.8). */
   wordbookItems: 5000,
   /** `GET /wordbook` limit default / hard maximum (Lead裁决). */

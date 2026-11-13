@@ -294,6 +294,19 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     return draft;
   }
 
+  /**
+   * Names already taken, including built-in pack display names so a custom
+   * library cannot be confused with a built-in pack.
+   * @param {object[]} customLibraries - custom library records.
+   * @returns {Set<string>} lowercased names.
+   */
+  function takenNames(customLibraries) {
+    return new Set([
+      ...BUILTIN_TERM_LIBRARIES.map((library) => library.name.toLowerCase()),
+      ...customLibraries.map((library) => library.name.toLowerCase()),
+    ]);
+  }
+
   /** Find one custom library or throw. */
   function requireCustomLibrary(draft, id) {
     const libraries = Array.isArray(draft.libraries) ? draft.libraries : [];
@@ -334,7 +347,7 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
       if (next.libraries.length >= TERM_LIBRARY_LIMITS.libraries) {
         throw apiError('BAD_REQUEST', `at most ${TERM_LIBRARY_LIMITS.libraries} custom libraries are allowed`);
       }
-      if (next.libraries.some((library) => sameSource(library.name, name))) {
+      if (takenNames(next.libraries).has(name.toLowerCase())) {
         throw apiError('BAD_REQUEST', 'a library with this name already exists');
       }
       const timestamp = clock();
@@ -354,7 +367,8 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     return store.mutate((draft) => {
       const next = prepareDraft(draft, state);
       const { library } = requireCustomLibrary(next, id);
-      if (next.libraries.some((item) => item.id !== id && sameSource(item.name, name))) {
+      const remaining = next.libraries.filter((item) => item.id !== id);
+      if (takenNames(remaining).has(name.toLowerCase())) {
         throw apiError('BAD_REQUEST', 'a library with this name already exists');
       }
       library.name = name;
@@ -466,7 +480,7 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
       if (next.libraries.length + incoming.length > TERM_LIBRARY_LIMITS.libraries) {
         throw apiError('BAD_REQUEST', `at most ${TERM_LIBRARY_LIMITS.libraries} custom libraries are allowed`);
       }
-      const usedNames = new Set(next.libraries.map((library) => library.name.toLowerCase()));
+      const usedNames = takenNames(next.libraries);
       const timestamp = clock();
       const imported = [];
       for (const item of incoming) {

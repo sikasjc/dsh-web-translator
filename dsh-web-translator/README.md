@@ -154,7 +154,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | POST | `/terms/entries/add` `{libraryId, source, policy, target?}` | 添加词条（`policy`: `keep`/`translate`，最多 200 条/库） |
 | POST | `/terms/entries/update` `{libraryId, entryId, source?, policy?, target?}` | 修改词条 |
 | POST | `/terms/entries/remove` `{libraryId, entryId}` | 删除词条 |
-| POST | `/terms/import` `{libraries:[{name, terms:[{source, policy, target?}]}]}` | 批量导入自定义术语库（原子：任一非法整体拒绝；重名自动加序号；导入库默认启用；返回 `imported` 列表） |
+| POST | `/terms/import` `{libraries:[{name, terms:[{source, policy, target?}]}]}` | 批量导入自定义术语库（原子：任一非法整体拒绝；重名自动加序号（含内置包名）；导入库默认启用；单次请求体 ≤ 8 MB；返回 `imported` 列表） |
 | DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 归档隐藏「dsh翻译记录」会话 |
 | POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?}`，响应含 `usage` 四字段与 `cached` |
 | POST | `/lookup` | 查词/查句 + 英文词典信息，响应含 `usage`；接受相同可选元数据 |

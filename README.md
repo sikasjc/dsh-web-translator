@@ -9,7 +9,10 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.14.0** · **browser extension 1.17.14**. Recent changes:
+> Current versions: **DSH plugin 1.14.1** · **browser extension 1.17.14**. Recent changes:
+> terminology import accepts up to 8 MB request bodies (full-library backups can be re-imported),
+> imported names never shadow built-in packs, and CSV headers accept Chinese/English labels
+> (plugin 1.14.1);
 > terminology libraries can now be exported (all custom libraries as JSON, one library as JSON or
 > CSV) and imported from JSON/CSV, with automatic name dedupe and enabled-by-default imports
 > (plugin 1.14.0);
@@ -360,7 +363,7 @@ the extension, then refresh the pages that are already open.
 ## Development and tests
 
 ```bash
-# DSH plugin (host + unit tests) — currently 314/314
+# DSH plugin (host + unit tests) — currently 315/315
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/

@@ -472,6 +472,29 @@ test('rejects non-JSON and malformed bodies', async () => {
   }
 });
 
+test('/terms/import uses the larger 8 MiB body cap', async () => {
+  const api = createStubApi();
+  const handler = createHttpHandler(api, {});
+  const declared = { 'content-length': String(2 * 1024 * 1024) };
+  const importResponse = await invokeHandler(handler, fakeRequest({
+    method: 'POST',
+    url: '/dsh-immersive/api/terms/import',
+    body: { libraries: [{ name: '大导入', terms: [{ source: 'x', policy: 'keep' }] }] },
+    headers: declared,
+  }));
+  assert.equal(importResponse.statusCode, 200);
+  assert.ok(api.calls.some((call) => call.op === 'importTermLibraries'));
+
+  const translateResponse = await invokeHandler(handler, fakeRequest({
+    method: 'POST',
+    url: '/dsh-immersive/api/translate',
+    body: { texts: ['x'] },
+    headers: declared,
+  }));
+  assert.equal(translateResponse.statusCode, 413);
+  assert.equal(translateResponse.json().error.code, 'TEXT_LIMIT');
+});
+
 test('enforces the 1 MiB body cap from Content-Length', async () => {
   const handler = createHttpHandler(createStubApi(), {});
   const response = await invokeHandler(handler, fakeRequest({

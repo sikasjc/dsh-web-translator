@@ -400,9 +400,12 @@ export function createHttpHandler(api, { connection } = {}) {
           data = await dispatchWrite(path, {}, api, abort.signal);
         } else {
           const imageBody = path === '/image-translate';
+          const importBody = path === '/terms/import';
           data = await dispatchWrite(path, await readJsonBody(req, imageBody
             ? { maxBytes: LIMITS.imageBodyBytes, tooLargeCode: 'IMAGE_TOO_LARGE' }
-            : undefined), api, abort.signal);
+            : importBody
+              ? { maxBytes: LIMITS.termImportBytes }
+              : undefined), api, abort.signal);
         }
       } finally {
         if (typeof res?.off === 'function') res.off('close', onClose);

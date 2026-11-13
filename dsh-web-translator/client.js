@@ -192,6 +192,7 @@ window.__ModuleLoader__.load({
       'terms.importInvalidFile': '无法解析该文件，请选择导出的 JSON 或 CSV',
       'terms.importEmpty': '文件中没有可导入的术语库或词条',
       'terms.importFailed': '导入失败，请重试',
+      'terms.importTooLarge': '导入文件过大，无法导入（单次最多约 8 MB）',
       'terms.importDefaultName': '导入的术语库',
       'common.loading': '加载中…',
       'common.retry': '重试',
@@ -621,6 +622,7 @@ window.__ModuleLoader__.load({
       'terms.importInvalidFile': 'Could not parse this file; choose an exported JSON or CSV',
       'terms.importEmpty': 'The file contains no importable libraries or entries',
       'terms.importFailed': 'Import failed; try again',
+      'terms.importTooLarge': 'The import file is too large (max about 8 MB per import)',
       'terms.importDefaultName': 'Imported library',
       'common.loading': 'Loading…',
       'common.retry': 'Retry',
@@ -5747,12 +5749,12 @@ window.__ModuleLoader__.load({
       const targetChars = caps.targetChars || TERMS_DEFAULT_LIMITS.targetChars;
       const termLimit = caps.termsPerLibrary || TERMS_DEFAULT_LIMITS.termsPerLibrary;
       const seen = Object.create(null);
-      const firstRow = rows[0];
-      const firstCell =
-        firstRow && firstRow.length > 0 && firstRow[0] !== null && firstRow[0] !== undefined
-          ? String(firstRow[0]).trim().toLowerCase()
-          : '';
-      const start = firstCell === 'source' ? 1 : 0;
+      const firstRow = Array.isArray(rows[0]) ? rows[0] : [];
+      const headerCells = firstRow.map((cell) => (cell === null || cell === undefined ? '' : String(cell).trim().toLowerCase()));
+      const sourceHeader = headerCells[0] === 'source' || headerCells[0] === '原文' || headerCells[0] === '术语';
+      const policyHeader =
+        headerCells[1] === 'policy' || headerCells[1] === '策略' || headerCells[1] === '处理方式' || headerCells[1] === '方式';
+      const start = sourceHeader && policyHeader ? 1 : 0;
       for (let index = start; index < rows.length; index += 1) {
         if (terms.length >= termLimit) break;
         const row = Array.isArray(rows[index]) ? rows[index] : [];
@@ -6082,7 +6084,7 @@ window.__ModuleLoader__.load({
        * and keep the current data.
        * @returns {Promise<boolean>} whether the mutation succeeded.
        */
-      async function runTermMutation(name, body, successText, onSuccess) {
+      async function runTermMutation(name, body, successText, onSuccess, failureText) {
         if (busyRef.current) return false;
         busyRef.current = true;
         setBusy(true);
@@ -6095,7 +6097,15 @@ window.__ModuleLoader__.load({
           broadcastTermsPayload(data);
           return true;
         } catch (error) {
-          if (mountedRef.current) showNotice('error', describeError(error, t));
+          if (mountedRef.current) {
+            const text =
+              typeof failureText === 'function'
+                ? failureText(error, t)
+                : typeof failureText === 'string' && failureText.length > 0
+                  ? failureText
+                  : describeError(error, t);
+            showNotice('error', text);
+          }
           return false;
         } finally {
           busyRef.current = false;
@@ -6336,6 +6346,8 @@ window.__ModuleLoader__.load({
                 t('terms.importSuccess', { count: count }) + ' · ' + t('terms.importedCount', { count: addedTerms }),
               );
             },
+            (error, translate) =>
+              error && error.code === 'TEXT_LIMIT' ? translate('terms.importTooLarge') : describeError(error, translate),
           );
         } catch (error) {
           if (mountedRef.current) showNotice('error', t('terms.importFailed'));
