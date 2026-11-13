@@ -352,6 +352,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - 面板行为：点击「翻译此页/重新翻译」并成功启动后自动 `closePanel()`，只保留悬浮球；进度/状态在下次展开时可见。
 - 工具栏图标：`chrome.action.onClicked` 只发 `dsh-it:toggle-panel` 打开/收起面板，**不触发翻译**。
 - 悬浮球（V1.10）：左键 `quickTranslateFromBall()` —— 未翻译时按当前模式（`only` 保留仅译文，其余按 `bilingual`）静默开始翻译，翻译中再点停止，已翻译再点还原；右键 `contextmenu` 阻止默认菜单并打开功能面板；拖动（≥5px）不触发翻译/面板。
+- 连接失败可操作提示（V1.17.14）：`startTranslate` 的启动健康检查失败时由 `connectionStatusHint(err)` 归类——`DSH_UNREACHABLE`/`TIMEOUT`（DSH Web 未启动或地址不对）→「无法连接本机 DSH…」、`HTTP_404`（DSH 已启动但插件未安装/未启用）→「DSH 中未安装或未启用 dsh-web-translator 插件…」；面板入口把提示写进状态行，静默入口（悬浮球左键快捷翻译、跟随/自动翻译等）额外在悬浮球上方 `showToast(7000)`，不再出现点击后毫无反馈的情况（子框架广播也走静默分支，但子框架不创建 UI，toast 自然是空操作）；提示文本同时进入 zh/en 字典，错误码判定保持在前端，Host 契约不变。
 - 悬浮球进度（V1.12）：`updateProgressUi()` 在 `state.running || state.starting` 时给球加 `.dsh-bubble-busy`，球内显示当前百分比（`total===0` 时显示 `…`），`--dsh-bubble-progress` 驱动伪元素 conic-gradient 环形进度并旋转；`title/aria-label` 同步「翻译中 done/total（percent%）」；完成/停止后移除 busy 并恢复「译」。
 - 域名隐藏悬浮球（V1.11）：Host 新增 `ball-sites.json` 与 `GET /ball-sites` / `POST /ball-sites/add|remove`（域名归一化、去重、上限 200）；content `init()` 在创建 UI 前拉取列表，命中 `location.hostname` 时 `bubble.hidden=true`；面板底部「当前域名不展示悬浮球」与右键菜单「`dsh-it:hide-domain`」写 Host，刷新后仍隐藏；DSH 设置页新增「悬浮球」Tab（`BallSitesPage`）查看/移除/手动添加。
 - 语言一致检测：`detectPageLanguage()` 读 `<html lang>` / `content-language` / `og:locale`，与 `effectiveTarget` 一致时跳过翻译（不发 translate 请求），在悬浮球上方显示 `.dsh-toast` 提示并收起面板；`en≈en-US`，`zh-CN` 与 `zh-TW` 视为不同。

@@ -9,7 +9,10 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.12.5** · **browser extension 1.17.13**. Recent changes:
+> Current versions: **DSH plugin 1.12.5** · **browser extension 1.17.14**. Recent changes:
+> clicking the floating ball while DSH Web is not running, or while the dsh-web-translator plugin is not
+> installed/enabled in DSH, now shows an actionable hint above the ball instead of failing silently
+> (extension 1.17.14);
 > grid/flex parent long paragraphs are translated instead of being skipped, with comfortable spacing
 > between a translated paragraph and the next source paragraph; inline `<code>` tokens (file names,
 > commands, identifiers) are preserved verbatim in translations (plugin 1.12.2 / extension 1.17.4);
@@ -88,7 +91,10 @@ under [Data and privacy](#data-and-privacy).
 - **Floating ball**: left-click starts translation with the current mode (click again to stop, then to
   restore), right-click opens the panel; drag it anywhere; it shows a progress ring and percentage while
   translating; hide/show it from the panel footer or the context menu; **hide per domain** (add from the
-  panel or context menu, manage the list in DSH → Settings → dsh翻译 → Floating ball);
+  panel or context menu, manage the list in DSH → Settings → dsh翻译 → Floating ball); when **DSH Web is
+  not running** or the **plugin is not installed/enabled**, clicking the ball shows the corresponding
+  actionable hint ("Cannot reach local DSH…" / "The dsh-web-translator plugin is not installed or
+  enabled in DSH…") instead of doing nothing;
 - **Page-language matching**: when the page language already equals the target language, no translation
   request is made and the floating ball is hidden by default (configurable);
 - When translation finishes the panel collapses automatically, leaving only the floating ball; the
@@ -265,7 +271,8 @@ the extension, then refresh the pages that are already open.
   are translated automatically;
 - **Floating ball**: left-click starts translation with the current mode (again to stop, then to
   restore), right-click opens the panel; drag it anywhere; progress is shown on the ball; hide/show it
-  from the panel footer or the context menu; hide it per domain from the panel/context menu;
+  from the panel footer or the context menu; hide it per domain from the panel/context menu; clicking it
+  when DSH is not running or the plugin is not installed/enabled shows the corresponding hint;
 - **Tokens**: the popup shows this page's usage and today's total; full stats live in DSH's left-toolbar
   "dsh翻译" page;
 - **Wordbook**: add entries from the extension, review them in DSH → "dsh翻译" → Wordbook.
@@ -346,8 +353,8 @@ node --test test/
 
 # Browser extension (static checks + headless Chrome E2E, no real model calls)
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 222 static checks
-node tools/e2e-chrome.mjs    # 142/142 headless E2E checks (mock DSH)
+node tools/verify.mjs        # 227 static checks
+node tools/e2e-chrome.mjs    # 144/144 headless E2E checks (mock DSH)
 ```
 
 - Design contracts: [`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md) / [`DESIGN-IMAGE.md`](dsh-web-translator/DESIGN-IMAGE.md)
@@ -361,7 +368,8 @@ node tools/e2e-chrome.mjs    # 142/142 headless E2E checks (mock DSH)
 | Symptom | What to do |
 |---|---|
 | No "dsh翻译" in the left toolbar | The plugin was not installed successfully, or the page was not refreshed: confirm the install result says `application: applied`, then hard-refresh the DSH page (`Cmd+Shift+R`) |
-| Extension says it cannot connect to DSH | DSH Web is not running, the port is not 3080, or the address is wrong in the extension options; first verify the backend with `curl http://127.0.0.1:3080/dsh-immersive/api/health` |
+| Extension says / ball hints "Cannot reach local DSH…" | DSH Web is not running, the port is not 3080, or the address is wrong in the extension options; first verify the backend with `curl http://127.0.0.1:3080/dsh-immersive/api/health` |
+| Clicking the ball hints "The dsh-web-translator plugin is not installed or enabled in DSH…" | The extension is installed but the DSH plugin is missing/disabled: install `@local/dsh-web-translator` with `plugin_manager` (confirm `application: applied`), then refresh the page and retry |
 | Extension installed but pages do nothing | Refresh the pages that were already open (the extension only injects into newly loaded pages); restricted pages such as `chrome://` cannot be translated |
 | Part of the page is still untranslated after scrolling | In screen mode (default) only the current screen plus preload is translated once scrolling settles; screens scrolled past quickly are intentionally skipped. Press "Translate this page" / "Re-translate", or switch to block mode in the extension options |
 | Page language equals the target language, nothing happens | The extension detects `<html lang>` / `content-language` / `og:locale`; when it matches the target language no request is made (and the ball is hidden by default). Change the target language or disable "hide the ball when page language matches" |

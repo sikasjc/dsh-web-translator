@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.17.13', manifest.version === '1.17.13', manifest.version);
+  check('manifest: version 1.17.14', manifest.version === '1.17.14', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.17.13', "EXT_VERSION = '1.17.13'"],
+  ['EXT 版本 1.17.14', "EXT_VERSION = '1.17.14'"],
   ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
   ['图片翻译入口', 'function startImageTranslation('],
   ['图片翻译覆盖层', 'function renderImageTranslation('],
@@ -188,7 +188,11 @@ const CONTENT_TOKENS = [
   ['隐私提示', '译文由你在 DSH 中配置的模型生成'],
   ['语音合成', 'speechSynthesis'],
   ['自动翻译', 'autoTranslate'],
-  ['SPA 提示', 'statusNavigate']
+  ['SPA 提示', 'statusNavigate'],
+  ['连接失败提示归类', 'function connectionStatusHint('],
+  ['DSH 未启动提示 i18n', "statusDshDown: '"],
+  ['插件未安装提示 i18n', "statusPluginMissing: '"],
+  ['静默启动失败 toast', 'if (opts.silent) showToast(hint, 7000)']
 ];
 for (const [name, needle] of CONTENT_TOKENS) check('content.js 契约: ' + name, content.includes(needle));
 
@@ -283,6 +287,13 @@ check(
 check(
   'content.js 相同译文去重 + 长段落块级支持',
   content.includes('isSameTranslation') && content.includes('MAX_TEXT = 4000')
+);
+check(
+  'content.js 悬浮球连接失败提示（DSH 未启动 / 插件未安装，静默启动也提示）',
+  content.includes('connectionStatusHint(err)') &&
+    content.includes("code === 'DSH_UNREACHABLE' || code === 'TIMEOUT'") &&
+    content.includes("code === 'HTTP_404'") &&
+    content.includes('if (opts.silent) showToast(hint, 7000)')
 );
 check(
   'content.js 悬浮球翻译进度/加载状态',

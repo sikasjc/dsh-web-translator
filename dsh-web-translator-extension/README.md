@@ -86,7 +86,9 @@ node tools/make-icons.mjs   # 生成 icons/icon{16,32,48,128}.png
 - 在页面任意位置**点鼠标右键** →「dsh翻译」→ **原文 / 译文 / 双语对照**（选择译文或双语对照时，未翻译会自动开始翻译）；
 - **右键图片** →「翻译图片文字」：只截取该图片当前可见区域；DSH 优先本地跨平台 OCR 后走文本翻译，本地 OCR 不可用/低置信度或显式选图片模型时才调用视觉模型；译文**原位覆盖**在原文字位置（可切双语/仅译文、复制、关闭；模型未返回坐标时回退为图片旁卡片）；页面翻译不会自动扫描图片，图片在请求完成后由 Host 立即删除。
 
-翻译只在面板点「翻译此页 / 重新翻译」、右键菜单明确选择译文/双语、或使用快捷键时触发；点击图标/悬浮球本身不会触发。点击「翻译此页 / 重新翻译」后**面板自动收起，只保留悬浮球**，点悬浮球可再次展开查看进度与状态。
+翻译由面板「翻译此页 / 重新翻译」、悬浮球左键快捷翻译、右键菜单明确选择译文/双语、或使用快捷键触发；点击工具栏图标只开关面板，不会触发翻译。点击「翻译此页 / 重新翻译」后**面板自动收起，只保留悬浮球**，点悬浮球可再次展开查看进度与状态。
+
+如果点击悬浮球时 **DSH Web 未启动**，或 **DSH 中未安装/未启用插件**，悬浮球上方会浮出对应提示（「无法连接本机 DSH…」/「DSH 中未安装或未启用 dsh-web-translator 插件…」），不会静默失败；按提示修复 DSH/插件后再点悬浮球重试即可（右键打开面板时，状态行会显示同一提示）。
 
 ### 4.2 面板功能
 
@@ -273,9 +275,10 @@ v1.7.0 起两者再附带轨迹身份 `turnId` / `stepIndex`（`translate` 另�
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 状态行「无法连接本机 DSH（…）」 | DSH Web 未启动，或地址不对。先 `curl http://127.0.0.1:3080/dsh-immersive/api/health`；再检查选项页 DSH 地址 |
-| 返回 `404` / 提示「接口不存在」 | DSH 插件「dsh翻译」未安装/未启用（`plugin_manager` 安装后需 `application: applied`） |
+| 状态行或悬浮球提示「无法连接本机 DSH…」 | DSH Web 未启动，或地址不对。先启动 DSH Web，再 `curl http://127.0.0.1:3080/dsh-immersive/api/health`；最后检查选项页 DSH 地址 |
+| 返回 `404` / 悬浮球提示「DSH 中未安装或未启用 dsh-web-translator 插件…」 | DSH 插件「dsh翻译」未安装/未启用（`plugin_manager` 安装后需 `application: applied`） |
 | 返回 `403 FORBIDDEN_ORIGIN` | DSH 侧 Origin fence 拒绝；扩展后台请求带 `chrome-extension://` Origin，正常应被放行，确认插件版本与 `extensionOrigins` 配置 |
+| 点悬浮球后没有翻译、只浮出提示 | 这是预期的可操作提示：DSH 未启动 →「无法连接本机 DSH…」；插件未安装/未启用 →「DSH 中未安装或未启用 dsh-web-translator 插件…」。按提示修复后重试；两条提示都没有且无译文时，多半是扩展重载后旧页面未刷新 |
 | 翻译全部失败，提示 `MODEL_*` / `MODEL_UNAVAILABLE` / `MODEL_AUTH` | DSH 中没有可用模型或凭据失效：到 DSH → 设置 → dsh翻译 里切换/检查模型，或先在该页「测试翻译」 |
 | 提示 `MODEL_RATE_LIMITED` / `MODEL_TIMEOUT` | 模型限流或超时；稍后重试，或换更快的模型；单批超时上限 DSH 侧 90s、扩展侧 120s |
 | 提示「未找到可翻译的段落」 | 页面已是目标语言、纯图片/视频、或全是代码/表单；也可能段落文本超过 4000 字符被跳过（见已知限制） |
@@ -328,16 +331,17 @@ node tools/debug-layout.mjs https://lobste.rs/
 node tools/e2e-chrome.mjs
 ```
 
-预期：`node tools/verify.mjs` 输出 `ALL 222 STATIC CHECKS PASSED`；
+预期：`node tools/verify.mjs` 输出 `ALL 227 STATIC CHECKS PASSED`；
 `file` 输出 4 个 `PNG image data, 16 x 16 / 32 x 32 / 48 x 48 / 128 x 128, 8-bit/color RGBA`；
-`node tools/e2e-chrome.mjs` 输出 `142/142 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
+`node tools/e2e-chrome.mjs` 输出 `144/144 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
 E2E 覆盖：扩展加载（manifest/CSP/commands 合法性）、content 注入、翻译流水线报文、
 请求元数据（translate/lookup POST body 的 `client` / `sourceUrl` / `sourceTitle`）、
 轨迹身份（translate 的 `turnId`/`stepIndex`/`mode`、同一 run 懒加载批次共用 turnId、lookup 单步 turn）、
 按屏调度（首屏整屏一次翻译、preload none/half/one 递增、快速滚动不翻中间屏、停稳后补翻一屏、扫描定时器清理）、
 block 模式回归与微批合并（小步滚动产生的零散小批次请求数 ≤ ceil(新译段数/2)+2、定时器清理）、
 token 展示（本页消耗累计 / GET usage 的今日累计 / 完成状态行 / 查词卡 token 行）、
-三模式切换（含计算样式）、划词查词卡、加入单词本、还原、options 页；**DSH 响应为 mock，不校验真实模型输出**。
+三模式切换（含计算样式）、划词查词卡、加入单词本、还原、options 页、
+悬浮球连接失败提示（CDP 模拟连接被拒 / HTTP 404，断言 toast、状态行与面板收起语义）。**DSH 响应为 mock，不校验真实模型输出**。
 
 ---
 
@@ -373,7 +377,8 @@ token 展示（本页消耗累计 / GET usage 的今日累计 / 完成状态行 
 - [ ] 旧版 Host 兼容：若 DSH 插件没有 `/usage` 接口（404），面板只隐藏「今日累计」行，翻译/查词/状态行/整体 UI 不受影响、控制台无报错。
 - [ ] 轨迹：DSH「dsh翻译 → 轨迹」中一次翻译动作显示为 1 个 Turn；滚动后继续翻译的批次计入同一 Turn 的多个 steps（step 数 = 批次数，stepIndex 从 0 递增）；每次查词各是 1 个单步 Turn。
 - [ ] 选项页：测试连接成功显示版本/模型数；读取当前模型显示 provider/model；改模式/目标语言/界面语言并保存，刷新网页后生效。
-- [ ] 隐私/健壮性：停掉 DSH 后点翻译 → 面板状态行显示「无法连接 DSH」而非页面报错；整个页面交互、滚动、控制台无未捕获异常。
+- [ ] 失败提示：停掉 DSH Web（或卸载/禁用插件）后点悬浮球 → 1~2 秒内悬浮球上方浮出对应提示（「无法连接本机 DSH…」/「DSH 中未安装或未启用 dsh-web-translator 插件…」），不会毫无反应；右键打开面板时状态行显示同一提示；恢复 DSH/插件后再点悬浮球可正常翻译。
+- [ ] 隐私/健壮性：停掉 DSH 后点翻译 → 面板状态行显示「无法连接本机 DSH…」而非页面报错；整个页面交互、滚动、控制台无未捕获异常。
 - [ ] 代码块/按钮/输入框不被翻译（`pre/code/button/input` 等跳过）。
 - [ ] SPA：在单页应用内路由跳转后，面板提示「页面已跳转，请重新点击翻译」。
 - [ ] 自动翻译（选项页开启）：刷新页面约 1.2s 后自动出现译文，无需点击。

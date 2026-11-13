@@ -93,6 +93,8 @@ function parseInteger(text) {
 const translateUsages = [];
 const ballSites = [];
 let translateDelayMs = 0;
+/** 模拟 DSH 侧故障：unreachable = 连接被拒（DSH 未启动）；not-installed = API 返回 HTTP 404（插件未安装/未启用） */
+let apiFailureMode = null;
 
 /** 本次 e2e 中捕获的 POST 请求体（用于校验 client / sourceUrl / sourceTitle 元数据与轨迹 turnId/stepIndex） */
 const translateBodies = [];
@@ -538,9 +540,10 @@ async function main() {
   await wait(1200);
 
   const targets = (await browser.send('Target.getTargets')).targetInfos || [];
-  const swTarget = targets.find((target) => target.type === 'service_worker' && String(target.url).endsWith('/background.js'));
+  /* 按 loadUnpacked 返回的扩展 id 精确定位背景 SW：本机 profile 可能还有其它带 background.js 的扩展 SW，不能用首个匹配。 */
+  const ownServiceWorkerUrl = 'chrome-extension://' + extensionId + '/background.js';
+  const swTarget = targets.find((target) => target.type === 'service_worker' && String(target.url) === ownServiceWorkerUrl);
   check('background service worker 启动（module）', !!swTarget, swTarget && swTarget.url);
-  if (swTarget) extensionId = swTarget.url.split('/')[2];
 
   /* 2) 内容脚本注入 */
   const pages = await getJson(base + '/json/list');
@@ -581,7 +584,7 @@ async function main() {
 
   /* 3) 拦截 background 的 DSH 请求（mock） */
   const swList = await getJson(base + '/json/list');
-  const swInfo = swList.find((target) => target.type === 'service_worker' && String(target.url).endsWith('/background.js'));
+  const swInfo = swList.find((target) => target.type === 'service_worker' && String(target.url) === ownServiceWorkerUrl);
   if (!swInfo) {
     check('service worker 可连接', false, 'no service worker');
     return 1;
@@ -594,6 +597,19 @@ async function main() {
       const request = params.request;
       const path = new URL(request.url).pathname;
       apiCalls.push(request.method + ' ' + path);
+      if (apiFailureMode === 'unreachable') {
+        await sw.send('Fetch.failRequest', { requestId: params.requestId, errorReason: 'ConnectionRefused' });
+        return;
+      }
+      if (apiFailureMode === 'not-installed') {
+        await sw.send('Fetch.fulfillRequest', {
+          requestId: params.requestId,
+          responseCode: 404,
+          responseHeaders: [{ name: 'content-type', value: 'text/html; charset=utf-8' }],
+          body: Buffer.from('<!doctype html><title>404</title><h1>404 Not Found</h1>').toString('base64')
+        });
+        return;
+      }
       if (translateDelayMs > 0 && path.endsWith('/translate')) await wait(translateDelayMs);
       const payload = mockApiResponse(path, request);
       const body = Buffer.from(JSON.stringify(payload)).toString('base64');
@@ -691,6 +707,40 @@ async function main() {
     inline: document.querySelectorAll('[data-dsh-it="trans-inline"]').length
   })`);
   check('悬浮球左键：已翻译后再次点击还原页面', ballRestored.trans + ballRestored.inline === 0, JSON.stringify(ballRestored));
+
+  /* 3.16) 悬浮球：DSH 未启动 / 插件未安装时浮出对应可操作提示（静默启动也不能毫无反馈） */
+  const ballToastProbe = () =>
+    evalOn(page, `(() => {
+      const shadow = document.getElementById('dsh-it-host').shadowRoot;
+      const toast = shadow.querySelector('.dsh-toast');
+      return {
+        toast: toast.textContent,
+        toastHidden: toast.hidden,
+        status: shadow.querySelector('.dsh-status').textContent,
+        panelHidden: shadow.querySelector('.dsh-panel').hidden
+      };
+    })()`);
+  apiFailureMode = 'unreachable';
+  await evalOn(page, `document.getElementById('dsh-it-host').shadowRoot.querySelector('.dsh-bubble').click()`);
+  await wait(1200);
+  const dshDownProbe = await ballToastProbe();
+  check(
+    '悬浮球：DSH 未启动时浮出「无法连接本机 DSH」提示，面板保持收起',
+    dshDownProbe.toastHidden === false && dshDownProbe.toast.indexOf('无法连接本机 DSH') !== -1 &&
+      dshDownProbe.status.indexOf('无法连接本机 DSH') !== -1 && dshDownProbe.panelHidden === true,
+    JSON.stringify(dshDownProbe)
+  );
+  apiFailureMode = 'not-installed';
+  await evalOn(page, `document.getElementById('dsh-it-host').shadowRoot.querySelector('.dsh-bubble').click()`);
+  await wait(1200);
+  const pluginMissingProbe = await ballToastProbe();
+  check(
+    '悬浮球：插件未安装/未启用时浮出安装提示，面板保持收起',
+    pluginMissingProbe.toastHidden === false && pluginMissingProbe.toast.indexOf('dsh-web-translator') !== -1 &&
+      pluginMissingProbe.status.indexOf('未安装或未启用') !== -1 && pluginMissingProbe.panelHidden === true,
+    JSON.stringify(pluginMissingProbe)
+  );
+  apiFailureMode = null;
   await evalOn(sw, `chrome.storage.local.set({ mode: 'bilingual' })`);
   await wait(400);
   const panelCallsBefore = apiCalls.filter((call) => call === 'POST /dsh-immersive/api/translate').length;
