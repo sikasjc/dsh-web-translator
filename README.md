@@ -9,10 +9,10 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.12.8** · **browser extension 1.17.14**. Recent changes:
-> a new read-only Terminology tab in the plugin settings lists the built-in technical term rules
+> Current versions: **DSH plugin 1.12.9** · **browser extension 1.17.14**. Recent changes:
+> a new read-only Terminology page (a tab on both the left-toolbar page and the plugin settings page) lists the built-in technical term rules
 > (trait/crate/impl, port→端口, uninhabited type→无值类型) and the deterministic fallback fixes where applicable
-> (plugin 1.12.8);
+> (plugin 1.12.9);
 > on technical pages the type-theory term "uninhabited type" is now rendered as 无值类型
 > instead of the literal 不可居住/不可继承 (plugin 1.12.7);
 > clicking the floating ball while DSH Web is not running, or while the dsh-web-translator plugin is not
@@ -128,8 +128,8 @@ under [Data and privacy](#data-and-privacy).
   - **Settings**: model, reasoning effort, target language, translation style, system prompt, user
     template, batching parameters, **third-party dictionary provider**, **image vision model** and test
     translation; a **Floating ball** page lists the domains that hide the ball and lets you remove or
-    manually add them; a read-only **Terminology** page lists the built-in technical term rules and
-    their fallback fixes;
+    manually add them; a read-only **Terminology** page (left-toolbar page and settings page) lists the
+    built-in technical term rules and their fallback fixes;
   - **Image translation backend**: captures one image, sends it to an image-capable model, returns
     OCR blocks with normalized bounding boxes, records image tokens in the ledger and one DSH turn per
     image, then deletes the temporary image attachment;

@@ -332,6 +332,7 @@ window.__ModuleLoader__.load({
       'panel.tab.traces': '轨迹',
       'panel.tab.settings': '设置',
       'panel.tab.wordbook': '单词本',
+      'panel.tab.terms': '术语库',
       'panel.modelChip': '模型 {model}',
       'panel.modelEmpty': '未选择模型',
       'panel.modelChipTitle': '当前翻译模型（可在设置中修改）',
@@ -706,6 +707,7 @@ window.__ModuleLoader__.load({
       'panel.tab.traces': 'Traces',
       'panel.tab.settings': 'Settings',
       'panel.tab.wordbook': 'Wordbook',
+      'panel.tab.terms': 'Terminology',
       'panel.modelChip': 'Model {model}',
       'panel.modelEmpty': 'No model selected',
       'panel.modelChipTitle': 'Current translation model (change it in Settings)',
@@ -3938,9 +3940,9 @@ window.__ModuleLoader__.load({
         });
       }
 
-      /** Left/right/Home/End move between the four tabs. */
+      /** Left/right/Home/End move between the tabs. */
       function onTabKeyDown(event) {
-        const ids = ['overview', 'traces', 'settings', 'wordbook'];
+        const ids = ['overview', 'traces', 'settings', 'wordbook', 'terms'];
         const index = ids.indexOf(tab);
         let nextIndex = -1;
         if (event.key === 'ArrowRight') nextIndex = (index + 1) % ids.length;
@@ -5026,6 +5028,7 @@ window.__ModuleLoader__.load({
         { id: 'traces', key: 'panel.tab.traces' },
         { id: 'settings', key: 'panel.tab.settings' },
         { id: 'wordbook', key: 'panel.tab.wordbook' },
+        { id: 'terms', key: 'panel.tab.terms' },
       ];
       const todayChip = usage
         ? h(
@@ -5152,6 +5155,17 @@ window.__ModuleLoader__.load({
                 hidden: tab !== 'wordbook',
               },
               mountedTabs.wordbook ? h(WordbookPage, { active: tab === 'wordbook' }) : null,
+            ),
+            h(
+              'div',
+              {
+                id: 'dsh-it-usage-panel-terms',
+                role: 'tabpanel',
+                'aria-labelledby': 'dsh-it-usage-tab-terms',
+                className: 'dsh-it-panel',
+                hidden: tab !== 'terms',
+              },
+              mountedTabs.terms ? h(TermsPage) : null,
             ),
           ),
         ),

@@ -291,7 +291,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ## 6. DSH Client（设置页）规范
 
 - 注册：`settings.section` `{ id:'immersive-translate', order:35, label: () => t('title') }`；插件 meta 走 `locale/{en,zh}.json`。
-- 页面结构：标题「dsh翻译」+ Tab「翻译设置 / 单词本 / 术语库 / 悬浮球」（Tab 本地状态；术语库与悬浮球按首次访问懒挂载，数据分别来自 `GET /terms`、`GET /ball-sites`）。
+- 页面结构：标题「dsh翻译」+ Tab「翻译设置 / 单词本 / 术语库 / 悬浮球」（Tab 本地状态；术语库与悬浮球按首次访问懒挂载，数据分别来自 `GET /terms`、`GET /ball-sites`）。左侧工具栏整页同样嵌入 `TermsPage`（其 Tab 为「概览 / 轨迹 / 设置 / 单词本 / 术语库」），两处共用同一组件。
 - **翻译设置**：
   - 模型：按 provider 分组的 select（数据来自 GET /settings.catalog）；切换后调 GET /models/resolve 刷新推理强度选项；
   - 推理强度：auto/各 effort；目标语言 select；「保存」按钮（PUT /settings），脏状态提示；
