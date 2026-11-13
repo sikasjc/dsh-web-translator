@@ -397,6 +397,17 @@ test('lookup skips the dictionary for phrases and degrades on dictionary errors'
   assert.equal(fetches, 1);
 });
 
+test('lookup applies the uninhabited type terminology fix on technical pages', async (t) => {
+  const { api } = await setupApi(t, { streams: [plainStream('不可继承的类型')] });
+  const lookup = await api.lookup({
+    text: 'uninhabited type',
+    context: 'the canonical uninhabited type',
+    sourceTitle: 'Never type - The Rust Reference',
+    sourceUrl: 'https://doc.rust-lang.org/reference/types/never.html',
+  });
+  assert.equal(lookup.result.translation, '无值类型');
+});
+
 test('lookup validates its input', async (t) => {
   const { api } = await setupApi(t);
   await assertApiError(api.lookup({ text: '' }), 'BAD_REQUEST');
@@ -742,6 +753,8 @@ test('translate passes page title/url and technical terminology context to the m
   assert.ok(promptText.includes('doc.rust-lang.org'));
   assert.ok(promptText.includes('trait'));
   assert.ok(promptText.includes('端口'));
+  assert.ok(promptText.includes('uninhabited type'));
+  assert.ok(promptText.includes('无值类型'));
   assert.equal(call.system.includes('Page context'), false, 'dynamic context must not break the static system prefix');
 });
 
@@ -760,6 +773,19 @@ test('technical pages keep trait tokens and fix port terminology deterministical
     client: 'extension',
   });
   assert.deepEqual(result.translations, ['使用 Traits 定义共享行为', '配置端口。']);
+});
+
+test('technical pages render uninhabited type as 无值类型 instead of 不可居住/不可继承', async (t) => {
+  const { api } = await setupApi(t, {
+    streams: [jsonStream({ translations: ['`!` 是标准的不可继承类型。'] })],
+  });
+  const result = await api.translate({
+    texts: ['`!` is the canonical uninhabited type.'],
+    sourceTitle: 'Never type - The Rust Reference',
+    sourceUrl: 'https://doc.rust-lang.org/reference/types/never.html',
+    client: 'extension',
+  });
+  assert.deepEqual(result.translations, ['`!` 是标准的无值类型。']);
 });
 
 test('PUT settings translationStyle is applied to the next translation prompt', async (t) => {

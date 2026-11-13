@@ -88,6 +88,18 @@ test('lookup prompts are plain-text oriented and include context when present', 
   const withoutContext = renderLookupPrompts({ text: 'immersive', targetLanguage: 'zh-CN' });
   assert.equal(withoutContext.user.includes('Context:'), false);
   assert.equal(LOOKUP_SYSTEM_PROMPT.includes('{{targetLanguage}}'), true);
+  // The compact technical context used by lookup carries the mandatory terminology too.
+  const technicalLookup = renderLookupPrompts({
+    text: 'uninhabited type',
+    targetLanguage: 'zh-CN',
+    pageContext: {
+      title: 'Never type - The Rust Reference',
+      url: 'https://doc.rust-lang.org/reference/types/never.html',
+      technical: true,
+    },
+  });
+  assert.ok(technicalLookup.user.includes('uninhabited type'));
+  assert.ok(technicalLookup.user.includes('无值类型'));
 });
 
 test('page context is prepended for technical pages and not for generic pages', () => {
@@ -104,6 +116,8 @@ test('page context is prepended for technical pages and not for generic pages', 
   assert.ok(technical.user.includes('doc.rust-lang.org'));
   assert.ok(technical.user.includes('trait'));
   assert.ok(technical.user.includes('端口'));
+  assert.ok(technical.user.includes('uninhabited type'));
+  assert.ok(technical.user.includes('无值类型'));
   assert.ok(technical.system.startsWith('You are a professional translator'));
   assert.equal(technical.system.includes('Page context'), false);
   assert.ok(technical.user.indexOf('Page context') < technical.user.indexOf('Source language:'));
@@ -116,6 +130,7 @@ test('page context is prepended for technical pages and not for generic pages', 
   assert.ok(generic.user.includes('Rotterdam news'));
   assert.equal(generic.user.includes('software/programming'), false);
   assert.equal(generic.user.includes('端口'), false);
+  assert.equal(generic.user.includes('无值类型'), false);
 });
 
 test('explicit translation styles inject domain rules instead of auto detection', () => {
@@ -126,6 +141,7 @@ test('explicit translation styles inject domain rules instead of auto detection'
   });
   assert.ok(programming.user.includes('trait'));
   assert.ok(programming.user.includes('programming documentation'));
+  assert.ok(programming.user.includes('无值类型'));
 
   const finance = renderTranslatePrompts({
     texts: ['Yield and liquidity'],

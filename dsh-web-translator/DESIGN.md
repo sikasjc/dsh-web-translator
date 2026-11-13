@@ -231,7 +231,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 
 - 扩展在 `POST /translate`、`POST /lookup` 中已带 `sourceUrl`/`sourceTitle`；Host 现在把它们作为**不可翻译的页面上下文** prepend 到 system prompt（标题/URL 仅用于消歧）。
 - 技术页面检测：URL 命中 GitHub/StackOverflow/docs/rust-lang 等，或标题/文本命中 ≥2 个编程词（rust/trait/compiler/api…）时，附加术语规则；普通新闻/港口类页面不加技术规则。
-- 强制术语：技术页面上 `trait`/`traits` 在送模前替换为 `[[DSH_KEEP_n_m]]` 占位符，模型被要求原样保留，返回后还原为原词；若模型仍译成「特征/特质」，兜底替换回原词。`port` 在技术页面按「端口」处理（模型提示 + 兜底）。
+- 强制术语：技术页面上 `trait`/`traits` 在送模前替换为 `[[DSH_KEEP_n_m]]` 占位符，模型被要求原样保留，返回后还原为原词；若模型仍译成「特征/特质」，兜底替换回原词。`port` 在技术页面按「端口」处理（模型提示 + 兜底）。类型论术语 `uninhabited type`（没有值的类型，例如 Rust `!`）提示译为「无值类型」，若模型输出「不可居住/不可继承」等直译/误译，兜底替换为「无值类型」；只有 `uninhabited type(s)` 短语触发，`uninhabited island` 等非类型语义不受影响；`/translate` 与 `/lookup` 两条链路都走该兜底。
 - 缓存 key 已包含带上下文/占位符的 system 与 segments，避免不同页面复用同一译文。
 
 ### 5.6.2 浏览器扩展检测与引导

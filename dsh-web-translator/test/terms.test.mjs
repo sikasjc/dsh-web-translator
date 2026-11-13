@@ -37,3 +37,12 @@ test('applyTechnicalFallback fixes the known bad renderings only when the source
   assert.equal(applyTechnicalFallback('A feature of the city', '港口城市的特点'), '港口城市的特点');
   assert.equal(applyTechnicalFallback('Something else', '原样返回'), '原样返回');
 });
+
+test('applyTechnicalFallback renders uninhabited type as 无值类型', () => {
+  assert.equal(applyTechnicalFallback('The canonical uninhabited type', '标准的不可居住类型'), '标准的无值类型');
+  assert.equal(applyTechnicalFallback('An uninhabited type has no values', '不可继承的类型没有值'), '无值类型没有值');
+  assert.equal(applyTechnicalFallback('The uninhabited type', '无人居住的类型'), '无值类型');
+  assert.equal(applyTechnicalFallback('The canonical uninhabited type', '标准的空类型'), '标准的空类型');
+  // Non-type senses of "uninhabited" are left alone (the rule only fires on "uninhabited type").
+  assert.equal(applyTechnicalFallback('The uninhabited island is quiet', '无人居住的岛屿很安静'), '无人居住的岛屿很安静');
+});

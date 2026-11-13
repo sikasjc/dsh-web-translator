@@ -27,6 +27,10 @@ const TRAIT_BAD = /特征|特质/g;
 const PORT_SOURCE = /\bport(s)?\b/i;
 const PORT_BAD = /港口|口岸/g;
 
+/** Type-theory "uninhabited type" (a type with no values): 居住/继承 literalisms are wrong. */
+const UNINHABITED_TYPE_SOURCE = /\buninhabited\s+types?\b/i;
+const UNINHABITED_TYPE_BAD = /(?:不可继承|不可居住|无人居住|无法居住|不适居)的?类型/g;
+
 /**
  * Replace keep-original terms in a batch with deterministic opaque tokens
  * (e.g. trait -> [[DSH_KEEP_TRAIT]]), so batching order does not change the
@@ -73,6 +77,7 @@ export function applyTechnicalFallback(sourceText, translatedText) {
   let result = typeof translatedText === 'string' ? translatedText : '';
   const source = typeof sourceText === 'string' ? sourceText : '';
   if (PORT_SOURCE.test(source)) result = result.replace(PORT_BAD, '端口');
+  if (UNINHABITED_TYPE_SOURCE.test(source)) result = result.replace(UNINHABITED_TYPE_BAD, '无值类型');
   if (KEEP_TERMS.test(source)) {
     const match = source.match(KEEP_TERMS);
     const kept = match && match[0] ? match[0].replace(/[^\w]/g, '') : 'trait';

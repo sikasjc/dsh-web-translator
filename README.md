@@ -9,7 +9,9 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.12.5** · **browser extension 1.17.14**. Recent changes:
+> Current versions: **DSH plugin 1.12.7** · **browser extension 1.17.14**. Recent changes:
+> on technical pages the type-theory term "uninhabited type" is now rendered as 无值类型
+> instead of the literal 不可居住/不可继承 (plugin 1.12.7);
 > clicking the floating ball while DSH Web is not running, or while the dsh-web-translator plugin is not
 > installed/enabled in DSH, now shows an actionable hint above the ball instead of failing silently
 > (extension 1.17.14);
@@ -346,7 +348,7 @@ the extension, then refresh the pages that are already open.
 ## Development and tests
 
 ```bash
-# DSH plugin (host + unit tests) — currently 287/287
+# DSH plugin (host + unit tests) — currently 292/292
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/
