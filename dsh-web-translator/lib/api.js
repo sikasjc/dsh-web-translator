@@ -35,6 +35,7 @@ import {
   normalizeSettingsPatch,
 } from './settings.js';
 import { createJsonStore, resolveDataDir, resolveDshHome } from './store.js';
+import { TECHNICAL_GLOSSARY } from './terms.js';
 import { createTranslateService } from './translate.js';
 import { recognizeImage as recognizeLocalImage } from './local-ocr.js';
 import { createUsageService } from './usage.js';
@@ -1579,6 +1580,19 @@ export function createApi({
   }
 
   /**
+   * `GET /terms` (DESIGN §5.7.3): built-in terminology rules, read-only.
+   * The glossary lives in lib/terms.js so the prompt hints, the deterministic
+   * fallback and the settings page cannot document different rules.
+   * @returns {object}
+   */
+  function getTerms() {
+    return {
+      terms: TECHNICAL_GLOSSARY,
+      appliesTo: { styles: ['auto', 'programming'], endpoints: ['translate', 'lookup'] },
+    };
+  }
+
+  /**
    * `GET /wordbook` (DESIGN §5.8).
    * @param {object} query - query parameters.
    * @returns {Promise<object>}
@@ -1611,6 +1625,7 @@ export function createApi({
     getBallSites: () => ballSites.list(),
     addBallSite: (body) => ballSites.add(body),
     removeBallSite: (body) => ballSites.remove(body),
+    getTerms,
     listWordbook,
     addWordbookEntry: (body) => wordbook.add(body),
     updateWordbookEntry: (body) => wordbook.update(body),

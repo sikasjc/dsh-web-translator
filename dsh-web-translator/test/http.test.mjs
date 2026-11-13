@@ -67,6 +67,10 @@ function createStubApi(overrides = {}) {
       calls.push({ op: 'listWordbook', query });
       return { items: [], stats: {} };
     },
+    getTerms: async () => ({
+      terms: [{ id: 'uninhabited-type', source: 'uninhabited type / uninhabited types', policy: 'translate', target: '无值类型', badRenderings: [] }],
+      appliesTo: { styles: ['auto', 'programming'], endpoints: ['translate', 'lookup'] },
+    }),
     addWordbookEntry: async (body) => ({ item: { id: 'wb_1', word: body.word }, existed: false }),
     updateWordbookEntry: async (body) => ({ item: { id: body.id } }),
     reviewWordbookEntry: async (body) => ({ item: { id: body.id } }),
@@ -206,6 +210,7 @@ test('dispatches GET/PUT/POST routes with parsed bodies and signals', async () =
     ['/lookup', 'POST'],
     ['/models', 'GET'],
     ['/settings', 'GET'],
+    ['/terms', 'GET'],
     ['/usage', 'GET'],
     ['/usage/events', 'GET'],
     ['/usage/turns', 'GET'],
@@ -217,6 +222,21 @@ test('dispatches GET/PUT/POST routes with parsed bodies and signals', async () =
     }));
     assert.equal(response.statusCode, 200, `${method} ${path}`);
   }
+});
+
+test('GET /terms returns the built-in glossary envelope', async () => {
+  const handler = createHttpHandler(createStubApi(), {});
+  const response = await invokeHandler(handler, fakeRequest({ url: '/dsh-immersive/api/terms' }));
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.terms[0].id, 'uninhabited-type');
+  assert.equal(body.terms[0].target, '无值类型');
+
+  const wrongMethod = await invokeHandler(handler, fakeRequest({ method: 'POST', url: '/dsh-immersive/api/terms', body: {} }));
+  assert.equal(wrongMethod.statusCode, 405);
+  assert.equal(wrongMethod.json().error.code, 'METHOD_NOT_ALLOWED');
+  assert.equal(wrongMethod.headers.allow, 'GET');
 });
 
 test('dispatches the usage endpoints with query params and DELETE', async () => {

@@ -32,6 +32,51 @@ const UNINHABITED_TYPE_SOURCE = /\buninhabited\s+types?\b/i;
 const UNINHABITED_TYPE_BAD = /(?:不可继承|不可居住|无人居住|无法居住|不适居)的?类型/g;
 
 /**
+ * Built-in terminology rules for technical/programming pages.
+ *
+ * One entry per rule, exposed read-only through `GET /terms` and rendered by
+ * DSH → Settings → dsh翻译 → 术语库. It documents exactly what the prompt hints
+ * (prompts.js) and the deterministic fallback (this module) do, so the UI cannot
+ * drift from the behaviour.
+ *
+ * `policy`: `keep` keeps the English term; `translate` maps it to `target`
+ * Chinese wording. `badRenderings` lists the Chinese wordings the fallback
+ * rewrites (the surrounding noun, e.g. 类型, stays as rendered by the model).
+ */
+export const TECHNICAL_GLOSSARY = Object.freeze([
+  Object.freeze({
+    id: 'trait',
+    source: 'trait / traits',
+    policy: 'keep',
+    note: 'Rust trait(s) stay in English; 特征/特质 renderings are fixed back to the source spelling.',
+    badRenderings: Object.freeze(['特征', '特质']),
+  }),
+  Object.freeze({
+    id: 'crate-impl',
+    source: 'crate / impl / language keywords',
+    policy: 'keep',
+    note: 'Code identifiers and language keywords stay unchanged.',
+    badRenderings: Object.freeze([]),
+  }),
+  Object.freeze({
+    id: 'port',
+    source: 'port / ports',
+    policy: 'translate',
+    target: '端口',
+    note: 'Networking/programming sense; 港口/口岸 renderings are fixed to 端口.',
+    badRenderings: Object.freeze(['港口', '口岸']),
+  }),
+  Object.freeze({
+    id: 'uninhabited-type',
+    source: 'uninhabited type / uninhabited types',
+    policy: 'translate',
+    target: '无值类型',
+    note: 'Type-theory term for a type with no values (e.g. Rust !); 不可继承/不可居住 literalisms are fixed.',
+    badRenderings: Object.freeze(['不可继承', '不可居住', '无人居住', '无法居住', '不适居']),
+  }),
+]);
+
+/**
  * Replace keep-original terms in a batch with deterministic opaque tokens
  * (e.g. trait -> [[DSH_KEEP_TRAIT]]), so batching order does not change the
  * cache key.

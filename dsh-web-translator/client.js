@@ -9,7 +9,8 @@
  *
  * Module face: { inject: ['slots'], apply }.
  * apply() registers the "dsh-web-translator" settings.section (translation
- * settings, wordbook review, pronunciation practice), the left-toolbar page
+ * settings, wordbook review, pronunciation practice, terminology library,
+ * floating-ball domain list), the left-toolbar page
  * (`main` key + `sidebar.panellist` row: token usage overview, request traces,
  * prompts, wordbook), and the per-locale dictionaries; all visible copy goes
  * through the translate function returned by ctx.locale.bind (built-in zh/en
@@ -114,6 +115,7 @@ window.__ModuleLoader__.load({
       'tabs.settings': '翻译设置',
       'tabs.wordbook': '单词本',
       'tabs.ball': '悬浮球',
+      'tabs.terms': '术语库',
       'ball.title': '悬浮球不展示域名',
       'ball.hint': '以下域名不会显示悬浮球。可在网页右键菜单「dsh翻译 → 当前域名不展示悬浮球」或浮窗底部添加；这里可以移除或手动添加。',
       'ball.placeholder': 'example.com',
@@ -126,6 +128,18 @@ window.__ModuleLoader__.load({
       'ball.removed': '已移除 {domain}',
       'ball.invalid': '请输入有效域名（如 example.com）',
       'ball.loadFailed': '无法加载悬浮球域名列表',
+      'terms.title': '内置术语库',
+      'terms.hint': '技术/编程页面自动应用以下术语规则（翻译风格为「自动」且识别为技术页面，或选择「编程」时）；整页翻译与划词查词都生效。规则内置在 Host，本页只读；修改规则需升级插件。',
+      'terms.count': '共 {count} 条',
+      'terms.policy.keep': '保留原文',
+      'terms.policy.translate': '固定译法',
+      'terms.bad': '兜底纠正：{list}',
+      'terms.empty': '暂无内置术语',
+      'terms.loadFailed': '无法加载术语库',
+      'terms.note.trait': 'Rust 的 trait/traits 保留英文原文；模型若误译为「特征/特质」，兜底改回原文。',
+      'terms.note.crate-impl': 'crate、impl 以及代码标识符、语言关键字保持原样，不翻译。',
+      'terms.note.port': '网络/编程语境下的 port 译为「端口」；误译为「港口/口岸」时兜底纠正。',
+      'terms.note.uninhabited-type': '类型论术语（没有值的类型，例如 Rust 的 !）译为「无值类型」；「不可居住/不可继承」等直译会被兜底纠正。',
       'common.loading': '加载中…',
       'common.retry': '重试',
       'common.save': '保存',
@@ -475,6 +489,7 @@ window.__ModuleLoader__.load({
       'tabs.settings': 'Translation',
       'tabs.wordbook': 'Wordbook',
       'tabs.ball': 'Floating ball',
+      'tabs.terms': 'Terminology',
       'ball.title': 'Domains without floating ball',
       'ball.hint': 'The floating ball is hidden on these domains. Add one from the page right-click menu (“dsh翻译 → 当前域名不展示悬浮球”) or the floating panel; remove or add manually here.',
       'ball.placeholder': 'example.com',
@@ -487,6 +502,18 @@ window.__ModuleLoader__.load({
       'ball.removed': 'Removed {domain}',
       'ball.invalid': 'Enter a valid domain (e.g. example.com)',
       'ball.loadFailed': 'Could not load the hidden-domain list',
+      'terms.title': 'Built-in terminology',
+      'terms.hint': 'These rules apply automatically on technical/programming pages (style "Auto" detected as technical, or "Programming"), for both page translation and word lookup. The rules live in the host plugin, so this page is read-only; changing them requires a plugin upgrade.',
+      'terms.count': '{count} entries',
+      'terms.policy.keep': 'Keep original',
+      'terms.policy.translate': 'Fixed rendering',
+      'terms.bad': 'Fallback fixes: {list}',
+      'terms.empty': 'No built-in terms',
+      'terms.loadFailed': 'Could not load the terminology list',
+      'terms.note.trait': 'Rust trait/traits stay in English; literal 特征/特质 renderings are fixed back to the source spelling.',
+      'terms.note.crate-impl': 'crate, impl, code identifiers and language keywords stay unchanged.',
+      'terms.note.port': 'port in the networking/programming sense becomes 端口; 港口/口岸 renderings are fixed.',
+      'terms.note.uninhabited-type': 'The type-theory term (a type with no values, e.g. Rust !) becomes 无值类型; literal 不可居住/不可继承 renderings are fixed.',
       'common.loading': 'Loading…',
       'common.retry': 'Retry',
       'common.save': 'Save',
@@ -5312,6 +5339,144 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * 内置术语库（只读）：GET /terms 返回 Host 内置的技术页面术语规则。
+     * 数据来自 lib/terms.js（与提示词/兜底同一来源），本页不做编辑。
+     */
+    function TermsPage() {
+      const t = useT();
+      const [phase, setPhase] = useState('loading');
+      const [loadError, setLoadError] = useState(null);
+      const [reloadToken, setReloadToken] = useState(0);
+      const [terms, setTerms] = useState([]);
+
+      useEffect(() => {
+        let cancelled = false;
+        setPhase('loading');
+        setLoadError(null);
+        api
+          .get('terms')
+          .then((data) => {
+            if (cancelled) return;
+            setTerms(normalizeTerms(data && data.terms));
+            setPhase('ready');
+          })
+          .catch((error) => {
+            if (cancelled) return;
+            setPhase('error');
+            setLoadError(error);
+          });
+        return () => {
+          cancelled = true;
+        };
+      }, [reloadToken]);
+
+      /** Sanitize the untrusted glossary payload into renderable entries. */
+      function normalizeTerms(list) {
+        const result = [];
+        if (!Array.isArray(list)) return result;
+        for (const entry of list) {
+          if (!entry || typeof entry !== 'object') continue;
+          const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+          if (!id) continue;
+          if (result.some((existing) => existing.id === id)) continue;
+          const badRenderings = Array.isArray(entry.badRenderings)
+            ? entry.badRenderings
+                .filter((item) => typeof item === 'string')
+                .map((item) => item.trim())
+                .filter((item) => item.length > 0)
+            : [];
+          result.push({
+            id: id,
+            source: typeof entry.source === 'string' && entry.source.length > 0 ? entry.source : id,
+            policy: entry.policy === 'keep' ? 'keep' : 'translate',
+            target: typeof entry.target === 'string' ? entry.target : '',
+            note: typeof entry.note === 'string' ? entry.note : '',
+            badRenderings: badRenderings,
+          });
+        }
+        return result;
+      }
+
+      /** Localized note for a glossary id; falls back to the host-provided note. */
+      function noteOf(entry) {
+        const key = 'terms.note.' + entry.id;
+        const text = t(key);
+        return text !== key ? text : entry.note;
+      }
+
+      if (phase === 'loading') {
+        return h(
+          'div',
+          { className: 'dsh-it-panel' },
+          h('section', { className: 'dsh-it-card' }, h(LoadingSkeleton, { label: t('common.loading') })),
+        );
+      }
+      if (phase === 'error') {
+        return h(
+          'div',
+          { className: 'dsh-it-panel' },
+          h(
+            InlineAlert,
+            {
+              kind: 'error',
+              title: t('terms.loadFailed'),
+              action: h(
+                'button',
+                { type: 'button', className: 'dsh-it-btn', onClick: () => setReloadToken((token) => token + 1) },
+                t('common.retry'),
+              ),
+            },
+            describeError(loadError, t),
+          ),
+        );
+      }
+
+      return h(
+        'div',
+        { className: 'dsh-it-panel' },
+        h(
+          'section',
+          { className: 'dsh-it-card', 'aria-labelledby': 'dsh-it-terms-heading' },
+          h(
+            'div',
+            { className: 'dsh-it-card-header' },
+            h('h3', { className: 'dsh-it-card-title', id: 'dsh-it-terms-heading' }, t('terms.title')),
+            h('span', { className: 'dsh-it-chip' }, t('terms.count', { count: terms.length })),
+          ),
+          h('p', { className: 'dsh-it-hint' }, t('terms.hint')),
+          terms.length === 0
+            ? h(EmptyState, { title: t('terms.empty') })
+            : h(
+                'ul',
+                { className: 'dsh-it-term-list' },
+                terms.map((entry) => {
+                  const note = noteOf(entry);
+                  return h(
+                    'li',
+                    { key: 'term-' + entry.id, className: 'dsh-it-term-item' },
+                    h(
+                      'div',
+                      { className: 'dsh-it-term-head' },
+                      h('code', { className: 'dsh-it-term-source' }, entry.source),
+                      h(
+                        'span',
+                        { className: 'dsh-it-chip' },
+                        entry.policy === 'keep' ? t('terms.policy.keep') : t('terms.policy.translate'),
+                      ),
+                      entry.target ? h('span', { className: 'dsh-it-chip' }, '→ ' + entry.target) : null,
+                    ),
+                    note ? h('p', { className: 'dsh-it-hint' }, note) : null,
+                    entry.badRenderings.length > 0
+                      ? h('p', { className: 'dsh-it-hint' }, t('terms.bad', { list: entry.badRenderings.join(' / ') }))
+                      : null,
+                  );
+                }),
+              ),
+        ),
+      );
+    }
+
     /** DSH 插件页扩展检测：未安装/未启用时弹出安装引导。 */
     function ExtensionReminder() {
       const t = useT();
@@ -5433,6 +5598,7 @@ window.__ModuleLoader__.load({
       const layoutService = useLayoutService();
       const [tab, setTab] = useState('settings');
       const [wordbookMounted, setWordbookMounted] = useState(false);
+      const [termsMounted, setTermsMounted] = useState(false);
       const [ballMounted, setBallMounted] = useState(false);
 
       // Retry the optional locale connection when the page is opened: this
@@ -5445,6 +5611,7 @@ window.__ModuleLoader__.load({
       function selectTab(nextTab) {
         setTab(nextTab);
         if (nextTab === 'wordbook') setWordbookMounted(true);
+        if (nextTab === 'terms') setTermsMounted(true);
         if (nextTab === 'ball') setBallMounted(true);
       }
 
@@ -5452,7 +5619,7 @@ window.__ModuleLoader__.load({
       function onTabKeyDown(event) {
         if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
         event.preventDefault();
-        const order = ['settings', 'wordbook', 'ball'];
+        const order = ['settings', 'wordbook', 'terms', 'ball'];
         const index = order.indexOf(tab);
         const step = event.key === 'ArrowRight' ? 1 : order.length - 1;
         const nextTab = order[(index + step) % order.length];
@@ -5466,6 +5633,7 @@ window.__ModuleLoader__.load({
       const tabs = [
         { id: 'settings', key: 'tabs.settings' },
         { id: 'wordbook', key: 'tabs.wordbook' },
+        { id: 'terms', key: 'tabs.terms' },
         { id: 'ball', key: 'tabs.ball' },
       ];
 
@@ -5533,6 +5701,19 @@ window.__ModuleLoader__.load({
               h(WordbookPage, { active: tab === 'wordbook' }),
             )
           : null,
+        termsMounted
+          ? h(
+              'div',
+              {
+                id: 'dsh-it-panel-terms',
+                role: 'tabpanel',
+                'aria-labelledby': 'dsh-it-tab-terms',
+                className: 'dsh-it-panel',
+                hidden: tab !== 'terms',
+              },
+              h(TermsPage),
+            )
+          : null,
         ballMounted
           ? h(
               'div',
@@ -5570,6 +5751,10 @@ window.__ModuleLoader__.load({
 .dsh-it-domain-list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
 .dsh-it-domain-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-base)}
 .dsh-it-domain-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;overflow-wrap:anywhere}
+.dsh-it-term-list{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.dsh-it-term-item{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-base)}
+.dsh-it-term-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsh-it-term-source{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:20px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:1px 8px;overflow-wrap:anywhere}
 .dsh-it-hint-ok{color:var(--dsw-alias-state-success-primary)}
 .dsh-it-hint-error{color:var(--dsw-alias-state-error-primary)}
 .dsh-it-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}

@@ -34,6 +34,7 @@ const ROUTES = Object.freeze({
   '/translate': Object.freeze(['POST']),
   '/lookup': Object.freeze(['POST']),
   '/image-translate': Object.freeze(['POST']),
+  '/terms': Object.freeze(['GET']),
   '/ball-sites': Object.freeze(['GET']),
   '/ball-sites/add': Object.freeze(['POST']),
   '/ball-sites/remove': Object.freeze(['POST']),
@@ -245,6 +246,8 @@ async function dispatchGet(path, query, api) {
         status: query.get('status') ?? undefined,
         before: query.get('before') ?? undefined,
       });
+    case '/terms':
+      return api.getTerms();
     case '/ball-sites':
       return api.getBallSites();
     case '/wordbook':

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  TECHNICAL_GLOSSARY,
   applyTechnicalFallback,
   protectTechnicalTerms,
   restoreTechnicalTerms,
@@ -36,6 +37,38 @@ test('applyTechnicalFallback fixes the known bad renderings only when the source
   assert.equal(applyTechnicalFallback('Configure the port', '配置港口'), '配置端口');
   assert.equal(applyTechnicalFallback('A feature of the city', '港口城市的特点'), '港口城市的特点');
   assert.equal(applyTechnicalFallback('Something else', '原样返回'), '原样返回');
+});
+
+test('TECHNICAL_GLOSSARY documents every built-in rule and matches the fallback', () => {
+  assert.ok(Array.isArray(TECHNICAL_GLOSSARY));
+  assert.ok(TECHNICAL_GLOSSARY.length >= 4);
+  const ids = TECHNICAL_GLOSSARY.map((entry) => entry.id);
+  assert.equal(new Set(ids).size, ids.length, 'glossary ids are unique');
+  for (const entry of TECHNICAL_GLOSSARY) {
+    assert.equal(typeof entry.id, 'string');
+    assert.ok(entry.id.length > 0);
+    assert.equal(typeof entry.source, 'string');
+    assert.ok(entry.source.length > 0);
+    assert.ok(entry.policy === 'keep' || entry.policy === 'translate');
+    assert.ok(Array.isArray(entry.badRenderings));
+    if (entry.policy === 'translate') assert.ok(typeof entry.target === 'string' && entry.target.length > 0);
+  }
+  const uninhabited = TECHNICAL_GLOSSARY.find((entry) => entry.id === 'uninhabited-type');
+  assert.equal(uninhabited.target, '无值类型');
+  for (const bad of uninhabited.badRenderings) {
+    assert.equal(applyTechnicalFallback('uninhabited type', `${bad}类型`), '无值类型');
+  }
+  const port = TECHNICAL_GLOSSARY.find((entry) => entry.id === 'port');
+  for (const bad of port.badRenderings) {
+    assert.equal(applyTechnicalFallback('Configure the port', `配置${bad}`), '配置端口');
+  }
+  const trait = TECHNICAL_GLOSSARY.find((entry) => entry.id === 'trait');
+  for (const bad of trait.badRenderings) {
+    assert.equal(applyTechnicalFallback('Rust trait', `Rust ${bad}`), 'Rust trait');
+  }
+  // crate/impl are prompt-only rules: they must not claim fallback wordings.
+  const crate = TECHNICAL_GLOSSARY.find((entry) => entry.id === 'crate-impl');
+  assert.deepEqual(crate.badRenderings, []);
 });
 
 test('applyTechnicalFallback renders uninhabited type as 无值类型', () => {

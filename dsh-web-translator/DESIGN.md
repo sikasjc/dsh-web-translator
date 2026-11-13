@@ -249,6 +249,9 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ### 5.7.1 `GET /ball-sites` / `POST /ball-sites/add|remove`
 悬浮球域名隐藏列表：GET 返回 `{sites, updatedAt}`；add/remove 请求 `{domain}`，域名统一小写、去掉协议/路径/端口/`www.` 前缀，去重且最多 200 个。
 
+### 5.7.3 `GET /terms`
+内置技术页面术语库（只读）：返回 `{terms:[{id, source, policy:'keep'|'translate', target?, badRenderings:[...], note}], appliesTo:{styles:['auto','programming'], endpoints:['translate','lookup']}}`。数据来自 `lib/terms.js` 的 `TECHNICAL_GLOSSARY`，逐条描述 `prompts.js` 的强制术语提示与 `applyTechnicalFallback` 的确定性兜底；术语单测会校验 `badRenderings` 与兜底实际替换一致，避免 UI 文档漂移。`appliesTo` 描述提示词规则的生效范围（`auto` 技术页检测 / `programming` 风格）；确定性兜底按源短语命中生效，不受页面检测门控。DSH 设置页「术语库」Tab 只读展示，不支持编辑。
+
 ### 5.8 单词本
 
 - `GET /wordbook?query=&filter=due|all|mastered&limit=` → `{ ok, items:[...], stats:{total,due,todayDue,mastered,newCount} }`
@@ -288,12 +291,14 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ## 6. DSH Client（设置页）规范
 
 - 注册：`settings.section` `{ id:'immersive-translate', order:35, label: () => t('title') }`；插件 meta 走 `locale/{en,zh}.json`。
-- 页面结构：标题「dsh翻译」+ Tab「翻译设置 / 单词本」（Tab 本地状态）。
+- 页面结构：标题「dsh翻译」+ Tab「翻译设置 / 单词本 / 术语库 / 悬浮球」（Tab 本地状态；术语库与悬浮球按首次访问懒挂载，数据分别来自 `GET /terms`、`GET /ball-sites`）。
 - **翻译设置**：
   - 模型：按 provider 分组的 select（数据来自 GET /settings.catalog）；切换后调 GET /models/resolve 刷新推理强度选项；
   - 推理强度：auto/各 effort；目标语言 select；「保存」按钮（PUT /settings），脏状态提示；
   - 提示词：systemPrompt textarea（≥6 行）+ userTemplate textarea + 「恢复默认」；侧注说明 JSON 输出要求；
   - 测试：文本框 + 「测试翻译」→ POST /translate，显示结果/耗时/模型/错误；空文本禁用。
+- **术语库**（只读）：
+  - 顶部标题 + 条目数 chip + 生效范围说明（技术/编程页面，整页翻译与查词）；每条显示英文术语、处理策略（保留原文/固定译法）、目标译法、兜底纠正列表与说明；数据缺字段/请求失败时降级为空态/错误态（可重试）。
 - **单词本**：
   - 顶部统计（总数/待复习/已掌握）+ 搜索框 + 过滤 tab（待复习/全部/已掌握）；
   - 列表：单词、音标、译文、下次复习、发音按钮（🔊）、编辑备注、标记掌握、删除；

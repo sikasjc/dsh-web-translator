@@ -342,6 +342,18 @@ test('explicit reasoningEffort passes through and auto picks the least effort', 
   assert.equal(second.llm.state.streamCalls[0].reasoningEffort, 'low');
 });
 
+test('getTerms exposes the built-in technical glossary read-only', async (t) => {
+  const { api } = await setupApi(t);
+  const payload = await api.getTerms();
+  assert.ok(Array.isArray(payload.terms) && payload.terms.length >= 4);
+  const uninhabited = payload.terms.find((entry) => entry.id === 'uninhabited-type');
+  assert.equal(uninhabited.policy, 'translate');
+  assert.equal(uninhabited.target, '无值类型');
+  assert.ok(uninhabited.badRenderings.includes('不可继承'));
+  assert.deepEqual(payload.appliesTo.styles, ['auto', 'programming']);
+  assert.deepEqual(payload.appliesTo.endpoints, ['translate', 'lookup']);
+});
+
 test('lookup translates and attaches a trimmed dictionary for English words', async (t) => {
   const dictionaryFixture = [{
     word: 'immersive',
