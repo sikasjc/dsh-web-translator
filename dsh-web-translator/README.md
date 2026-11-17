@@ -110,7 +110,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | 项 | 说明 |
 |---|---|
 | 模型 | 从当前 DSH 已配置的模型（provider/model 目录）中选择；默认跟随 DSH 当前默认模型 |
-| 推理强度 | `auto`（优先 off）/ 模型支持的其它强度；翻译建议低强度以降低延迟与成本 |
+| 推理强度 | `auto`（优先 off）/ `关闭（不推理）` / 模型支持的其它强度。关闭后在 modelhub 路由会发送 `reasoning:{effort:"none"}`；翻译建议关闭或低强度以降低延迟与成本。若下拉没有「关闭」，说明当前模型目录未声明 off 档（见下方故障排查） |
 | 目标语言 | 默认简体中文，可切换繁体中文、English、日本語、한국어、Français、Deutsch、Español、Русский 等 |
 | 翻译风格 | `auto` 按页面标题/URL/文本自动识别编程等技术页面；`general` 不做领域改写；`programming` / `tech` / `finance` 使用对应术语规范 |
 | 第三方词典 | 英文单词查词时的在线词典来源：`dictionaryapi.dev`（音标/释义/发音，默认）/ 英文 `Wiktionary`（英文释义，无发音）/ `off`（关闭，仅模型翻译、不发起第三方请求） |
@@ -209,6 +209,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | `INVALID_MODEL_OUTPUT` | 自定义提示词未遵守 JSON 输出契约；恢复默认或按提示修改 |
 | 单词本不显示扩展加入的词 | 扩展 DSH 地址与 DSH 实际地址不一致 |
 | 发音无声音 | 系统/浏览器静音；跟读需要麦克风权限（仅 Chrome/Edge） |
+| 推理强度下拉没有「关闭」 | 当前模型目录未声明 `off` 档。在 DSH profile 的 `llm-pi-ai.providers.<route>.models[].reasoningEfforts` 里给对应模型加一行 `off: none`（openai-responses 路由）后重启 DSH；`off:` 留空表示不发 reasoning 参数、思考型模型仍会思考，不能真正关闭 |
 
 ## 本地 OCR
 

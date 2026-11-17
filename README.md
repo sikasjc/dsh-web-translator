@@ -9,7 +9,12 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.14.2** · **browser extension 1.17.14**. Recent changes:
+> Current versions: **DSH plugin 1.14.3** · **browser extension 1.17.15**. Recent changes:
+> every paragraph now shows a small spinner while its translation is in flight, and the spinner is
+> removed on arrival/failure/stop/restore (extension 1.17.15);
+> reasoning can now be turned off for translation: the modelhub `deepseek-flash` route declares the
+> `off: none` wire value, so the reasoning-effort dropdown offers 关闭（不推理）, auto prefers it, and
+> translation spend/latency drop accordingly (plugin 1.14.3);
 > translation batches no longer intermittently fail with `OUTPUT_TRUNCATED`: the output-token budget
 > now reserves room for the model's hidden reasoning tokens, and a truncated batch retries once with
 > a doubled budget (plugin 1.14.2);
@@ -373,8 +378,8 @@ node --test test/
 
 # Browser extension (static checks + headless Chrome E2E, no real model calls)
 cd ../dsh-web-translator-extension
-node tools/verify.mjs        # 227 static checks
-node tools/e2e-chrome.mjs    # 144/144 headless E2E checks (mock DSH)
+node tools/verify.mjs        # 228 static checks
+node tools/e2e-chrome.mjs    # 145/145 headless E2E checks (mock DSH)
 ```
 
 - Design contracts: [`DESIGN.md`](dsh-web-translator/DESIGN.md) / [`DESIGN-TOKEN-USAGE.md`](dsh-web-translator/DESIGN-TOKEN-USAGE.md) / [`DESIGN-TURN-TRACE.md`](dsh-web-translator/DESIGN-TURN-TRACE.md) / [`DESIGN-CONVERSATIONS.md`](dsh-web-translator/DESIGN-CONVERSATIONS.md) / [`DESIGN-CACHE.md`](dsh-web-translator/DESIGN-CACHE.md) / [`DESIGN-IMAGE.md`](dsh-web-translator/DESIGN-IMAGE.md)

@@ -80,7 +80,7 @@
 
 - 目录：`llm.listProviders(): LlmProviderInfo[]`、`llm.listModels(provider): LlmModelInfo[]`、`llm.resolveModelInfo(provider, model): LlmResolvedModelInfo`（含 `context`、`defaultMaxTokens`、`reasoning.efforts`）。
 - 默认模型：`ctx.get('agentDefaultModel')?.currentSelection()`（当前 profile：`modelhub / deepseek-flash / reasoningEffort:max`）。
-- 推理强度：设置默认 `auto` → 优先 `off`，否则该模型 advertised 列表中的最小 effort；用户可显式指定。
+- 推理强度：设置默认 `auto` → 优先 `off`，否则该模型 advertised 列表中的最小 effort；用户可显式指定。**关闭推理**需要模型目录声明 `off` 档：`off` 的 wire value 由 profile 的 `reasoningEfforts` 决定——openai-responses 路由应写 `off: none`（发送 `reasoning:{effort:"none"}`，上游 reasoning_tokens 归零），`off:` 留空则只是不发送 reasoning 参数，思考型上游仍会思考；modelhub 的 `deepseek-flash` 已声明 `off: none`，插件设置里因此可选「关闭（不推理）」，`auto` 默认命中它。
 - 调用：`ctx.llm.stream({ provider, model, reasoningEffort?, system, messages:[{role:'user', content:[{type:'text', text}]}], temperature, maxTokens, signal })`；收集 `text-delta`，直到 `finish`：
   - `finish.reason.kind === 'stop'` → 成功；
   - `error`/`aborted` → 映射错误码（`NO_ADAPTER`→`MODEL_UNAVAILABLE`、`MISSING_CREDENTIAL|AUTH|INVALID_CREDENTIAL`→`MODEL_AUTH`、`RATE_LIMIT`→`MODEL_RATE_LIMITED`、`CONTEXT_WINDOW_EXCEEDED`→`TEXT_LIMIT`、其它→`MODEL_FAILED`）；

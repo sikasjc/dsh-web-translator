@@ -207,6 +207,13 @@ window.__ModuleLoader__.load({
       'settings.effort': '推理强度',
       'settings.effortAuto': '自动（推荐）',
       'settings.effortAutoResolved': '自动：当前生效 {effort}',
+      'settings.effortOff': '关闭（不推理）',
+      'settings.effortMinimal': '最低',
+      'settings.effortLow': '低',
+      'settings.effortMedium': '中',
+      'settings.effortHigh': '高',
+      'settings.effortXhigh': '较高',
+      'settings.effortMax': '最高',
       'settings.effortUnsupported': '该模型未声明可调推理强度，将使用自动。',
       'settings.effortLoading': '正在读取推理强度…',
       'settings.targetLanguage': '目标语言',
@@ -637,6 +644,13 @@ window.__ModuleLoader__.load({
       'settings.effort': 'Reasoning effort',
       'settings.effortAuto': 'Auto (recommended)',
       'settings.effortAutoResolved': 'Auto: currently {effort}',
+      'settings.effortOff': 'Off (no reasoning)',
+      'settings.effortMinimal': 'Minimal',
+      'settings.effortLow': 'Low',
+      'settings.effortMedium': 'Medium',
+      'settings.effortHigh': 'High',
+      'settings.effortXhigh': 'Higher',
+      'settings.effortMax': 'Max',
       'settings.effortUnsupported': 'This model declares no reasoning efforts; auto is used.',
       'settings.effortLoading': 'Loading reasoning efforts…',
       'settings.targetLanguage': 'Target language',
@@ -1619,6 +1633,24 @@ window.__ModuleLoader__.load({
       }
       return id;
     }
+    /** Known reasoning-effort ids -> localized labels; unknown ids keep the DSH-provided name. */
+    const REASONING_EFFORT_LABEL_KEYS = {
+      off: 'settings.effortOff',
+      minimal: 'settings.effortMinimal',
+      low: 'settings.effortLow',
+      medium: 'settings.effortMedium',
+      high: 'settings.effortHigh',
+      xhigh: 'settings.effortXhigh',
+      max: 'settings.effortMax',
+    };
+    /** Reasoning-effort option label from the active dictionary. */
+    function reasoningEffortLabel(t, effort) {
+      const id = effort && typeof effort.id === 'string' ? effort.id : '';
+      const key = REASONING_EFFORT_LABEL_KEYS[id];
+      if (key) return t(key);
+      const name = effort && typeof effort.name === 'string' ? effort.name.trim() : '';
+      return name || id;
+    }
     /** Translation settings tab: model, reasoning effort, language, prompts, save, test. */
     function TranslationSettings() {
       const t = useT();
@@ -1986,7 +2018,7 @@ window.__ModuleLoader__.load({
                   onChange: (event) => updateForm({ reasoningEffort: event.target.value }),
                 },
                 h('option', { value: 'auto' }, t('settings.effortAuto')),
-                efforts.map((effort) => h('option', { key: 'effort-' + effort.id, value: effort.id }, effort.name || effort.id)),
+                efforts.map((effort) => h('option', { key: 'effort-' + effort.id, value: effort.id }, reasoningEffortLabel(t, effort))),
                 rawEffort ? h('option', { key: 'effort-raw', value: rawEffort }, rawEffort) : null,
               ),
             ),
