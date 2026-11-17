@@ -9,7 +9,10 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.14.1** · **browser extension 1.17.14**. Recent changes:
+> Current versions: **DSH plugin 1.14.2** · **browser extension 1.17.14**. Recent changes:
+> translation batches no longer intermittently fail with `OUTPUT_TRUNCATED`: the output-token budget
+> now reserves room for the model's hidden reasoning tokens, and a truncated batch retries once with
+> a doubled budget (plugin 1.14.2);
 > terminology import accepts up to 8 MB request bodies (full-library backups can be re-imported),
 > imported names never shadow built-in packs, and CSV headers accept Chinese/English labels
 > (plugin 1.14.1);
@@ -363,7 +366,7 @@ the extension, then refresh the pages that are already open.
 ## Development and tests
 
 ```bash
-# DSH plugin (host + unit tests) — currently 315/315
+# DSH plugin (host + unit tests) — currently 318/318
 cd dsh-web-translator
 node --check index.js && node --check client.js
 node --test test/

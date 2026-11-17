@@ -86,8 +86,8 @@
   - `error`/`aborted` → 映射错误码（`NO_ADAPTER`→`MODEL_UNAVAILABLE`、`MISSING_CREDENTIAL|AUTH|INVALID_CREDENTIAL`→`MODEL_AUTH`、`RATE_LIMIT`→`MODEL_RATE_LIMITED`、`CONTEXT_WINDOW_EXCEEDED`→`TEXT_LIMIT`、其它→`MODEL_FAILED`）；
   - `max-tokens` → `OUTPUT_TRUNCATED`。
 - **不传 sessionId/purpose**：翻译是插件自己的辅助调用，不进入会话记录（模型可见输入不进 session log，属本插件的明确取舍，README 说明）。
-- 默认温度 `0.2`；`maxTokens` 按批次估算并 clamp 到模型 `defaultMaxTokens`（默认 `min(8192, max(512, ceil(chars*1.5)))`）。
-- 超时：单批默认 90s（`AbortSignal` 与客户端断开联动），无自动重试（解析失败的重试见 §4.3）。
+- 默认温度 `0.2`；`maxTokens` 按批次估算并 clamp 到模型 `defaultMaxTokens`（默认 `min(8192, max(2048, ceil(chars*1.5) + 1024))`；额外的 1024 预留给推理模型的隐藏 reasoning token——它们与可见输出共享同一输出预算，否则小批次会偶发 `OUTPUT_TRUNCATED`）。
+- 超时：单批默认 90s（`AbortSignal` 与客户端断开联动），不做超时重试（输出截断与解析失败的重试见 §4.3）。
 
 ### 4.1 提示词
 
@@ -125,8 +125,9 @@
 1. 去掉 ``` 围栏；提取第一个 `{` 到最后一个 `}`（或 `[`..`]`）；
 2. 接受 `{"translations":[...]}` 或裸数组；长度必须等于批段数；
 3. 单段批：解析失败可接受纯文本（去引号/空白）；
-4. 仍失败：追加一条 `user` 纠正消息（“Return only the required JSON.”）重试 1 次（temperature 0）；
-5. 再失败 → `INVALID_MODEL_OUTPUT`（附前 200 字原始输出到服务端日志，不返回给客户端）。
+4. 输出被截断（`finish` 为 `max-tokens` → `OUTPUT_TRUNCATED`）：用 `estimateRetryMaxTokens()` 把输出预算放大到 2 倍（封顶 16384，且不超过模型 `defaultMaxTokens`）重试 1 次；仍截断 → `OUTPUT_TRUNCATED`；
+5. 解析仍失败：追加一条 `user` 纠正消息（“Return only the required JSON.”）重试 1 次（temperature 0）；
+6. 再失败 → `INVALID_MODEL_OUTPUT`（附前 200 字原始输出到服务端日志，不返回给客户端）。
 
 ## 5. Host API 契约
 

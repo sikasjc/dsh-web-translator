@@ -28,6 +28,14 @@ function failStream(code, status) {
   }]);
 }
 
+/** Truncated-output stream factory (the model hit its output-token ceiling). */
+function truncatedStream() {
+  return () => streamFromChunks([
+    { type: 'text-delta', index: 0, text: 'partial' },
+    { type: 'finish', reason: { kind: 'max-tokens' } },
+  ]);
+}
+
 /** Fresh API over a temp data dir with a fake model service. */
 async function setupApi(t, { streams = [], selection, llmOptions = {}, config = {}, fetchImpl, now, agents } = {}) {
   const dir = await createTempDir();
@@ -215,7 +223,7 @@ test('translate renders the prompts, calls the model and reports usage', async (
   assert.equal(call.model, 'deepseek-flash');
   assert.equal(call.reasoningEffort, 'off');
   assert.equal(call.temperature, 0.2);
-  assert.equal(call.maxTokens, 512);
+  assert.equal(call.maxTokens, 2048);
   assert.equal(call.system.includes('zh-CN'), true);
   assert.equal('sessionId' in call, false);
   assert.equal('purpose' in call, false);
@@ -272,6 +280,35 @@ test('translate retries once with a correction message and temperature 0', async
   assert.equal(retry.temperature, 0);
   assert.equal(retry.messages.length, 2);
   assert.equal(retry.messages[1].content[0].text, 'Return only the required JSON.');
+});
+
+test('translate retries once with a doubled budget when the output is truncated', async (t) => {
+  const { api, llm } = await setupApi(t, {
+    streams: [
+      truncatedStream(),
+      jsonStream({ translations: ['甲', '乙'] }, { inputTokens: 4, outputTokens: 9 }),
+    ],
+  });
+  const result = await api.translate({ texts: ['one', 'two'] });
+  assert.deepEqual(result.translations, ['甲', '乙']);
+  assert.equal(result.retries, 1, 'the truncation retry is surfaced');
+  assert.equal(llm.state.streamCalls.length, 2);
+  assert.equal(llm.state.streamCalls[0].maxTokens, 2048);
+  assert.equal(llm.state.streamCalls[1].maxTokens, 4096);
+  assert.equal(llm.state.streamCalls[1].temperature, 0.2);
+  assert.equal(llm.state.streamCalls[1].messages.length, 1, 'the same prompt is reused');
+  assert.deepEqual(result.usage, {
+    inputTokens: 4,
+    outputTokens: 9,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
+});
+
+test('translate surfaces OUTPUT_TRUNCATED when the retry is truncated too', async (t) => {
+  const { api, llm } = await setupApi(t, { streams: [truncatedStream(), truncatedStream()] });
+  await assertApiError(api.translate({ texts: ['hello'] }), 'OUTPUT_TRUNCATED');
+  assert.equal(llm.state.streamCalls.length, 2);
 });
 
 test('translate maps unparseable output to INVALID_MODEL_OUTPUT and logs 200 chars', async (t) => {

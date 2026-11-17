@@ -4,7 +4,8 @@
  * Owns: GenerateOptions assembly, AsyncIterable chunk collection, the 90 s
  * per-batch timeout with caller-abort linkage, reasoning-effort resolution
  * (auto prefers `off`, then the least advertised effort), output-token
- * estimation, and the finish-reason / failure-code -> API error mapping.
+ * estimation (including reasoning headroom and the truncation-retry budget),
+ * and the finish-reason / failure-code -> API error mapping.
  * The module never touches persistence or HTTP.
  */
 import { LIMITS } from './constants.js';
@@ -16,8 +17,19 @@ export const BATCH_TIMEOUT_MS = LIMITS.batchTimeoutMs;
 /** Desired output-token ceiling before the per-model clamp. */
 const MAX_OUTPUT_ESTIMATE = 8192;
 
-/** Minimum output-token estimate. */
-const MIN_OUTPUT_ESTIMATE = 512;
+/**
+ * Minimum output-token budget. A reasoning model spends part of this budget on
+ * hidden reasoning tokens (providers count them in `max_output_tokens`), so a
+ * tight floor truncates even tiny batches; 2048 leaves room for the visible
+ * JSON plus a normal low-effort reasoning pass.
+ */
+const MIN_OUTPUT_ESTIMATE = 2048;
+
+/** Extra output budget reserved for hidden reasoning tokens above the visible estimate. */
+const REASONING_HEADROOM = 1024;
+
+/** Hard ceiling for the single retry after a truncated model output. */
+const MAX_RETRY_OUTPUT_ESTIMATE = 16_384;
 
 /** Exact provider-neutral failure codes from DESIGN §4. */
 const FAILURE_CODE_MAP = Object.freeze({
@@ -161,14 +173,32 @@ function toTokenCount(value) {
 
 /**
  * Estimate output tokens for one batch and clamp to the model's default cap
- * (DESIGN §4: `min(defaultMaxTokens ?? 8192, max(512, ceil(chars*1.5)))`).
+ * (DESIGN §4: `min(defaultMaxTokens ?? 8192, max(2048, ceil(chars*1.5) + 1024))`).
+ * The fixed reasoning headroom keeps a reasoning model from spending the whole
+ * visible-output budget on hidden reasoning tokens.
  * @param {number} chars - source characters in the batch.
  * @param {number} [defaultMaxTokens] - model-advertised output cap.
  * @returns {number}
  */
 export function estimateMaxTokens(chars, defaultMaxTokens) {
-  const estimate = Math.ceil(Math.max(0, Number(chars) || 0) * 1.5);
-  const desired = Math.min(MAX_OUTPUT_ESTIMATE, Math.max(MIN_OUTPUT_ESTIMATE, estimate));
+  const visible = Math.ceil(Math.max(0, Number(chars) || 0) * 1.5);
+  const desired = Math.min(MAX_OUTPUT_ESTIMATE, Math.max(MIN_OUTPUT_ESTIMATE, visible + REASONING_HEADROOM));
+  return Number.isFinite(defaultMaxTokens) && defaultMaxTokens > 0
+    ? Math.min(desired, Math.floor(defaultMaxTokens))
+    : desired;
+}
+
+/**
+ * Budget for the single retry after `OUTPUT_TRUNCATED` (DESIGN §4.3): double
+ * the failed budget so the stochastic reasoning tail fits, clamped to the retry
+ * ceiling and the model's advertised output cap.
+ * @param {number} maxTokens - output budget of the truncated call.
+ * @param {number} [defaultMaxTokens] - model-advertised output cap.
+ * @returns {number}
+ */
+export function estimateRetryMaxTokens(maxTokens, defaultMaxTokens) {
+  const base = Number.isFinite(maxTokens) && maxTokens > 0 ? Math.trunc(maxTokens) : MIN_OUTPUT_ESTIMATE;
+  const desired = Math.min(MAX_RETRY_OUTPUT_ESTIMATE, Math.max(base * 2, REASONING_HEADROOM));
   return Number.isFinite(defaultMaxTokens) && defaultMaxTokens > 0
     ? Math.min(desired, Math.floor(defaultMaxTokens))
     : desired;

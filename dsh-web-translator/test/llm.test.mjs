@@ -8,6 +8,7 @@ import {
   callModel,
   collectStream,
   estimateMaxTokens,
+  estimateRetryMaxTokens,
   failureToApiError,
   mapErrorToApiError,
   mapFailureCode,
@@ -237,13 +238,22 @@ test('mapErrorToApiError preserves ApiErrors and sanitizes details', () => {
 });
 
 test('estimateMaxTokens follows the DESIGN formula and clamp', () => {
-  assert.equal(estimateMaxTokens(0), 512);
-  assert.equal(estimateMaxTokens(100), 512);
-  assert.equal(estimateMaxTokens(1000), 1500);
+  assert.equal(estimateMaxTokens(0), 2048);
+  assert.equal(estimateMaxTokens(100), 2048);
+  assert.equal(estimateMaxTokens(1000), 2524);
   assert.equal(estimateMaxTokens(10_000), 8192);
   assert.equal(estimateMaxTokens(1000, 400), 400);
-  assert.equal(estimateMaxTokens(1000, 393_216), 1500);
-  assert.equal(estimateMaxTokens(1000, undefined), 1500);
+  assert.equal(estimateMaxTokens(1000, 393_216), 2524);
+  assert.equal(estimateMaxTokens(1000, undefined), 2524);
+});
+
+test('estimateRetryMaxTokens doubles the truncated budget within caps', () => {
+  assert.equal(estimateRetryMaxTokens(2048), 4096);
+  assert.equal(estimateRetryMaxTokens(1000), 2000);
+  assert.equal(estimateRetryMaxTokens(10_000), 16_384);
+  assert.equal(estimateRetryMaxTokens(0), 4096);
+  assert.equal(estimateRetryMaxTokens(2048, 3000), 3000);
+  assert.equal(estimateRetryMaxTokens(2048, 393_216), 4096);
 });
 
 test('resolveReasoningEffort implements auto/explicit rules', () => {

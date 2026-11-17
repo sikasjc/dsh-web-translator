@@ -9,8 +9,8 @@
 import { chunkSegments, countBatchChars, runPool } from './batch.js';
 import { createBatchCacheKey } from './cache.js';
 import { LIMITS, TARGET_LANGUAGES, TRANSLATION_STYLES } from './constants.js';
-import { apiError } from './errors.js';
-import { BATCH_TIMEOUT_MS, callModel, estimateMaxTokens, userMessage } from './llm.js';
+import { apiError, isApiError } from './errors.js';
+import { BATCH_TIMEOUT_MS, callModel, estimateMaxTokens, estimateRetryMaxTokens, userMessage } from './llm.js';
 import { plainTextTranslation, parseTranslations } from './parse.js';
 import { CORRECTION_MESSAGE, looksLikeTechnicalContent, renderLookupPrompts, renderTranslatePrompts } from './prompts.js';
 import { buildTerminologyRules } from './terms.js';
@@ -153,35 +153,45 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
    */
   async function translateBatch(plan, context, signal) {
     const { llm, provider, model, reasoningEffort, modelInfo } = context;
-    const maxTokens = estimateMaxTokens(countBatchChars(plan.batch), modelInfo?.maxTokens);
     const baseMessages = [userMessage(plan.rendered.user)];
-    const options = buildGenerateOptions({
-      provider,
-      model,
-      system: plan.rendered.system,
-      messages: baseMessages,
-      temperature: DEFAULT_TEMPERATURE,
-      maxTokens,
-      reasoningEffort,
-    });
-
-    const first = await callModel({ llm, options, timeoutMs, signal, logger });
-    let usage = first.usage;
-    let retries = 0;
-    let parsed = parseTranslations(first.text, { expectedCount: plan.batch.length });
-
-    if (!parsed.ok) {
-      retries = 1;
-      const retryOptions = buildGenerateOptions({
+    /** Run one model call with the given messages, temperature and output budget. */
+    const call = (messages, temperature, maxTokens) => callModel({
+      llm,
+      options: buildGenerateOptions({
         provider,
         model,
         system: plan.rendered.system,
-        messages: [...baseMessages, userMessage(CORRECTION_MESSAGE)],
-        temperature: 0,
+        messages,
+        temperature,
         maxTokens,
         reasoningEffort,
-      });
-      const retry = await callModel({ llm, options: retryOptions, timeoutMs, signal, logger });
+      }),
+      timeoutMs,
+      signal,
+      logger,
+    });
+
+    let maxTokens = estimateMaxTokens(countBatchChars(plan.batch), modelInfo?.maxTokens);
+    let usage = emptyUsage();
+    let retries = 0;
+    let answer;
+    try {
+      answer = await call(baseMessages, DEFAULT_TEMPERATURE, maxTokens);
+    } catch (error) {
+      // Hidden reasoning tokens draw from the same output budget, so truncation
+      // is stochastic for a borderline batch: retry once with a doubled budget
+      // before surfacing OUTPUT_TRUNCATED (DESIGN §4.3).
+      if (!isApiError(error) || error.code !== 'OUTPUT_TRUNCATED') throw error;
+      maxTokens = estimateRetryMaxTokens(maxTokens, modelInfo?.maxTokens);
+      retries += 1;
+      answer = await call(baseMessages, DEFAULT_TEMPERATURE, maxTokens);
+    }
+    usage = addUsage(usage, answer.usage);
+    let parsed = parseTranslations(answer.text, { expectedCount: plan.batch.length });
+
+    if (!parsed.ok) {
+      retries += 1;
+      const retry = await call([...baseMessages, userMessage(CORRECTION_MESSAGE)], 0, maxTokens);
       usage = addUsage(usage, retry.usage);
       parsed = parseTranslations(retry.text, { expectedCount: plan.batch.length });
       if (!parsed.ok) {
