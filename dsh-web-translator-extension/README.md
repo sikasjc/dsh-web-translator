@@ -103,6 +103,7 @@ node tools/make-icons.mjs   # 生成 icons/icon{16,32,48,128}.png
 | 停止 | 中止未完成队列，**保留已译内容**（不再接受在途结果） |
 | 还原 | 移除全部注入的译文节点、`data-dsh-it` 标记、页面级样式与 observer，恢复原始 DOM |
 | 进度 | 已处理段落 / 全页候选段落；失败段落也会计入。滚动触发的新段落会继续累加已处理数 |
+| 段落加载提示 | 段落入队后会在原文后面显示一个小转圈（`data-dsh-it="loading"`，跟随段落排版），译文到达、失败、停止或还原时自动移除；行内单元（导航/按钮）不显示，避免页面到处闪 |
 | 状态/错误行 | 所有 RPC 失败、超时、抽取为空、DSH 未启动等都会显示在这里，不会打断页面 |
 | 设置 | 打开扩展选项页 |
 | 隐私提示 | 明示「译文由你在 DSH 中配置的模型生成」及文本发送路径 |
@@ -331,9 +332,9 @@ node tools/debug-layout.mjs https://lobste.rs/
 node tools/e2e-chrome.mjs
 ```
 
-预期：`node tools/verify.mjs` 输出 `ALL 227 STATIC CHECKS PASSED`；
+预期：`node tools/verify.mjs` 输出 `ALL 228 STATIC CHECKS PASSED`；
 `file` 输出 4 个 `PNG image data, 16 x 16 / 32 x 32 / 48 x 48 / 128 x 128, 8-bit/color RGBA`；
-`node tools/e2e-chrome.mjs` 输出 `144/144 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
+`node tools/e2e-chrome.mjs` 输出 `145/145 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
 E2E 覆盖：扩展加载（manifest/CSP/commands 合法性）、content 注入、翻译流水线报文、
 请求元数据（translate/lookup POST body 的 `client` / `sourceUrl` / `sourceTitle`）、
 轨迹身份（translate 的 `turnId`/`stepIndex`/`mode`、同一 run 懒加载批次共用 turnId、lookup 单步 turn）、

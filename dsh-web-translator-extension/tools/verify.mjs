@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.17.14', manifest.version === '1.17.14', manifest.version);
+  check('manifest: version 1.17.15', manifest.version === '1.17.15', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.17.14', "EXT_VERSION = '1.17.14'"],
+  ['EXT 版本 1.17.15', "EXT_VERSION = '1.17.15'"],
   ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
   ['图片翻译入口', 'function startImageTranslation('],
   ['图片翻译覆盖层', 'function renderImageTranslation('],
@@ -195,6 +195,16 @@ const CONTENT_TOKENS = [
   ['静默启动失败 toast', 'if (opts.silent) showToast(hint, 7000)']
 ];
 for (const [name, needle] of CONTENT_TOKENS) check('content.js 契约: ' + name, content.includes(needle));
+
+check(
+  'content.js 段落「翻译中」提示：入队显示、译文/失败/停止移除',
+  content.includes('function showBlockLoading(') &&
+    content.includes('function hideBlockLoading(') &&
+    content.includes('function clearAllBlockLoading(') &&
+    content.includes('showBlockLoading(unit)') &&
+    content.includes('hideBlockLoading(block);') &&
+    content.includes('@keyframes dsh-it-spin')
+);
 
 check(
   'content.js 按屏模式：observer 只做失效通知（不逐块入队）',

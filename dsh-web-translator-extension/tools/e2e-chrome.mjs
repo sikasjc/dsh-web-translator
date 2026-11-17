@@ -683,6 +683,17 @@ async function main() {
   const quickCallsBefore = apiCalls.filter((call) => call === 'POST /dsh-immersive/api/translate').length;
   await evalOn(sw, `chrome.storage.local.set({ mode: 'only' })`);
   await wait(400);
+  // 观察“段落级翻译中提示”：翻译请求发出前先注册 MutationObserver，记录是否出现过
+  const loadingObserved = evalOn(page, `new Promise((resolve) => {
+    const countLoading = () => document.querySelectorAll('[data-dsh-it="loading"]').length;
+    if (countLoading() > 0) { resolve(countLoading()); return; }
+    const observer = new MutationObserver(() => {
+      const seen = countLoading();
+      if (seen > 0) { observer.disconnect(); resolve(seen); }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    setTimeout(() => { observer.disconnect(); resolve(0); }, 8000);
+  })`);
   await evalOn(page, `document.getElementById('dsh-it-host').shadowRoot.querySelector('.dsh-bubble').click()`);
   await wait(3000);
   const ballQuick = await evalOn(page, `(() => {
@@ -699,6 +710,13 @@ async function main() {
     '悬浮球左键：直接按当前模式（仅译文）开始翻译，不弹出面板',
     ballQuick.mode === 'only' && ballQuick.trans + ballQuick.inline > 0 && ballQuick.panelHidden === true && quickCallsAfter > quickCallsBefore,
     JSON.stringify({ page: ballQuick, calls: quickCallsBefore + '->' + quickCallsAfter })
+  );
+  const loadingSeenWhileTranslating = await loadingObserved;
+  const loadingLeftAfterDone = await evalOn(page, `document.querySelectorAll('[data-dsh-it="loading"]').length`);
+  check(
+    '段落「翻译中」提示：翻译期间出现转圈，完成后全部清理',
+    loadingSeenWhileTranslating > 0 && loadingLeftAfterDone === 0,
+    JSON.stringify({ seen: loadingSeenWhileTranslating, left: loadingLeftAfterDone })
   );
   await evalOn(page, `document.getElementById('dsh-it-host').shadowRoot.querySelector('.dsh-bubble').click()`);
   await wait(900);

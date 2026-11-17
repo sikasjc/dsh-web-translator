@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.14';
+  var EXT_VERSION = '1.17.15';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -1937,8 +1937,68 @@
     }
   }
 
+  /**
+   * 段落级「翻译中」占位：入队后显示一个小转圈，译文到达 / 失败 / 停止时移除。
+   * 只对块级段落生效（导航/按钮等行内译文单元不显示，避免页面上到处闪）。
+   */
+  function createLoadingNode(block) {
+    var node = document.createElement('div');
+    node.setAttribute(MARK_ATTR, 'loading');
+    node.setAttribute('aria-hidden', 'true');
+    node.setAttribute('title', t('translating'));
+    // grid 父级里的译文块会复制 grid-column，占位块也跟随，避免落到错误的列
+    if (block.gridParent) {
+      try {
+        var sourceGridColumn = window.getComputedStyle(block.el).gridColumn;
+        if (sourceGridColumn && sourceGridColumn !== 'auto') node.style.setProperty('grid-column', sourceGridColumn);
+      } catch (gridStyleErr) {
+        /* ignore */
+      }
+    }
+    var dot = document.createElement('span');
+    dot.setAttribute(MARK_ATTR, 'loading-dot');
+    node.appendChild(dot);
+    return node;
+  }
+
+  function showBlockLoading(block) {
+    if (!block || block.type !== 'block' || block.loadingNode) return;
+    var el = block.el;
+    if (!el || !el.isConnected) return;
+    var node;
+    try {
+      node = createLoadingNode(block);
+      if (block.inner) {
+        el.appendChild(node);
+      } else {
+        if (!el.parentNode) return;
+        el.parentNode.insertBefore(node, el.nextSibling);
+      }
+    } catch (err) {
+      return;
+    }
+    block.loadingNode = node;
+  }
+
+  function hideBlockLoading(block) {
+    if (!block || !block.loadingNode) return;
+    var node = block.loadingNode;
+    block.loadingNode = null;
+    try {
+      if (node.isConnected) node.remove();
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  /** 停止/还原/会话重置时清掉所有在途转圈（不然会永久留在页面上）。 */
+  function clearAllBlockLoading() {
+    for (var i = 0; i < state.units.length; i += 1) hideBlockLoading(state.units[i]);
+  }
+
   function injectTranslation(block, text) {
     if (!block || !block.el || !block.el.isConnected) return false;
+    hideBlockLoading(block);
     try {
       if (block.transNode && block.transNode.isConnected) {
         state.injectedNodes.delete(block.transNode);
@@ -1969,6 +2029,7 @@
 
   function failBlock(session, block, err) {
     if (!block || session !== state.sessionId) return;
+    hideBlockLoading(block);
     block.status = 'failed';
     state.done++;
     state.failed++;
@@ -2422,7 +2483,12 @@
       'display:inline-block!important;vertical-align:baseline!important;max-width:100%;margin-block:0!important;}',
     // 仅译文模式下原文块被隐藏，译文不需要右侧缩进
     'html[' + MODE_ATTR + '="only"] [data-dsh-it="trans"][' + LAYOUT_ATTR + '="inline"]{margin-left:0!important;}',
-    '[data-dsh-it="trans"].dsh-it-retry:hover{background:rgba(220,38,38,0.16)!important;}'
+    '[data-dsh-it="trans"].dsh-it-retry:hover{background:rgba(220,38,38,0.16)!important;}',
+    // 段落级「翻译中」转圈：入队后显示在段落之后，译文到达/失败/停止时移除
+    '[data-dsh-it="loading"]{display:flex;align-items:center;min-height:14px;margin:3px 0 0;padding:0;line-height:1;pointer-events:none;}',
+    '[data-dsh-it="loading"] [data-dsh-it="loading-dot"]{display:block;width:12px;height:12px;box-sizing:border-box;border:2px solid rgba(127,127,127,0.35);border-top-color:rgb(59,130,246);border-radius:50%;animation:dsh-it-spin 0.75s linear infinite;}',
+    '@keyframes dsh-it-spin{to{transform:rotate(360deg);}}',
+    '@media (prefers-reduced-motion:reduce){[data-dsh-it="loading"] [data-dsh-it="loading-dot"]{animation-duration:1.8s;}}'
   ].join('\n');
 
   function ensurePageStyle() {
@@ -3776,6 +3842,7 @@
     detachScreenListeners(state.lazy);
     clearCoalesceTimer(state.lazy);
     clearScreenScanTimer(state.lazy);
+    clearAllBlockLoading();
     state.io = null;
     state.lazy = null;
     state.blocksByEl = null;
@@ -3811,6 +3878,7 @@
     if (!lazy || !unit || unit.status !== 'pending') return false;
     if (!unit.anchorEl || !unit.anchorEl.isConnected) return false;
     unit.status = 'queued';
+    if (unit.type === 'block') showBlockLoading(unit);
     lazy.queue.push(unit);
     return true;
   }
@@ -4349,6 +4417,7 @@
           }
           if (isSameTranslation(block.text, text)) {
             // 专有名词/缩写等译名与原文相同：不再重复注入，避免 “ARM ARM”“Patreon Patreon”
+            hideBlockLoading(block);
             block.status = 'done';
             state.done++;
             continue;
@@ -4522,6 +4591,7 @@
     // 轨迹（Turn）：run 已结束时的单段重试 = 新的单步 Turn（requestTranslations 会新建 runId，成功/失败后清空）
     var retryTurn = !state.runId;
     block.status = 'translating';
+    showBlockLoading(block);
     var placeholder = block.placeholder;
     if (placeholder && placeholder.isConnected) {
       placeholder.textContent = t('translating');
@@ -4540,6 +4610,7 @@
             placeholder.remove();
           }
           block.placeholder = null;
+          hideBlockLoading(block);
           block.status = 'done';
           state.failed = Math.max(0, state.failed - 1);
           updateProgressUi();
@@ -4557,6 +4628,7 @@
         })
         .catch(function (err) {
           if (session !== state.sessionId) return;
+          hideBlockLoading(block);
           block.status = 'failed';
           if (placeholder && placeholder.isConnected) {
             placeholder.textContent = t('failPrefix') + errorText(err) + t('failSuffix');
