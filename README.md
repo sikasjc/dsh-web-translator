@@ -9,7 +9,11 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.14.3** · **browser extension 1.17.15**. Recent changes:
+> Current versions: **DSH plugin 1.14.4** · **browser extension 1.17.15**. Recent changes:
+> the reasoning-effort dropdown is now explicit-only: it lists the selected model's efforts and
+> defaults to the lowest one (`off` when declared), and switching models snaps to that model's
+> lowest effort — the old `auto` option is gone because it always resolved to the lowest effort
+> (plugin 1.14.4);
 > every paragraph now shows a small spinner while its translation is in flight, and the spinner is
 > removed on arrival/failure/stop/restore (extension 1.17.15);
 > reasoning can now be turned off for translation: the modelhub `deepseek-flash` route declares the

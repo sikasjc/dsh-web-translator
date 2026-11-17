@@ -205,8 +205,7 @@ window.__ModuleLoader__.load({
       'settings.modelHint': '模型来自 DSH 已配置的提供方；切换模型后会自动刷新可用的推理强度。',
       'settings.modelEmpty': '暂无可用模型',
       'settings.effort': '推理强度',
-      'settings.effortAuto': '自动（推荐）',
-      'settings.effortAutoResolved': '自动：当前生效 {effort}',
+      'settings.effortModelDefault': '模型默认（不可调）',
       'settings.effortOff': '关闭（不推理）',
       'settings.effortMinimal': '最低',
       'settings.effortLow': '低',
@@ -214,7 +213,7 @@ window.__ModuleLoader__.load({
       'settings.effortHigh': '高',
       'settings.effortXhigh': '较高',
       'settings.effortMax': '最高',
-      'settings.effortUnsupported': '该模型未声明可调推理强度，将使用自动。',
+      'settings.effortUnsupported': '该模型未声明可调推理强度，将使用模型默认。',
       'settings.effortLoading': '正在读取推理强度…',
       'settings.targetLanguage': '目标语言',
       'settings.translationStyle': '翻译风格',
@@ -642,8 +641,7 @@ window.__ModuleLoader__.load({
       'settings.modelHint': 'Models come from providers configured in DSH; switching a model refreshes the available reasoning efforts.',
       'settings.modelEmpty': 'No models available',
       'settings.effort': 'Reasoning effort',
-      'settings.effortAuto': 'Auto (recommended)',
-      'settings.effortAutoResolved': 'Auto: currently {effort}',
+      'settings.effortModelDefault': 'Model default (not adjustable)',
       'settings.effortOff': 'Off (no reasoning)',
       'settings.effortMinimal': 'Minimal',
       'settings.effortLow': 'Low',
@@ -651,7 +649,7 @@ window.__ModuleLoader__.load({
       'settings.effortHigh': 'High',
       'settings.effortXhigh': 'Higher',
       'settings.effortMax': 'Max',
-      'settings.effortUnsupported': 'This model declares no reasoning efforts; auto is used.',
+      'settings.effortUnsupported': 'This model declares no reasoning efforts; the model default is used.',
       'settings.effortLoading': 'Loading reasoning efforts…',
       'settings.targetLanguage': 'Target language',
       'settings.translationStyle': 'Translation style',
@@ -1643,6 +1641,22 @@ window.__ModuleLoader__.load({
       xhigh: 'settings.effortXhigh',
       max: 'settings.effortMax',
     };
+    /** Lowest selectable effort for a model: explicit `off` first, else the catalog order. */
+    function lowestEffortId(efforts) {
+      const list = Array.isArray(efforts) ? efforts : [];
+      for (let index = 0; index < list.length; index += 1) {
+        if (list[index] && list[index].id === 'off') return 'off';
+      }
+      return list.length > 0 && list[0] && typeof list[0].id === 'string' ? list[0].id : '';
+    }
+    /** Force the form onto a supported effort (lowest) when `auto`/unsupported is stored. */
+    function withLowestEffort(form, efforts) {
+      if (!form) return form;
+      const list = Array.isArray(efforts) ? efforts : [];
+      if (list.length === 0) return form;
+      if (list.some((effort) => effort && effort.id === form.reasoningEffort)) return form;
+      return Object.assign({}, form, { reasoningEffort: lowestEffortId(list) });
+    }
     /** Reasoning-effort option label from the active dictionary. */
     function reasoningEffortLabel(t, effort) {
       const id = effort && typeof effort.id === 'string' ? effort.id : '';
@@ -1729,10 +1743,14 @@ window.__ModuleLoader__.load({
         setLanguages(serverLanguages.length > 0 ? serverLanguages : TARGET_LANGUAGES.map((language) => language.id));
         const catalog = settingsData && Array.isArray(settingsData.catalog) ? settingsData.catalog : modelsData && modelsData.catalog;
         setGroups(normalizeCatalog(catalog, initialForm.provider, initialForm.model));
-        setForm(initialForm);
-        setBaseline(initialForm);
         const modelInfo = settingsData && settingsData.modelInfo ? settingsData.modelInfo : null;
-        setEfforts(modelInfo && Array.isArray(modelInfo.reasoningEfforts) ? modelInfo.reasoningEfforts.filter((effort) => effort && typeof effort.id === 'string') : []);
+        const initialEfforts = modelInfo && Array.isArray(modelInfo.reasoningEfforts)
+          ? modelInfo.reasoningEfforts.filter((effort) => effort && typeof effort.id === 'string')
+          : [];
+        const seededForm = withLowestEffort(initialForm, initialEfforts);
+        setForm(seededForm);
+        setBaseline(seededForm);
+        setEfforts(initialEfforts);
         effortsModelRef.current = modelInfo && typeof modelInfo.provider === 'string' && typeof modelInfo.model === 'string' ? modelInfo.provider + '::' + modelInfo.model : '';
         setPhase('ready');
         resolveEfforts(initialForm.provider, initialForm.model);
@@ -1758,10 +1776,7 @@ window.__ModuleLoader__.load({
             setEfforts(list);
             setForm((current) => {
               if (!current || current.provider !== provider || current.model !== model) return current;
-              if (current.reasoningEffort !== 'auto' && list.length > 0 && !list.some((effort) => effort.id === current.reasoningEffort)) {
-                return Object.assign({}, current, { reasoningEffort: 'auto' });
-              }
-              return current;
+              return withLowestEffort(current, list);
             });
           })
           .catch(() => {
@@ -1800,6 +1815,8 @@ window.__ModuleLoader__.load({
         if (separator < 0) return;
         const provider = value.slice(0, separator);
         const model = value.slice(separator + 2);
+        // 旧模型的档位对新模型不成立：先清空（保存会回退到模型最低档），等 resolve 返回再填充
+        setEfforts([]);
         updateForm({ provider: provider, model: model });
         resolveEfforts(provider, model);
       }
@@ -1810,10 +1827,14 @@ window.__ModuleLoader__.load({
         setSaving(true);
         setSaveError(null);
         setSaveNotice('');
+        const effortIds = efforts.map((effort) => effort.id);
+        const reasoningEffort = efforts.length === 0
+          ? 'auto'
+          : effortIds.indexOf(form.reasoningEffort) >= 0 ? form.reasoningEffort : lowestEffortId(efforts);
         const body = {
           provider: form.provider,
           model: form.model,
-          reasoningEffort: form.reasoningEffort,
+          reasoningEffort: reasoningEffort,
           targetLanguage: form.targetLanguage,
           translationStyle: form.translationStyle,
           dictionaryProvider: form.dictionaryProvider,
@@ -1827,10 +1848,11 @@ window.__ModuleLoader__.load({
           if (!mountedRef.current) return;
           if (data.defaults) setDefaults(data.defaults);
           if (data.selected) setSelected(data.selected);
-          if (data.modelInfo && Array.isArray(data.modelInfo.reasoningEfforts)) {
-            setEfforts(data.modelInfo.reasoningEfforts.filter((effort) => effort && typeof effort.id === 'string'));
-          }
-          const nextForm = formFromSettings(data.settings, data.selected);
+          const nextEfforts = data.modelInfo && Array.isArray(data.modelInfo.reasoningEfforts)
+            ? data.modelInfo.reasoningEfforts.filter((effort) => effort && typeof effort.id === 'string')
+            : efforts;
+          if (data.modelInfo && Array.isArray(data.modelInfo.reasoningEfforts)) setEfforts(nextEfforts);
+          const nextForm = withLowestEffort(formFromSettings(data.settings, data.selected), nextEfforts);
           setForm(nextForm);
           setBaseline(nextForm);
           setSaveNotice(t('settings.saved'));
@@ -1937,15 +1959,9 @@ window.__ModuleLoader__.load({
           form.recordHistory !== baseline.recordHistory);
 
       const modelValue = form.provider && form.model ? form.provider + '::' + form.model : '';
-      const effortIds = efforts.map((effort) => effort.id);
-      const rawEffort = form.reasoningEffort !== 'auto' && effortIds.indexOf(form.reasoningEffort) < 0 ? form.reasoningEffort : '';
-      const sameSelectionAsSaved = !!selected && selected.provider === form.provider && selected.model === form.model;
       let effortHint = '';
       if (effortsLoading) effortHint = t('settings.effortLoading');
       else if (efforts.length === 0) effortHint = t('settings.effortUnsupported');
-      else if (form.reasoningEffort === 'auto' && sameSelectionAsSaved && selected.reasoningEffort) {
-        effortHint = t('settings.effortAutoResolved', { effort: String(selected.reasoningEffort) });
-      }
       const languageOptions = languages.indexOf(form.targetLanguage) < 0 ? [form.targetLanguage].concat(languages) : languages.slice();
       const imageModelOptions = [];
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
@@ -2012,14 +2028,14 @@ window.__ModuleLoader__.load({
                 'select',
                 {
                   className: 'dsh-it-select',
-                  value: form.reasoningEffort,
-                  disabled: efforts.length === 0 && form.reasoningEffort === 'auto',
+                  value: efforts.length === 0 ? 'auto' : form.reasoningEffort,
+                  disabled: efforts.length === 0,
                   'aria-label': t('settings.effort'),
                   onChange: (event) => updateForm({ reasoningEffort: event.target.value }),
                 },
-                h('option', { value: 'auto' }, t('settings.effortAuto')),
-                efforts.map((effort) => h('option', { key: 'effort-' + effort.id, value: effort.id }, reasoningEffortLabel(t, effort))),
-                rawEffort ? h('option', { key: 'effort-raw', value: rawEffort }, rawEffort) : null,
+                efforts.length === 0
+                  ? h('option', { value: 'auto' }, t('settings.effortModelDefault'))
+                  : efforts.map((effort) => h('option', { key: 'effort-' + effort.id, value: effort.id }, reasoningEffortLabel(t, effort))),
               ),
             ),
             h(
@@ -2208,7 +2224,7 @@ window.__ModuleLoader__.load({
             {
               type: 'button',
               className: 'dsh-it-btn dsh-it-btn-primary',
-              disabled: !dirty || saving,
+              disabled: !dirty || saving || effortsLoading,
               title: t('settings.save'),
               onClick: onSave,
             },

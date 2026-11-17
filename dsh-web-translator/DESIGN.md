@@ -80,7 +80,7 @@
 
 - 目录：`llm.listProviders(): LlmProviderInfo[]`、`llm.listModels(provider): LlmModelInfo[]`、`llm.resolveModelInfo(provider, model): LlmResolvedModelInfo`（含 `context`、`defaultMaxTokens`、`reasoning.efforts`）。
 - 默认模型：`ctx.get('agentDefaultModel')?.currentSelection()`（当前 profile：`modelhub / deepseek-flash / reasoningEffort:max`）。
-- 推理强度：设置默认 `auto` → 优先 `off`，否则该模型 advertised 列表中的最小 effort；用户可显式指定。**关闭推理**需要模型目录声明 `off` 档：`off` 的 wire value 由 profile 的 `reasoningEfforts` 决定——openai-responses 路由应写 `off: none`（发送 `reasoning:{effort:"none"}`，上游 reasoning_tokens 归零），`off:` 留空则只是不发送 reasoning 参数，思考型上游仍会思考；modelhub 的 `deepseek-flash` 已声明 `off: none`，插件设置里因此可选「关闭（不推理）」，`auto` 默认命中它。
+- 推理强度：设置页只列出当前模型 advertised 的档位（默认选中最低档：有 `off` 即「关闭（不推理）」，否则列表第一项），不再向用户提供 `auto`——`auto` 不是自适应，它永远只会选最低档，没有存在价值。Host 仍兼容旧数据/API 里的 `auto` 与未声明的档位（解析规则：优先 `off` → advertised 列表最小 effort → 不传 reasoning 参数），切换模型时前端把不支持的档位收敛为新模型的最低档。**关闭推理**需要模型目录声明 `off` 档：`off` 的 wire value 由 profile 的 `reasoningEfforts` 决定——openai-responses 路由应写 `off: none`（发送 `reasoning:{effort:"none"}`，上游 reasoning_tokens 归零），`off:` 留空则只是不发送 reasoning 参数，思考型上游仍会思考；modelhub 的 `deepseek-flash` 已声明 `off: none`，插件设置里因此可选「关闭（不推理）」，`auto` 默认命中它。
 - 调用：`ctx.llm.stream({ provider, model, reasoningEffort?, system, messages:[{role:'user', content:[{type:'text', text}]}], temperature, maxTokens, signal })`；收集 `text-delta`，直到 `finish`：
   - `finish.reason.kind === 'stop'` → 成功；
   - `error`/`aborted` → 映射错误码（`NO_ADAPTER`→`MODEL_UNAVAILABLE`、`MISSING_CREDENTIAL|AUTH|INVALID_CREDENTIAL`→`MODEL_AUTH`、`RATE_LIMIT`→`MODEL_RATE_LIMITED`、`CONTEXT_WINDOW_EXCEEDED`→`TEXT_LIMIT`、其它→`MODEL_FAILED`）；
@@ -303,7 +303,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - 页面结构：标题「dsh翻译」+ Tab「翻译设置 / 单词本 / 术语库 / 悬浮球」（Tab 本地状态；术语库与悬浮球按首次访问懒挂载，数据分别来自 `GET /terms`、`GET /ball-sites`）。左侧工具栏整页同样嵌入 `TermsPage` 与 `BallSitesPage`（其 Tab 为「概览 / 轨迹 / 设置 / 单词本 / 术语库 / 悬浮球」），两处共用同一组件。
 - **翻译设置**：
   - 模型：按 provider 分组的 select（数据来自 GET /settings.catalog）；切换后调 GET /models/resolve 刷新推理强度选项；
-  - 推理强度：auto/各 effort；目标语言 select；「保存」按钮（PUT /settings），脏状态提示；
+  - 推理强度：当前模型 advertised 的各 effort（默认最低档，无 `auto` 选项；模型未声明时显示「模型默认（不可调）」）；目标语言 select；「保存」按钮（PUT /settings），脏状态提示；
   - 提示词：systemPrompt textarea（≥6 行）+ userTemplate textarea + 「恢复默认」；侧注说明 JSON 输出要求；
   - 测试：文本框 + 「测试翻译」→ POST /translate，显示结果/耗时/模型/错误；空文本禁用。
 - **术语库**（管理 UI）：
@@ -440,7 +440,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 
 | # | 决策 | 默认 |
 |---|---|---|
-| 1 | 默认模型 | 跟随 DSH 当前默认模型（modelhub/deepseek-flash），Auto 推理强度取 off |
+| 1 | 默认模型 | 跟随 DSH 当前默认模型（modelhub/deepseek-flash），推理强度默认取模型最低档（声明 off 时即关闭推理） |
 | 2 | 提示词编辑位置 | DSH 设置页（权威），扩展选项页只读回显 + 目标语言快捷设置 |
 | 3 | 发音练习 | 标准发音播放 + 跟读评分（Web Speech API，失败降级为「自我评估」） |
 | 4 | 复习算法 | 简单三级 SRS（不认识/模糊/认识） |
