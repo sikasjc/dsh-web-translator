@@ -410,7 +410,7 @@ async function main() {
       return;
     }
     if (request.url && request.url.startsWith('/nav-wrap.html')) {
-      // cve.org 回归场景（CVE-2026-114938）：CNA 记录面板整体被 <nav class="message"> 包裹。
+      // cve.org 回归场景（CVE-2026-114938 + FAQ 链接段）：CNA 记录面板整体被 <nav class="message"> 包裹。
       // 独立页面：不影响 test.html 的首屏窗口/既有断言。
       const longNavText =
         'NIST has published a security advisory for the message handling component of this product. ' +
@@ -424,6 +424,10 @@ async function main() {
             '<h4>Description</h4>' +
             '<p id="nav-long-p">' + longNavText + '</p>' +
             '<p id="nav-short-label">Vendor</p>' +
+            // FAQ 答案：正文 + 行内链接（1.17.16 会退化成句中碎片 + 链接内译文）
+            '<p id="nav-link-p">See <a id="nav-glossary-link" href="#glossary">Vulnerability</a> on the Glossary page.</p>' +
+            // 纯链接标签：只有链接文字、链接外没有正文，应保持行内译文
+            '<p id="nav-pure-link"><a href="#more">Learn more</a></p>' +
           '</div></div></nav></main>' +
         '</body></html>'
       );
@@ -2240,11 +2244,12 @@ async function main() {
     JSON.stringify(longParagraphProbe)
   );
 
-  /* 7.955) chrome/nav 长正文回归（cve.org CVE-2026-114938）：
-     站点把整块 CNA 记录面板包进 <nav class="message">。旧 consider() 会跳过 chrome 区域里的
-     所有块候选，长段落又超过行内上限（MAX_INLINE_TEXT=240）被 collectTextUnits 丢弃 → 整段漏译。
-     修复契约：块候选文本 > 240 时绕过 chrome 跳过、按正文块翻译；短标签仍走行内译文；
-     nav/包裹层本身不得变成块级译文。 */
+  /* 7.955) chrome/nav 长正文 + FAQ 链接段回归（cve.org）：
+     站点把整块 CNA 记录面板包进 <nav class="message">。
+     - CVE-2026-114938：长段落 > MAX_INLINE_TEXT（240）被 collectTextUnits 丢弃 → 整段漏译；
+     - FAQ 链接段：短正文 + 行内链接退化成行内单元 → 句中碎片 + 链接内译文，中英混杂。
+     修复契约：超长正文块、以及「链接外还有正文文字」的 P/BLOCKQUOTE/FIGCAPTION/LI/TD/TH
+     按正文块翻译（保留链接）；纯链接标签/短标签仍走行内译文；nav 包裹层不得变成块级译文。 */
   await page.send('Page.navigate', { url: pageOrigin + '/nav-wrap.html' });
   await wait(1600);
   await fireToggle();
@@ -2252,10 +2257,18 @@ async function main() {
   let navWrapReady = false;
   for (let attempt = 0; attempt < 20 && !navWrapReady; attempt += 1) {
     navWrapReady = await evalOn(page, `(() => {
-      const source = document.getElementById('nav-long-p');
-      const next = source && source.nextElementSibling;
-      return !!(source && next && next.getAttribute('data-dsh-it') === 'trans' &&
-        next.textContent.indexOf('【译文】') !== -1);
+      const longP = document.getElementById('nav-long-p');
+      const longNext = longP && longP.nextElementSibling;
+      const longDone = !!(longP && longNext && longNext.getAttribute('data-dsh-it') === 'trans' &&
+        longNext.textContent.indexOf('【译文】') !== -1);
+      // 链接段：修复后是块级译文兄弟节点；修复前是行内碎片（src-inline/trans-inline）——都算已处理
+      const linkP = document.getElementById('nav-link-p');
+      const linkNext = linkP && linkP.nextElementSibling;
+      const linkDone = !!(linkP && ((linkNext && linkNext.getAttribute('data-dsh-it') === 'trans') ||
+        linkP.querySelector('[data-dsh-it]')));
+      const pureP = document.getElementById('nav-pure-link');
+      const pureDone = !!(pureP && pureP.querySelector('a [data-dsh-it="trans-inline"]'));
+      return longDone && linkDone && pureDone;
     })()`);
     if (!navWrapReady) await wait(250);
   }
@@ -2316,6 +2329,71 @@ async function main() {
       navWrapShortProbe.srcMark === null &&
       navWrapShortProbe.blockSibling === false,
     JSON.stringify(navWrapShortProbe)
+  );
+  /* FAQ 链接段：修复前 #nav-link-p 走行内单元 → 句中碎片 + 链接内译文；修复后应为整段块级译文且链接保留 */
+  const navLinkPProbe = await evalOn(page, `(() => {
+    const source = document.getElementById('nav-link-p');
+    if (!source) return { found: false };
+    const next = source.nextElementSibling;
+    const blockTrans = next && next.getAttribute('data-dsh-it') === 'trans' ? next : null;
+    const transLink = blockTrans ? blockTrans.querySelector('a') : null;
+    return {
+      found: true,
+      insideNav: !!(source.closest && source.closest('nav.message')),
+      srcMark: source.getAttribute('data-dsh-it'),
+      hasBlockTrans: !!blockTrans,
+      blockTag: blockTrans ? blockTrans.tagName : null,
+      blockStartsWithMock: !!(blockTrans && blockTrans.textContent.indexOf('【译文】') === 0),
+      blockTextLength: blockTrans ? blockTrans.textContent.length : 0,
+      transLinkHref: transLink ? (transLink.getAttribute('href') || '') : null,
+      transLinkText: transLink ? transLink.textContent : null,
+      inlineTransCount: source.querySelectorAll('[data-dsh-it="trans-inline"]').length,
+      inlineLinkTransCount: source.querySelectorAll('a [data-dsh-it="trans-inline"]').length,
+      childMarkCount: source.querySelectorAll('[data-dsh-it]').length
+    };
+  })()`);
+  check(
+    'nav 链接正文回归：<nav> 内含行内链接的正文段落按块级翻译并保留链接',
+    navLinkPProbe.found === true &&
+      navLinkPProbe.insideNav === true &&
+      navLinkPProbe.srcMark === 'src' &&
+      navLinkPProbe.hasBlockTrans === true &&
+      navLinkPProbe.blockTag === 'P' &&
+      navLinkPProbe.blockStartsWithMock === true &&
+      !!navLinkPProbe.transLinkHref &&
+      navLinkPProbe.transLinkHref.endsWith('#glossary') &&
+      navLinkPProbe.transLinkText === 'Vulnerability' &&
+      navLinkPProbe.inlineTransCount === 0 &&
+      navLinkPProbe.inlineLinkTransCount === 0 &&
+      navLinkPProbe.childMarkCount === 0,
+    JSON.stringify(navLinkPProbe)
+  );
+  const navPureLinkProbe = await evalOn(page, `(() => {
+    const source = document.getElementById('nav-pure-link');
+    if (!source) return { found: false };
+    const anchor = source.querySelector('a');
+    const next = source.nextElementSibling;
+    const inlineTrans = anchor ? anchor.querySelector('[data-dsh-it="trans-inline"]') : null;
+    return {
+      found: true,
+      insideNav: !!(source.closest && source.closest('nav.message')),
+      srcMark: source.getAttribute('data-dsh-it'),
+      inlineInsideLink: anchor ? anchor.querySelectorAll('[data-dsh-it="trans-inline"]').length : -1,
+      inlineText: inlineTrans ? inlineTrans.textContent : null,
+      blockSibling: !!(next && next.getAttribute('data-dsh-it') === 'trans'),
+      childBlockTrans: source.querySelectorAll('[data-dsh-it="trans"]').length
+    };
+  })()`);
+  check(
+    'nav 链接正文回归：<nav> 内纯链接标签保持行内译文',
+    navPureLinkProbe.found === true &&
+      navPureLinkProbe.insideNav === true &&
+      navPureLinkProbe.srcMark === null &&
+      navPureLinkProbe.inlineInsideLink === 1 &&
+      navPureLinkProbe.inlineText === '【译文】Learn more' &&
+      navPureLinkProbe.blockSibling === false &&
+      navPureLinkProbe.childBlockTrans === 0,
+    JSON.stringify(navPureLinkProbe)
   );
   const navWrapStructureProbe = await evalOn(page, `(() => {
     const nav = document.querySelector('main > nav.message');

@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.16';
+  var EXT_VERSION = '1.17.17';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -1110,6 +1110,40 @@
     return normalizeText(el.textContent || '').length > MAX_INLINE_TEXT;
   }
 
+  /** 元素内不在行内链接/行内 code 里的正文文字（区分「带链接的正文段」与「纯链接标签」） */
+  function ownTextOutsideLinks(el) {
+    var parts = [];
+    var walk = function (node) {
+      try {
+        if (!node) return;
+        if (node.nodeType === 3) {
+          parts.push(node.nodeValue || '');
+          return;
+        }
+        if (node.nodeType !== 1) return;
+        var tag = tagOf(node);
+        if (tag === 'A' || tag === 'CODE') return;
+        var children = node.childNodes || [];
+        for (var i = 0; i < children.length; i += 1) walk(children[i]);
+      } catch (err) {
+        /* 单个节点异常不影响判定 */
+      }
+    };
+    walk(el);
+    return normalizeText(parts.join(''));
+  }
+
+  /**
+   * chrome 区域里的「正文 + 行内链接」段落（如 cve.org FAQ 答案
+   * "See <a>Vulnerability</a> on the Glossary page."）：行内单元会把译文拆成
+   * 句中片段 + 链接内译文两处，产生中英混杂；这类块按正文块翻译并保留链接。
+   */
+  function isProseBlockWithInlineLinks(el, tag) {
+    if (tag !== 'P' && tag !== 'BLOCKQUOTE' && tag !== 'FIGCAPTION' && tag !== 'LI' && tag !== 'TD' && tag !== 'TH') return false;
+    if (!el.querySelector || !el.querySelector('a, code')) return false;
+    return HAS_LETTER_RE.test(ownTextOutsideLinks(el));
+  }
+
   /**
    * 抽取候选块：
    *  - 块级标签（文本 2..800）+ 行内 DIV/SPAN（文本 12..800）
@@ -1188,8 +1222,9 @@
         registerPlaceholder();
         return;
       }
-      // chrome 区域默认只做行内译文；长正文（超出行内上限）必须按块翻译，否则会整段漏译
-      if (isChromeRegion(el) && !isLongFormChromeBlock(el, tag)) {
+      // chrome 区域默认只做行内译文；长正文（超出行内上限）与带行内链接的正文段
+      // 必须按块翻译，否则会整段漏译，或把译文拆成句中片段 + 链接内译文的中英混杂
+      if (isChromeRegion(el) && !isLongFormChromeBlock(el, tag) && !isProseBlockWithInlineLinks(el, tag)) {
         registerPlaceholder();
         return;
       }

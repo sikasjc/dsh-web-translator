@@ -336,6 +336,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - 面板：模式三按钮（原文/双语/仅译文）、目标语言、当前模型名（只读，来自 /settings）、「翻译此页/停止/还原」、进度条（已译/总数）、设置按钮（openOptionsPage）、状态/错误行、隐私提示。
 - 抽取算法（与设计 v1 §5.4 相同语义）：候选块标签 + 行内 DIV/SPAN + 长度 2..4000 + 跳过脚本/代码/表单/隐藏/插件节点 + 目标语言跳过 + 单页上限 800 块（超出提示只译前 800）。
 - **chrome 区域内的长正文块（V1.17.16）**：`isChromeRegion()` 命中的块默认登记占位、只走行内译文（避免导航组件级块复制）；但这类区域里的正文长块（如 cve.org 把整块 CNA 记录面板包进无 role 的 `<nav class="message">`）在 `collectTextUnits` 里会因超过 `MAX_INLINE_TEXT`（240 字符）被整段丢弃，因此 `consider()` 对 `P/BLOCKQUOTE/FIGCAPTION/TD/TH/CAPTION/LI/DIV` 且归一化文本 >240 字符的块豁免 chrome 跳过、按正文块翻译；短导航/页脚标签行为不变。
+- **chrome 区域内「正文 + 行内链接」段落（V1.17.17）**：`P/BLOCKQUOTE/FIGCAPTION/LI/TD/TH` 若含行内 `<a>`/`<code>`、且链接之外的正文文字含字母（`isProseBlockWithInlineLinks` → `ownTextOutsideLinks`），同样豁免 chrome 跳过、按正文块翻译（`textOfWithLinks` 保留链接）。否则行内单元会把译文拆成「句中片段 + 链接内译文」两处，FAQ 类页面出现中英混杂；纯链接标签（无链接外正文）仍走行内译文。
 - **visibility 隐藏内容回退（V1.17.13）**：`isVisible` 在 `checkVisibility()` 返回 false 时，仍用 `offsetWidth/offsetHeight/getClientRects()` 判断是否有布局盒；`display:none` 仍跳过，但 Wikipedia 这类先 `visibility`/`content-visibility` 隐藏侧栏、稍后显示的站点会提前翻译，避免用户展开时看到英文。
 - **重扫跳过已注入节点（V1.17.12）**：`collectTextUnits` 不再把 `[data-dsh-it]` 内的文本（已有译文/原文包裹）当作新单元；否则每轮重扫都会把旧译文重新收集，撑满 `MAX_TEXT_UNITS` 并让后出现的内容没有机会翻译。
 - **动态页面延迟重扫（V1.17.11）**：screen 模式启动后 900ms / 2400ms 各调用一次 `mergeNewUnits + flushScreenWindow`，仅对当前屏新出现的单元补翻；已登记/已注入的 anchor 会被跳过，不重复翻译；会话停止/完成/页面还原后不再触发。

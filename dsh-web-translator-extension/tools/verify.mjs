@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.17.16', manifest.version === '1.17.16', manifest.version);
+  check('manifest: version 1.17.17', manifest.version === '1.17.17', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.17.16', "EXT_VERSION = '1.17.16'"],
+  ['EXT 版本 1.17.17', "EXT_VERSION = '1.17.17'"],
   ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
   ['图片翻译入口', 'function startImageTranslation('],
   ['图片翻译覆盖层', 'function renderImageTranslation('],
@@ -207,9 +207,11 @@ check(
 );
 
 check(
-  'content.js chrome 区域长正文块按正文翻译（不因行内上限整段丢弃）',
+  'content.js chrome 区域长正文块与带行内链接正文段按正文翻译',
   content.includes('function isLongFormChromeBlock(') &&
-    content.includes('isChromeRegion(el) && !isLongFormChromeBlock(el, tag)') &&
+    content.includes('function isProseBlockWithInlineLinks(') &&
+    content.includes('function ownTextOutsideLinks(') &&
+    content.includes('!isLongFormChromeBlock(el, tag) && !isProseBlockWithInlineLinks(el, tag)') &&
     content.includes("normalizeText(el.textContent || '').length > MAX_INLINE_TEXT")
 );
 
