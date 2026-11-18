@@ -409,6 +409,26 @@ async function main() {
       );
       return;
     }
+    if (request.url && request.url.startsWith('/nav-wrap.html')) {
+      // cve.org 回归场景（CVE-2026-114938）：CNA 记录面板整体被 <nav class="message"> 包裹。
+      // 独立页面：不影响 test.html 的首屏窗口/既有断言。
+      const longNavText =
+        'NIST has published a security advisory for the message handling component of this product. ' +
+        'The affected software does not properly validate incoming protocol data, which allows an ' +
+        'unauthenticated remote attacker to trigger unexpected behavior. Users should review the ' +
+        'vendor guidance and apply the available update as soon as it can be scheduled.';
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Nav wrapped content</title></head><body>' +
+          '<main><nav class="message"><div class="message-body"><div class="panel">' +
+            '<h4>Description</h4>' +
+            '<p id="nav-long-p">' + longNavText + '</p>' +
+            '<p id="nav-short-label">Vendor</p>' +
+          '</div></div></nav></main>' +
+        '</body></html>'
+      );
+      return;
+    }
     if (request.url && request.url.startsWith('/compact.html')) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
@@ -2218,6 +2238,115 @@ async function main() {
       longParagraphProbe.hasTrans === true &&
       longParagraphProbe.transLength >= 10,
     JSON.stringify(longParagraphProbe)
+  );
+
+  /* 7.955) chrome/nav 长正文回归（cve.org CVE-2026-114938）：
+     站点把整块 CNA 记录面板包进 <nav class="message">。旧 consider() 会跳过 chrome 区域里的
+     所有块候选，长段落又超过行内上限（MAX_INLINE_TEXT=240）被 collectTextUnits 丢弃 → 整段漏译。
+     修复契约：块候选文本 > 240 时绕过 chrome 跳过、按正文块翻译；短标签仍走行内译文；
+     nav/包裹层本身不得变成块级译文。 */
+  await page.send('Page.navigate', { url: pageOrigin + '/nav-wrap.html' });
+  await wait(1600);
+  await fireToggle();
+  await wait(2200);
+  let navWrapReady = false;
+  for (let attempt = 0; attempt < 20 && !navWrapReady; attempt += 1) {
+    navWrapReady = await evalOn(page, `(() => {
+      const source = document.getElementById('nav-long-p');
+      const next = source && source.nextElementSibling;
+      return !!(source && next && next.getAttribute('data-dsh-it') === 'trans' &&
+        next.textContent.indexOf('【译文】') !== -1);
+    })()`);
+    if (!navWrapReady) await wait(250);
+  }
+  const navWrapLongProbe = await evalOn(page, `(() => {
+    const nav = document.querySelector('main > nav.message');
+    const source = document.getElementById('nav-long-p');
+    if (!nav || !source) return { found: false };
+    const next = source.nextElementSibling;
+    const blockTrans = next && next.getAttribute('data-dsh-it') === 'trans' ? next : null;
+    const normalized = (source.textContent || '').replace(/\\s+/g, ' ').trim();
+    return {
+      found: true,
+      insideNav: !!(source.closest && source.closest('nav.message')),
+      textLength: normalized.length,
+      srcMark: source.getAttribute('data-dsh-it'),
+      hasBlockTrans: !!blockTrans,
+      blockTag: blockTrans ? blockTrans.tagName : null,
+      blockTextLength: blockTrans ? blockTrans.textContent.length : 0,
+      blockStartsWithMock: !!(blockTrans && blockTrans.textContent.indexOf('【译文】') === 0),
+      blockHasInlineFragments: blockTrans ? blockTrans.querySelectorAll('[data-dsh-it]').length : -1,
+      inlineTransCount: source.querySelectorAll('[data-dsh-it="trans-inline"]').length
+    };
+  })()`);
+  check(
+    'nav 长正文回归：<nav> 内超长段落按块级翻译（cve.org CVE-2026-114938）',
+    navWrapLongProbe.found === true &&
+      navWrapLongProbe.insideNav === true &&
+      navWrapLongProbe.textLength > 240 &&
+      navWrapLongProbe.srcMark === 'src' &&
+      navWrapLongProbe.hasBlockTrans === true &&
+      navWrapLongProbe.blockTag === 'P' &&
+      navWrapLongProbe.blockStartsWithMock === true &&
+      navWrapLongProbe.blockTextLength > 240 &&
+      navWrapLongProbe.blockHasInlineFragments === 0 &&
+      navWrapLongProbe.inlineTransCount === 0,
+    JSON.stringify(navWrapLongProbe)
+  );
+  const navWrapShortProbe = await evalOn(page, `(() => {
+    const source = document.getElementById('nav-short-label');
+    if (!source) return { found: false };
+    const next = source.nextElementSibling;
+    const inlineTrans = source.querySelector('[data-dsh-it="trans-inline"]');
+    return {
+      found: true,
+      text: (source.textContent || '').trim(),
+      inlineText: inlineTrans ? inlineTrans.textContent : null,
+      hasSrcWrap: !!source.querySelector('[data-dsh-it="src-inline"]'),
+      srcMark: source.getAttribute('data-dsh-it'),
+      blockSibling: !!(next && next.getAttribute('data-dsh-it') === 'trans')
+    };
+  })()`);
+  check(
+    'nav 长正文回归：<nav> 内短标签保持行内译文，不产生块级副本',
+    navWrapShortProbe.found === true &&
+      navWrapShortProbe.inlineText === '【译文】Vendor' &&
+      navWrapShortProbe.text.indexOf('【译文】Vendor') !== -1 &&
+      navWrapShortProbe.hasSrcWrap === true &&
+      navWrapShortProbe.srcMark === null &&
+      navWrapShortProbe.blockSibling === false,
+    JSON.stringify(navWrapShortProbe)
+  );
+  const navWrapStructureProbe = await evalOn(page, `(() => {
+    const nav = document.querySelector('main > nav.message');
+    if (!nav) return { found: false };
+    const body = nav.querySelector('.message-body');
+    const panel = nav.querySelector('.panel');
+    const directTrans = (el) => Array.prototype.slice.call(el ? el.children : []).filter(
+      (child) => child.getAttribute && child.getAttribute('data-dsh-it') === 'trans'
+    ).length;
+    return {
+      found: true,
+      navCount: document.querySelectorAll('nav').length,
+      navMark: nav.getAttribute('data-dsh-it'),
+      bodyMark: body ? body.getAttribute('data-dsh-it') : 'missing',
+      panelMark: panel ? panel.getAttribute('data-dsh-it') : 'missing',
+      navDirectTrans: directTrans(nav),
+      bodyDirectTrans: directTrans(body),
+      pageTransCount: document.querySelectorAll('[data-dsh-it="trans"]').length,
+      pageInlineTransCount: document.querySelectorAll('[data-dsh-it="trans-inline"]').length
+    };
+  })()`);
+  check(
+    'nav 长正文回归：<nav> 包裹层本身不被块级翻译或复制',
+    navWrapStructureProbe.found === true &&
+      navWrapStructureProbe.navCount === 1 &&
+      navWrapStructureProbe.navMark === null &&
+      navWrapStructureProbe.bodyMark === null &&
+      navWrapStructureProbe.panelMark === null &&
+      navWrapStructureProbe.navDirectTrans === 0 &&
+      navWrapStructureProbe.bodyDirectTrans === 0,
+    JSON.stringify(navWrapStructureProbe)
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: false })`);
   await evalOn(sw, `chrome.storage.session.remove('dsh-it:follow:${tab.id}')`);

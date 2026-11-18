@@ -119,6 +119,7 @@ node tools/make-icons.mjs   # 生成 icons/icon{16,32,48,128}.png
 - **紧凑导航/控件**：header/nav 等 chrome 区域，以及 flex/grid 工具条、tab bar 里的短标签（GitHub 文件页的 Preview/Code 等），行内译文若被挤到换行，会自动改为宿主内的小字块级译注（0.8em，原文保持一行），避免拆词和横向溢出；React/异步布局在注入后才挤窄的，会在 150ms/600ms 复检后补上；未折行的短标签仍保持行内双语；
 - **相同译文跳过**：译文与原文忽略大小写/空白/标点后相同（专有名词、缩写、用户名、文件名等）时不再注入译文，避免 `ARM ARM`、`Patreon Patreon` 这类重复；
 - **长段落**：正文单段上限 **4000 字符**（原 800），长段落仍按块级翻译在下方，不再退化成行内碎片；超过 4000 字符的极端段落不按块级翻译。
+- **chrome 区域里的长正文**：站点若把正文面板包进语义 chrome（如 cve.org 把整块 CNA 记录面板包进 `<nav class="message">`），其中超过行内上限（240 字符）的长段落改按正文块翻译，不再被静默丢弃（V1.17.16）；导航/页脚里的短标签仍保持行内译文。
 
 **段落内换行（自动处理，无需配置）**：抽取时把 `<br>`/`<wbr>`、HTML 格式化换行、连续空白、NBSP 统一还原为空格再发给模型，让模型看到完整句子；模型返回的段落译文不人为断行，交给浏览器按容器宽度自然折行。
 
@@ -332,9 +333,9 @@ node tools/debug-layout.mjs https://lobste.rs/
 node tools/e2e-chrome.mjs
 ```
 
-预期：`node tools/verify.mjs` 输出 `ALL 228 STATIC CHECKS PASSED`；
+预期：`node tools/verify.mjs` 输出 `ALL 229 STATIC CHECKS PASSED`；
 `file` 输出 4 个 `PNG image data, 16 x 16 / 32 x 32 / 48 x 48 / 128 x 128, 8-bit/color RGBA`；
-`node tools/e2e-chrome.mjs` 输出 `145/145 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
+`node tools/e2e-chrome.mjs` 输出 `148/148 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
 E2E 覆盖：扩展加载（manifest/CSP/commands 合法性）、content 注入、翻译流水线报文、
 请求元数据（translate/lookup POST body 的 `client` / `sourceUrl` / `sourceTitle`）、
 轨迹身份（translate 的 `turnId`/`stepIndex`/`mode`、同一 run 懒加载批次共用 turnId、lookup 单步 turn）、
@@ -342,7 +343,7 @@ E2E 覆盖：扩展加载（manifest/CSP/commands 合法性）、content 注入�
 block 模式回归与微批合并（小步滚动产生的零散小批次请求数 ≤ ceil(新译段数/2)+2、定时器清理）、
 token 展示（本页消耗累计 / GET usage 的今日累计 / 完成状态行 / 查词卡 token 行）、
 三模式切换（含计算样式）、划词查词卡、加入单词本、还原、options 页、
-悬浮球连接失败提示（CDP 模拟连接被拒 / HTTP 404，断言 toast、状态行与面板收起语义）。**DSH 响应为 mock，不校验真实模型输出**。
+悬浮球连接失败提示（CDP 模拟连接被拒 / HTTP 404，断言 toast、状态行与面板收起语义）、chrome/nav 区域内的长正文块（cve.org CVE-2026-114938 式 `<nav class="message">` 包裹正文：长段落按块翻译、短标签仍行内、包裹层不被块级翻译）。**DSH 响应为 mock，不校验真实模型输出**。
 
 ---
 

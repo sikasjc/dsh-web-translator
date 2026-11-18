@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.15';
+  var EXT_VERSION = '1.17.16';
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -1099,6 +1099,18 @@
   }
 
   /**
+   * chrome 区域里的长正文块（站点会把整块正文面板包进无 role 的 <nav>，
+   * 如 cve.org 的 CNA 手风琴）：这类块超出行内文案上限后会在
+   * collectTextUnits 里整段丢弃，因此按正文块翻译，不再当导航标签处理。
+   */
+  function isLongFormChromeBlock(el, tag) {
+    if (tag !== 'DIV' && !BLOCK_TAGS.has(tag)) return false;
+    var rawLength = el.textContent ? el.textContent.length : 0;
+    if (rawLength <= MAX_INLINE_TEXT) return false;
+    return normalizeText(el.textContent || '').length > MAX_INLINE_TEXT;
+  }
+
+  /**
    * 抽取候选块：
    *  - 块级标签（文本 2..800）+ 行内 DIV/SPAN（文本 12..800）
    *  - 文本归一化后 2..800，必须是自然语言（含字母/汉字）
@@ -1172,7 +1184,12 @@
         byEl.set(el, placeholder);
       };
 
-      if (isEditableOrHidden(el) || isChromeRegion(el)) {
+      if (isEditableOrHidden(el)) {
+        registerPlaceholder();
+        return;
+      }
+      // chrome 区域默认只做行内译文；长正文（超出行内上限）必须按块翻译，否则会整段漏译
+      if (isChromeRegion(el) && !isLongFormChromeBlock(el, tag)) {
         registerPlaceholder();
         return;
       }

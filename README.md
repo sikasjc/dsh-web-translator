@@ -9,7 +9,10 @@ extension translates pages and looks words up in the browser.
 model service you configured in DSH — except the optional English-word dictionary lookup described
 under [Data and privacy](#data-and-privacy).
 
-> Current versions: **DSH plugin 1.14.4** · **browser extension 1.17.15**. Recent changes:
+> Current versions: **DSH plugin 1.14.4** · **browser extension 1.17.16**. Recent changes:
+> long-form body blocks that sites wrap in semantic chrome are now translated: e.g. cve.org wraps its
+> whole CVE record panel in `<nav class="message">`, and a chrome-region paragraph over the 240-char
+> inline cap used to be silently dropped — it is now translated as a body block (extension 1.17.16);
 > the reasoning-effort dropdown is now explicit-only: it lists the selected model's efforts and
 > defaults to the lowest one (`off` when declared), and switching models snaps to that model's
 > lowest effort — the old `auto` option is gone because it always resolved to the lowest effort
