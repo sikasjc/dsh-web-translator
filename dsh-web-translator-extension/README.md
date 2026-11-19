@@ -1,6 +1,6 @@
 # dsh翻译（dsh-web-translator）— Chrome / Edge MV3 扩展
 
-在任意真实网页上做**网页翻译**（原文 / 双语对照 / 仅译文；正文块级对照保留原文超链接与行内 `<code>` token + 导航/标签/页脚/按钮行内对照；grid/flex 父级长段落不漏译）、**右键翻译**、**划词 / 双击 / 自定义快捷键翻译（默认关闭）**、**右键图片翻译文字（跨平台本地 OCR 优先 + VLM 兜底、译文原位覆盖、字号自适应、可关闭、长驻进度、可选快速模式）**、**加入单词本**、
+在任意真实网页上做**网页翻译**（原文 / 双语对照 / 仅译文；正文块级对照保留原文超链接与行内 `<code>` token + 导航/标签/页脚/按钮行内对照；grid/flex 父级长段落不漏译；**未收录术语首次双显＋一键入库**）、**右键翻译**、**划词 / 双击 / 自定义快捷键翻译（默认关闭）**、**右键图片翻译文字（跨平台本地 OCR 优先 + VLM 兜底、译文原位覆盖、字号自适应、可关闭、长驻进度、可选快速模式）**、**加入单词本**、
 以及发音播放，并在浮窗/查词卡上展示 **token 消耗**（本页实时累加 + 今日累计）。翻译由本机 **DSH**（DeepSeek Harness）插件 `@local/dsh-web-translator` 提供，
 使用你在 DSH 中配置的模型（模型、推理强度、提示词都在 DSH 设置页里改），扩展本身**不直连模型、不保存密钥**。
 
@@ -21,6 +21,7 @@ dsh-web-translator-extension/
 ├── tools/verify.mjs     # 静态校验：语法/manifest/契约常量/禁止模式/文案 key/PNG 尺寸
 ├── tools/e2e-chrome.mjs # 可选 E2E：headless Chrome + mock DSH API 真实驱动翻译/模式/查词/还原
 ├── tools/debug-layout.mjs # 布局诊断：加载真实 URL，输出翻译前后布局指标与截图（排查站点排版问题）
+├── tools/qa-inline-layout.mjs # 布局 QA：并排译文换行时的回退（20px 正文短段落不再「译文上下没空格」）
 └── README.md            # 本文件
 ```
 
@@ -114,6 +115,7 @@ node tools/make-icons.mjs   # 生成 icons/icon{16,32,48,128}.png
 
 - **标题 / 标签 / 按钮 / 导航 / 页脚 / 元信息行**：译文**行内紧跟原文**显示（连续文本），随容器宽度自然折行；
 - **正文**（`p` / `blockquote` / `figcaption` / 表格单元格等）：译文另起一行放在原文**下方**；
+- **大字号短段落**：正文段落字号 ≥20px 且较短（≤80 字符）时，按「展示型短块」尝试原文 + 译文**并排**（标题那种效果）；插入后会实测两者位置，**一旦译文换行到下一行就退回「原文下方」的块级译文并恢复段间距**，避免 20px 正文的短段落被当成标题时出现「译文上下没有空格、和下一段粘在一起」（V1.19.0）；
 - 译文与原文**同样式**：复制 computed 字号/字重/字体/颜色/行高/对齐/背景色/圆角等（标题、标签 pill、链接按钮均与原文一致）；**窄容器 + `margin:auto` 居中的正文块**，译文盒子也保持同样宽度并水平居中；
 - **正文列表项**（`li`，正文区域且文本 ≥24 字符）：整项译文作为块级译文注入 `li` **内部**，不新增条目、不复制编号/子弹，保留缩进；导航/页脚/标签云等短 `li`（chrome 区域或 <24 字符）继续行内译文；折叠的 `<details>` 内容在展开后重新翻译；**结构化表格单元格**（`TD/TH` 内含 `dl/ul/ol/p/div/table` 等）不整格合并翻译，交给内部段落/链接逐条翻译（如 go.dev 的 TOC）；
 - **紧凑导航/控件**：header/nav 等 chrome 区域，以及 flex/grid 工具条、tab bar 里的短标签（GitHub 文件页的 Preview/Code 等），行内译文若被挤到换行，会自动改为宿主内的小字块级译注（0.8em，原文保持一行），避免拆词和横向溢出；React/异步布局在注入后才挤窄的，会在 150ms/600ms 复检后补上；未折行的短标签仍保持行内双语；
@@ -212,6 +214,17 @@ node tools/make-icons.mjs   # 生成 icons/icon{16,32,48,128}.png
 - **兼容性**：`turnId`（≤64 字符）、`stepIndex`（0~10000）、`mode`（≤16 字符）都是可选新增字段；旧版 Host 忽略它们时翻译/查词照常工作。
   扩展侧只在内存中生成，不落盘、不打日志，也不改变任何既有请求字段。
 
+### 4.9 未收录术语
+
+翻译时，术语库里没有、且**没有惯用译法**的词会由模型在同一个翻译请求里顺带给出「原文 ↔ 译文」候选（`suggestTerms`）。有标准译法的常见词（server/database/function/thread/port/feature flag 等）Host 会过滤掉；扩展每页最多展示 6 个候选：
+
+- 每页第一次出现：`上下文工程 (context engineering) ＋`；同页后续只显示 `上下文工程 ＋`（都带虚线和可点的「＋」）。
+- 点击候选弹「未收录术语」：原文只读、译文可编辑，按钮「以后显示译文 / 以后显示原文 / 忽略」。
+- 「以后显示译文」= `policy:translate` + 编辑后的译文；「以后显示原文」= `policy:keep`。两者都走 `POST /terms/quick-add`，自动创建/启用自定义库「我的术语」；当前页所有该词立即切换，以后页面直接按术语库策略输出，不再出现候选。之后可在 DSH 术语库页继续改策略/译文。
+- 「忽略」只影响当前页，不写 Host。
+- 当前页面已启用的术语库中已有的词不会出现候选；链接/代码标记内的词不标；模型没按约定返回 `terms` 时没有候选（静默降级）。
+- 需要 Host 1.16.0+；旧 Host 忽略 `suggestTerms`，页面正常翻译，只是没有候选。
+
 ---
 
 ## 5. 与 DSH 的接口（实际调用）
@@ -225,7 +238,8 @@ node tools/make-icons.mjs   # 生成 icons/icon{16,32,48,128}.png
 | `health` | GET | 翻译前预检 DSH 是否在线 |
 | `settings` | GET | 面板「当前模型」只读展示；目标语言兜底 |
 | `usage` | GET | `{days}` → `{usage:{today, totals, days, …}}`；浮窗「今日累计」。旧版插件返回 404 时扩展静默隐藏该行 |
-| `translate` | POST | `{texts, targetLanguage, client:'extension', sourceUrl, sourceTitle, turnId, stepIndex, mode}` → `{translations, provider, model, usage, …}` |
+| `translate` | POST | `{texts, targetLanguage, client:'extension', sourceUrl, sourceTitle, turnId, stepIndex, mode, suggestTerms:true}` → `{translations, termSuggestions?, provider, model, usage, …}`；`termSuggestions` 带 `[[TE…]]` 标记的候选 id → 术语信息 |
+| `terms/quick-add` | POST | `{source, policy:'keep'|'translate', target?}` → 写入/启用「我的术语」库；返回术语库 payload + `libraryName`/`entryId` |
 | `lookup` | POST | `{text, context, targetLanguage, client:'extension', sourceUrl, sourceTitle, turnId, stepIndex}` → `{result:{translation, dictionary?, …}, usage?}` |
 | `image-translate` | POST | `{image:{mediaType,data(base64)}, targetLanguage?, client:'extension', sourceUrl, sourceTitle, turnId, stepIndex, mode:'image'}` → `{result:{blocks:[{text,translation,bbox?}], provider, model, cached}, usage?}`；图片由 Host 用完即删 |
 | `wordbook/add` | POST | 加入单词本（word/translation/phonetic/audioUrl/context/sourceUrl/sourceTitle/targetLanguage/dictionary） |
@@ -332,11 +346,15 @@ node tools/debug-layout.mjs https://lobste.rs/
 
 # 5) 可选：headless Chrome E2E（需本机 Chrome ≥150；由 CDP 加载扩展并 mock DSH API，不发真实模型请求）
 node tools/e2e-chrome.mjs
+
+# 6) 可选：并排译文换行回退的布局 QA（stub DSH，检查 20px 正文短段落 / 标题 / 原文模式切换）
+node tools/qa-inline-layout.mjs
 ```
 
 预期：`node tools/verify.mjs` 输出 `ALL 229 STATIC CHECKS PASSED`；
 `file` 输出 4 个 `PNG image data, 16 x 16 / 32 x 32 / 48 x 48 / 128 x 128, 8-bit/color RGBA`；
-`node tools/e2e-chrome.mjs` 输出 `150/150 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）。
+`node tools/e2e-chrome.mjs` 输出 `150/150 E2E checks passed` 与 `E2E OK`（Chrome <150 会打印 SKIP 并退出 0）；
+`node tools/qa-inline-layout.mjs` 输出 `10/10 QA checks passed` 与 `INLINE LAYOUT QA OK`。
 E2E 覆盖：扩展加载（manifest/CSP/commands 合法性）、content 注入、翻译流水线报文、
 请求元数据（translate/lookup POST body 的 `client` / `sourceUrl` / `sourceTitle`）、
 轨迹身份（translate 的 `turnId`/`stepIndex`/`mode`、同一 run 懒加载批次共用 turnId、lookup 单步 turn）、
@@ -357,8 +375,10 @@ token 展示（本页消耗累计 / GET usage 的今日累计 / 完成状态行 
 - [ ] 预加载：选项页分别设「不预加载 / 半屏 / 一屏」→ 重新翻译，首屏翻译范围依次变大（一屏默认最多）；选项在下一次翻译生效。
 - [ ] 按块懒加载（选项）：切到「按块懒加载」后，滚动时新段落陆续翻译；缓慢滚动时对照请求日志，每次请求通常包含多段（约 3~5 段）而不是 1~3 段一请求（微批合并生效）。
 - [ ] 排版：标题/标签/按钮译文紧跟原文（可自然折行、样式一致）；正文译文在原文下方；`<br>` 等段落内换行不会把单词粘连或让译文异常断行。
+- [ ] 大字号正文短段落（20px 字号、≤80 字符）：放得下时原文与译文并排一行；放不下时译文另起一行、上下都有段间距，不与下一段粘连。
 - [ ] 导航/标签云/页脚/按钮/短链接也有译文（行内追加），且列表项数量、导航布局不发生复制或错位。
 - [ ] 三模式切换：原文（只剩原文）→ 双语对照（原文+译文）→ 仅译文（原文隐藏）；切换瞬时完成，**Network/DSH 侧无新翻译请求**。
+- [ ] 未收录术语：技术页面翻译后出现 `上下文工程 (context engineering) ＋`；点击改译文并选「以后显示译文」→ 当前页所有该词变新译文，DSH 术语库页出现「我的术语」库及该词条；重新翻译/换页后该词不再出现候选，直接按词条策略输出；「以后显示原文」同理；「忽略」只影响当前页。
 - [ ] 目标语言切到「日本語」→「重新翻译」：译文变为日文；切回简体中文再翻译。
 - [ ] 「停止」：翻译中途点击，未完成队列停止，已译内容保留，状态行提示已停止。
 - [ ] 「还原」：所有译文与 `data-dsh-it` 标记消失，页面结构与初始一致；DevTools 中无 `#dsh-it-host` 之外的残留（悬浮球 UI 保留属预期）。
@@ -413,6 +433,8 @@ token 展示（本页消耗累计 / GET usage 的今日累计 / 完成状态行 
 16. **Token 统计以 DSH 插件账本为准**：本页消耗是浮窗生命周期内的实时累计（iframe 内的划词/翻译不影响主文档计数）；今日累计是最近一次成功刷新（打开面板时，节流 60s）的快照，其它标签页/DSH 页面新增的消耗最多延迟 60s 反映。旧版插件没有 `/usage` 接口时只显示本页消耗。
 17. **微批合并有最长等待**：滚动触发的零散小批次最多等 `BATCH_COALESCE_MAX_WAIT_MS`（400ms）就会发送；因此「每次只滚一点点」时个别段落的首个译文可能比之前晚约 0.2~0.4s 出现，但整页请求数（=重复固定提示词）明显减少。首屏可见区域达到合并目标（约 3 段 / 400 字符）即立即发送，不额外等待。
 18. **RTL/竖排文字暂不专门适配**：阿拉伯语、希伯来语等从右向左排版页面暂不纳入质量范围（目前按普通 LTR 规则注入）。
+19. **未收录术语是模型辅助的 best-effort**：模型需要在 `terms` 里返回原文/译文对；不返回、返回的词不在源段落/译文里、或已被术语库覆盖时都不会出现候选。候选质量取决于模型，可能建议过宽/过窄的词；「忽略」目前只作用于当前页，换页后模型仍可能再次建议。术语库已有的词不做页面标注，直接按 keep/translate 策略翻译。
+20. **并排布局在窗口变窄后不重排**：原文 + 译文是否并排，在插入时和切回可见模式时各量一次；之后拖动窗口变窄导致换行不会自动退回块级译文（重新翻译或切换模式会校正）。
 
 ---
 

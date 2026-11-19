@@ -79,7 +79,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | **悬浮球**（左侧工具栏页面 + DSH 设置页 Tab） | 不展示悬浮球的域名列表：查看、移除、手动添加（扩展在面板/右键菜单添加，Host 持久化到 `ball-sites.json`） |
 | **术语库**（左侧工具栏页面 + DSH 设置页 Tab） | 多个内置术语包（Rust 编程、通用编程/网络）+ 自定义术语库；勾选启用哪些库；内置包只读，自定义库可新建/重命名/删除并增删词条（原文 → 固定译法 / 保留原文）；支持**导入 / 导出**（JSON / CSV，单库或全部）；数据来自 `GET /terms`，写操作走 `POST /terms/*` |
 
-> **术语库**：内置包 `rust`（trait/crate/impl 保留原文、uninhabited type→无值类型）与 `programming`（port→端口）只读，可在「术语库」页勾选停用；自定义库可新建多个，添加「原文 → 固定译法 / 保留原文」词条（每库最多 200 条）。内置包仅在技术/编程页面生效，自定义库对所有页面生效；规则进入提示词——内置规则的已知误译有确定性兜底，自定义词条的 keep 由占位符保护、固定译法由提示词约束；启用状态/词条改动会自然使旧翻译缓存失效。术语库页支持导出为 JSON/CSV、从 JSON/CSV 导入（导入会自动去重命名并默认启用，方便跨设备或团队共享）。
+> **术语库**：内置包 `rust`（trait/crate/impl 保留原文、uninhabited type→无值类型）与 `programming`（port→端口）只读，可在「术语库」页勾选停用；自定义库可新建多个，添加「原文 → 固定译法 / 保留原文」词条（每库最多 200 条）。内置包仅在技术/编程页面生效，自定义库对所有页面生效；规则进入提示词——内置规则的已知误译有确定性兜底，自定义词条的 keep 由占位符保护、固定译法由提示词约束；启用状态/词条改动会自然使旧翻译缓存失效。术语库页支持导出为 JSON/CSV、从 JSON/CSV 导入（导入会自动去重命名并默认启用，方便跨设备或团队共享）。扩展翻译时会带 `suggestTerms:true`：模型在同一个 JSON 里额外返回未收录术语候选，Host 先过滤掉当前页面已启用的库中已有的词条，再过滤中文目标下已有惯用译法的常见技术词，只把「没有稳定译法、需要取舍」的候选（产品/API 名、缩写、新行话；每段 ≤2、每批 ≤6）返回给扩展（扩展每页再限 6 个）；用户点候选可改译文并选择「以后显示译文 / 以后显示原文」，Host 通过 `POST /terms/quick-add` 自动写入并启用「我的术语」库（`translate` + target 或 `keep`），以后页面直接按术语库策略输出。
 > **翻译结果缓存（v1.7.0 起持久化）**：相同原文 / 提示词 / 模型再次翻译时直接复用译文（0 token）；缓存写本机 `<dataDir>/cache.json`，保留 7 天、最多 3000 批（约 8MB），跨 DSH 重启有效；「概览」页底部可「清空翻译结果缓存」；缓存损坏/读写失败只告警，不影响翻译。
 > Token 统计来自模型服务返回的真实 usage（输入 / 输出 / 缓存读 / 缓存写四项），按本地日期聚合、保留最近 90 天与最近 500 条事件；缓存命中的请求 tokens 记 0 但仍计数。插件账本与 DSH 原生统计口径一致。
 > **复用 DSH 原生轨迹**：扩展为每次翻译动作/查词生成 `turnId`，Host 用它在本地创建一条 DSH 会话（标题「翻译 · 页面标题 / 站点」，会话 id 形如 `translation-<turnId>`），每个模型请求写成该会话的一轮原生对话（`user/message` + `assistant/message`，含 usage）。轨迹页的「打开 DSH 轨迹」按钮通过 `uiWorkspace.openSession(sessionId)` 打开该会话，即可使用 DSH 原生「对话 / 轨迹 / 统计」。会话统一归入插件自建的 DSH workspace **「dsh翻译记录」**（目录 `$DSH_HOME/immersive-translate/conversations/`，历史会话首次启动时自动回填；侧边栏直接可见）；空闲 15 分钟后释放 agent，再次打开会自动从持久化恢复。页面原文/译文只写入**本机** DSH 会话日志，不会被额外发送。
@@ -154,9 +154,10 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | POST | `/terms/entries/add` `{libraryId, source, policy, target?}` | 添加词条（`policy`: `keep`/`translate`，最多 200 条/库） |
 | POST | `/terms/entries/update` `{libraryId, entryId, source?, policy?, target?}` | 修改词条 |
 | POST | `/terms/entries/remove` `{libraryId, entryId}` | 删除词条 |
+| POST | `/terms/quick-add` `{source, policy, target?}` | 扩展未收录术语入库：自动创建/启用「我的术语」库，按 source 更新或新增词条（`translate` 需要 `target`，`keep` 忽略 target） |
 | POST | `/terms/import` `{libraries:[{name, terms:[{source, policy, target?}]}]}` | 批量导入自定义术语库（原子：任一非法整体拒绝；重名自动加序号（含内置包名）；导入库默认启用；单次请求体 ≤ 8 MB；返回 `imported` 列表） |
 | DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 归档隐藏「dsh翻译记录」会话 |
-| POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?}`，响应含 `usage` 四字段与 `cached` |
+| POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?, suggestTerms?}`，响应含 `usage` 四字段与 `cached`；`suggestTerms:true` 时模型额外返回 `terms`，Host 过滤已收录词条后返回带 `[[TE…]]` 标记的 `translations` 与 `termSuggestions` |
 | POST | `/lookup` | 查词/查句 + 英文词典信息，响应含 `usage`；接受相同可选元数据 |
 | POST | `/image-translate` | 图片文字 OCR + 翻译 `{image:{mediaType,data}, targetLanguage?, ...元数据}` → `{result:{blocks:[{text,translation,bbox?}], provider, model, cached}, usage}`；图片用完即删 |
 | GET | `/usage/turns?limit=&kind=&status=&before=` | **Turn 聚合**分页（`kind`: `translate`/`lookup`/`error`；`before` 为上一页 turn id；返回 turns + steps） |
@@ -187,7 +188,8 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
   - `usage.json`：Token 账本与最近 500 条事件（可在「轨迹」页清空）；
   - `cache.json`：翻译结果缓存（原文批次 → 译文，7 天 / 3000 批，可在「概览」页清空）；
   - `ball-sites.json`：不展示悬浮球的域名列表；
-  - `term-libraries.json`：自定义术语库与启用状态（`active`）；
+  - `term-libraries.json`：自定义术语库、启用状态（`active`）与 quick-add 库 id（`quickLibraryId`，重命名后仍沿用）；
+  - `term-suggest-cache.json`：未收录术语建议缓存（按翻译批次缓存模型给出的候选，7 天 / 3000 批，`DELETE /cache` 一并清空）；
   - `conversations/`：翻译会话的 workspace 目录（会话日志由 DSH 自己持久化）。
 - 图片翻译只在用户右键图片时发生：默认先在本机用跨平台 Tesseract WASM OCR，只有文字进入翻译链路；本地 OCR 不可用/置信度低或用户显式选择图片模型时，才把图片当前可见区域发给所选视觉模型。Host 在请求结束（成功或失败）后尽力删除临时附件与请求变体缓存；图片不写入 DSH 会话记录、不写入插件翻译缓存，只有 OCR 文本/译文进入本地结果缓存；
 - 扩展只保存自己的 UI 偏好（`chrome.storage.local`），不保存页面内容；

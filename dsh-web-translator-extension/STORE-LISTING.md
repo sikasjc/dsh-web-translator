@@ -1,6 +1,6 @@
 # Chrome Web Store / Edge Add-ons 发布材料
 
-扩展版本：以 `manifest.json` 为准（当前 1.15.0）。上传包：`node tools/package-store.mjs` → `dist/dsh-translator-<version>.zip`（ZIP 根目录含 `manifest.json`）。
+扩展版本：以 `manifest.json` 为准（当前 1.19.0）。上传包：`node tools/package-store.mjs` → `dist/dsh-translator-<version>.zip`（ZIP 根目录含 `manifest.json`）。
 
 ## 1. 账号与成本
 

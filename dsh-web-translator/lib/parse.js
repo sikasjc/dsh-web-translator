@@ -95,13 +95,27 @@ export function plainTextTranslation(raw) {
 }
 
 /**
+ * Extract the optional raw `terms` array from one parsed JSON value.
+ * Shape validation happens in term-suggest.js; this only keeps arrays.
+ * @param {unknown} value - parsed JSON.
+ * @returns {unknown[]}
+ */
+function termsFromJsonValue(value) {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.terms)) {
+    return value.terms;
+  }
+  return [];
+}
+
+/**
  * Parse one model reply into a translation array (DESIGN §4.3).
  * @param {unknown} raw - model output text.
- * @param {{expectedCount?: number}} [options] - number of segments in the batch.
- * @returns {{ok: true, translations: string[], source: 'json'|'array'|'plain'}
+ * @param {{expectedCount?: number, withTerms?: boolean}} [options] - number of
+ *   segments in the batch; withTerms also returns the raw `terms` array.
+ * @returns {{ok: true, translations: string[], source: 'json'|'array'|'plain', terms?: unknown[]}
  *   | {ok: false, reason: string}}
  */
-export function parseTranslations(raw, { expectedCount } = {}) {
+export function parseTranslations(raw, { expectedCount, withTerms = false } = {}) {
   const count = Number.isInteger(expectedCount) && expectedCount > 0 ? expectedCount : null;
   const text = String(raw ?? '').trim();
   if (text.length === 0) return { ok: false, reason: 'empty model output' };
@@ -128,7 +142,9 @@ export function parseTranslations(raw, { expectedCount } = {}) {
     sawCandidate = true;
     const translations = translationsFromJsonValue(candidate, count);
     if (translations !== null) {
-      return { ok: true, translations, source: Array.isArray(candidate) ? 'array' : 'json' };
+      const result = { ok: true, translations, source: Array.isArray(candidate) ? 'array' : 'json' };
+      if (withTerms) result.terms = termsFromJsonValue(candidate);
+      return result;
     }
   }
   if (sawCandidate && count === 1) {
@@ -138,7 +154,9 @@ export function parseTranslations(raw, { expectedCount } = {}) {
 
   if (count === 1) {
     const plain = plainTextTranslation(unfenced);
-    if (plain !== null) return { ok: true, translations: [plain], source: 'plain' };
+    if (plain !== null) {
+      return { ok: true, translations: [plain], source: 'plain', ...(withTerms ? { terms: [] } : {}) };
+    }
   }
   return { ok: false, reason: 'model output does not match the translation JSON contract' };
 }

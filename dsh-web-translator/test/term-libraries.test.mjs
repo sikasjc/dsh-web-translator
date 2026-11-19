@@ -212,3 +212,65 @@ test('malformed persisted data is ignored and normalized when read', async (t) =
   assert.deepEqual(custom[1].terms.map((entry) => entry.target), ['Y']);
   assert.deepEqual(custom.map((library) => library.enabled), [false, true], 'unknown active ids are ignored');
 });
+
+test('quickAdd creates and enables the 我的术语 library, updates duplicates and enforces caps', async (t) => {
+  const { service } = await setupService(t);
+  const added = await service.quickAdd({ source: 'deadlock', policy: 'translate', target: '死锁' });
+  assert.equal(added.created, true);
+  assert.equal(added.updated, false);
+  assert.equal(added.libraryName, '我的术语');
+  const library = added.libraries.find((item) => item.name === '我的术语');
+  assert.ok(library);
+  assert.equal(library.enabled, true);
+  assert.equal(library.terms[0].source, 'deadlock');
+  assert.equal(library.terms[0].target, '死锁');
+
+  const updated = await service.quickAdd({ source: 'Deadlock', policy: 'keep' });
+  assert.equal(updated.updated, true);
+  assert.equal(updated.created, false);
+  const keptLibrary = updated.libraries.find((item) => item.name === '我的术语');
+  assert.equal(keptLibrary.terms.length, 1);
+  assert.equal(keptLibrary.terms[0].policy, 'keep');
+  assert.equal(keptLibrary.terms[0].target, '');
+
+  await service.setEnabled({ id: keptLibrary.id, enabled: false });
+  const reenabled = await service.quickAdd({ source: 'deadlock', policy: 'translate', target: '死锁' });
+  assert.equal(reenabled.libraries.find((item) => item.id === keptLibrary.id).enabled, true, 'quickAdd re-enables the library');
+
+  const capped = await setupService(t);
+  for (let index = 0; index < 20; index += 1) {
+    await capped.service.addLibrary({ name: `库 ${index}` });
+  }
+  await assert.rejects(
+    () => capped.service.quickAdd({ source: 'x', policy: 'keep' }),
+    /at most 20 custom libraries/,
+  );
+
+  const full = await setupService(t);
+  const fullLibrary = await full.service.addLibrary({ name: '我的术语' });
+  for (let index = 0; index < 200; index += 1) {
+    await full.service.addEntry({ libraryId: fullLibrary.id, source: `term ${index}`, policy: 'keep' });
+  }
+  await assert.rejects(
+    () => full.service.quickAdd({ source: 'one more', policy: 'keep' }),
+    /at most 200 terms/,
+  );
+});
+
+test('quickAdd follows the saved quick library across renames and recreates it after deletion', async (t) => {
+  const { service } = await setupService(t);
+  const first = await service.quickAdd({ source: 'deadlock', policy: 'translate', target: '死锁' });
+  const libraryId = first.libraryId;
+  const renamed = await service.renameLibrary({ id: libraryId, name: '项目术语' });
+  assert.equal(renamed.libraries.find((library) => library.id === libraryId).name, '项目术语');
+
+  const second = await service.quickAdd({ source: 'feature flag', policy: 'keep' });
+  assert.equal(second.libraryId, libraryId, 'rename does not orphan the quick-add library');
+  assert.equal(second.libraryName, '项目术语');
+  assert.equal(second.libraries.find((library) => library.id === libraryId).terms.length, 2);
+
+  await service.removeLibrary({ id: libraryId });
+  const third = await service.quickAdd({ source: 'lock', policy: 'keep' });
+  assert.notEqual(third.libraryId, libraryId);
+  assert.equal(third.libraryName, '我的术语');
+});

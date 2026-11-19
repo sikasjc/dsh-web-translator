@@ -95,6 +95,7 @@ const ALLOWED_ROUTES = Object.freeze({
   'ball-sites': 'GET',
   'ball-sites/add': 'POST',
   'ball-sites/remove': 'POST',
+  'terms/quick-add': 'POST',
   translate: 'POST',
   lookup: 'POST',
   'image-translate': 'POST',

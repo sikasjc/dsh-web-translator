@@ -252,7 +252,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 
 ### 5.7.3 术语库（`GET /terms` / `POST /terms/*`）
 
-术语按**库**组织：内置包定义在 `lib/terms.js`（`rust` / `programming`，只读、不可改名/删除/增删词条，但可停用），自定义库由 `lib/term-libraries.js` 持久化到 `term-libraries.json`（`{version:1, active:string[], libraries:[{id,name,createdAt,updatedAt,terms:[{id,source,policy:'keep'|'translate',target,createdAt,updatedAt}]}]}`；文件不存在时默认启用全部内置包，新建自定义库默认启用）。
+术语按**库**组织：内置包定义在 `lib/terms.js`（`rust` / `programming`，只读、不可改名/删除/增删词条，但可停用），自定义库由 `lib/term-libraries.js` 持久化到 `term-libraries.json`（`{version:1, active:string[], quickLibraryId?:string, libraries:[{id,name,createdAt,updatedAt,terms:[{id,source,policy:'keep'|'translate',target,createdAt,updatedAt}]}]}`；`quickLibraryId` 记录未收录术语 quick-add 使用的库，重命名后仍沿用；文件不存在时默认启用全部内置包，新建自定义库默认启用）。
 
 - `GET /terms` → `{libraries:[{id,name,description,builtin,enabled,updatedAt,terms:[{id,source,policy,target,badRenderings}]}], limits:{libraries:20,termsPerLibrary:200,nameChars:40,sourceChars:120,targetChars:120}, appliesTo:{styles:['auto','programming'],endpoints:['translate','lookup'],builtinScope:'technical-pages',customScope:'always'}}`。
 - 写操作（JSON body；均返回与 GET 相同 payload + 动作 id，供客户端整体替换）：`POST /terms/libraries/add {name}`、`/terms/libraries/update {id,name}`、`/terms/libraries/remove {id}`、`/terms/libraries/toggle {id,enabled}`、`/terms/entries/add {libraryId,source,policy,target?}`、`/terms/entries/update {libraryId,entryId,source?,policy?,target?}`、`/terms/entries/remove {libraryId,entryId}`。校验失败 400 `BAD_REQUEST`，库/词条不存在 404 `NOT_FOUND`，内置包不可编辑。
@@ -260,6 +260,17 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - 生效范围：内置包仅在技术页面生效（风格 `programming`，或 `auto` 且 `looksLikeTechnicalContent()` 命中）；自定义库对所有页面生效（用户显式选择）。翻译/查词时 `resolveTerminology()` 读取启用库，`buildTerminologyRules({builtin,custom}, {technical})` 生成三样东西：`terminologyHint`（注入 `pageContext`，供 `prompts.js` 渲染）、keep 词的占位符 token（`[[DSH_KEEP_*]]`，返回后还原）、已知 `badRenderings` 的确定性兜底；`target` 以「类型」结尾时整词替换 `bad(的)?类型`，避免出现「无值类型类型」这类名词重复。
 - 缓存：`terminologyHint` 进入渲染后的 prompts、keep token 进入 segments，启用/停用库或改动词条会自然改变缓存 key，旧缓存不会串用。查词链路先还原 keep token 再做纯文本解析（`plainTextTranslation()` 会把以 `[` 开头的回答当作 JSON 拒绝），否则以受保护词开头的查词答案会被误判成 `INVALID_MODEL_OUTPUT`。
 - 自定义词条匹配：`compileTermPattern()` 对 ASCII 词/短语加词边界并容忍复数 `s`，短语内空白匹配任意空白串；CJK/含标点词条按字面匹配（大小写不敏感）。
+
+### 5.7.4 未收录术语建议（`suggestTerms` / `POST /terms/quick-add`）
+
+术语库之外的新词无法仅靠规则从译文里反查对应关系，因此由模型在翻译时顺带给出候选：
+
+- 扩展请求 `/translate` 时带 `suggestTerms:true`。Host 在 system prompt 末尾追加 `TERM_SUGGESTION_NOTE`（`lib/term-suggest.js`）：要求模型在同一个 JSON 对象里额外返回 `{"terms":[{"segment":0,"source":"context engineering","target":"上下文工程"}]}`，并明确 `terms` 是唯一允许的额外 key、覆盖「no extra keys」的旧约束；不返回时退化为无候选。
+- `parseTranslations(..., {withTerms:true})` 读取原始 `terms` 数组；`normalizeTermSuggestions()` 校验 segment/source/target、限制每段 2 条/整批 6 条/120 字符、去重、要求 source 出现在源段落、target（或原文）出现在译文；先用当前页面生效的术语条目（`buildTerminologyRules().entries` 的 pattern 与 source 标签）过滤已收录词条，再用 `isConventionalTerm()` 在中文目标下过滤已有惯用译法的常见技术词（server/database/function/thread/port/feature flag/deadlock 等），只保留没有稳定译法、需要读者取舍的术语（产品/API 名、缩写、新行话）。扩展端还有每页 6 个候选的页面级预算。
+- `markUnknownTerms()` 在译文里把候选 target（模型没翻时退化为 source）包成 `[[TE1]]…[[/TE1]]`，跳过链接/代码标记、重叠范围和每来源 20 处上限；响应为 `{translations, termSuggestions:[{id,key:'unknown:<lower>',source,target,form,segment}]}`。
+- 建议随翻译批次缓存到独立文件 `term-suggest-cache.json`（`createPersistentBatchCache`，key 为翻译批次 key，value 为单元素 JSON 字符串数组；`DELETE /cache` 一并清空）。`suggestTerms` 的 system prompt 不同，因此缓存 key 与普通翻译不同；`terms` 的额外输出 token 计入本次翻译 usage。usage 预览、DSH 会话与轨迹里会用 `stripTermAnnotationMarkers()` 去掉标记。
+- 扩展渲染候选：每页第一次出现显示 `译文 (原文)＋`，同页后续只显示译文但保留虚线和「＋」；点击弹「未收录术语」菜单，原文只读、译文可编辑，按钮「以后显示译文 / 以后显示原文 / 忽略」。保存走 `POST /terms/quick-add {source, policy, target?}`：自动创建并启用自定义库「我的术语」，同 source 词条更新而不是重复新增；`policy:translate` 需要 target，`policy:keep` 不需要。当前页所有该候选立即替换成选择的形式；后续页面由术语库策略直接输出，不再标注已知术语。忽略只影响当前页（内存 `ignoredTerms`）。
+- 限制：「我的术语」库达到 20 个自定义库或单库 200 条时返回 400；模型未按约定返回 `terms` 时没有候选；链接/代码标记内的候选不标注。
 
 ### 5.8 单词本
 
@@ -360,7 +371,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - **结构化表格单元格（V1.14.1）**：`TD/TH/CAPTION` 若内部含带文字的 `dl/ul/ol/p/div/table/figure/blockquote/section/article/nav/header/footer` 等块级结构，则登记占位、不再整格合并翻译；内部段落/链接按各自粒度翻译（go.dev/doc/asm 的目录曾因整格 `textOf` 拼接成一大段，且内部链接被跳过）。
 - **排版规则（V1.5，可读性优先）**：
   1. **标题/标签/按钮/导航/页脚/元信息行**：行内译文**紧跟原文**（同一文本流，随容器自然折行）；译文 span 放进原 label/链接/按钮/标签元素内部，并从该元素复制 computed 排版/颜色/背景/圆角（`font-family/font-size/font-weight/line-height/letter-spacing/color/background-color/border-radius` 等），原文文字节点包 `data-dsh-it="src-inline"` 供「仅译文」隐藏。
-  2. **正文**：`p`/`blockquote`/`figcaption`/表格单元格等 → 块级译文另起一行放在原文下方，复制排版与背景色/圆角；**正文列表项 `li`**（非 chrome 区域且文本 ≥24 字符）→ 整项译文作为块级节点 append 到该 `li` 内部（不新增条目、不复制编号/子弹，保留缩进）；`dt`/`dd`、导航/标签云短 `li` 保持行内；`h1~h6` 与字号 ≥20px 的展示型短块按行内处理。
+  2. **正文**：`p`/`blockquote`/`figcaption`/表格单元格等 → 块级译文另起一行放在原文下方，复制排版与背景色/圆角；**正文列表项 `li`**（非 chrome 区域且文本 ≥24 字符）→ 整项译文作为块级节点 append 到该 `li` 内部（不新增条目、不复制编号/子弹，保留缩进）；`dt`/`dd`、导航/标签云短 `li` 保持行内；`h1~h6` 与字号 ≥20px 的展示型短块按行内处理。**并排译文换行回退（V1.19.0）**：并排布局插入后实测原文与译文的 `getBoundingClientRect`，译文一旦换行到下一行（20px 正文的短段落最容易触发）就改回 `below` 并补上块级段间距、同时移除原文的 `data-dsh-it-layout="inline"`，恢复原文段落外边距；处于「原文」模式时译文隐藏、量不到位置，切回双语/仅译文时由 `demoteWrappedInlineNodes` 补判一次。
   3. **布局保护**：`flex`/`grid` 容器本身与父级为 flex/grid 的非内嵌块不插块级兄弟（交给行内）；折叠 `<details>` 内容暂不翻译；被跳过的块级候选登记“占位”参与嵌套去重，防止其外层包裹被误当叶子块翻译。
 - **注入样式**：块级译文节点从原文 `getComputedStyle` 复制排版属性；若原文是「窄容器 + 左右 auto margin」的水平居中块，`copyHorizontalAlignment` 会把译文盒也设为 `margin-left/right:auto` 并复制 `width/max-width`，避免只复制 `text-align:center` 导致译文盒靠左；行内译文从宿主元素复制排版/颜色/背景等 computed 样式；模式切换只改 `data-dsh-it-mode`，不重新请求。
 - 还原：移除全部注入节点/属性/observer/UI，恢复原 DOM。

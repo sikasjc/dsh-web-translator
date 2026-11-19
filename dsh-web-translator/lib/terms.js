@@ -148,6 +148,7 @@ function makeToken(value, tokens) {
  */
 function customLibraryToEngine(library) {
   if (!library || typeof library !== 'object') return null;
+  const libraryId = typeof library.id === 'string' ? library.id : '';
   const terms = [];
   for (const term of Array.isArray(library.terms) ? library.terms : []) {
     if (!term || typeof term !== 'object' || typeof term.source !== 'string') continue;
@@ -156,18 +157,22 @@ function customLibraryToEngine(library) {
     const policy = term.policy === 'translate' ? 'translate' : 'keep';
     const target = policy === 'translate' && typeof term.target === 'string' ? term.target.trim() : '';
     if (policy === 'translate' && target.length === 0) continue;
+    const entryId = typeof term.id === 'string' ? term.id : '';
     terms.push({
-      id: typeof term.id === 'string' ? term.id : '',
+      id: entryId,
       source: term.source,
       pattern,
       policy,
       target,
       badRenderings: [],
       protect: policy === 'keep',
+      libraryId,
+      entryId,
+      key: `${libraryId}:${entryId}`,
     });
   }
   return {
-    id: typeof library.id === 'string' ? library.id : '',
+    id: libraryId,
     name: typeof library.name === 'string' ? library.name : '',
     builtin: false,
     terms,
@@ -202,10 +207,13 @@ export function buildTerminologyRules(libraries = {}, { technical = false } = {}
   const keepRules = [];
   const fallbackRules = [];
   const fragments = { compact: [], full: [] };
+  const entries = [];
   let usesBuiltin = false;
 
   for (const library of engineLibraries) {
     if (library.builtin) usesBuiltin = true;
+    const libraryId = typeof library.id === 'string' ? library.id : '';
+    const builtin = library.builtin === true;
     if (library.hint) {
       if (typeof library.hint.compact === 'string' && library.hint.compact.length > 0) {
         fragments.compact.push(library.hint.compact);
@@ -217,6 +225,20 @@ export function buildTerminologyRules(libraries = {}, { technical = false } = {}
     const customFragments = { compact: [], full: [] };
     for (const term of Array.isArray(library.terms) ? library.terms : []) {
       const badRenderings = Array.isArray(term.badRenderings) ? term.badRenderings : [];
+      const entryId = typeof term.id === 'string' ? term.id : '';
+      const fixedTarget = term.policy === 'translate' && typeof term.target === 'string' ? term.target : '';
+      if (term.pattern instanceof RegExp) {
+        entries.push({
+          key: `${libraryId}:${entryId}`,
+          libraryId,
+          entryId,
+          builtin,
+          source: typeof term.source === 'string' ? term.source : '',
+          target: fixedTarget,
+          policy: term.policy === 'translate' ? 'translate' : 'keep',
+          pattern: term.pattern,
+        });
+      }
       if (term.policy === 'keep') {
         if (term.protect === true && term.pattern instanceof RegExp) keepRules.push(term);
         if (badRenderings.length > 0 && term.pattern instanceof RegExp) {
@@ -313,5 +335,13 @@ export function buildTerminologyRules(libraries = {}, { technical = false } = {}
     return result;
   }
 
-  return { hint, protect, restore, applyFallback };
+  return { hint, protect, restore, applyFallback, entries };
+}
+
+/** Remove `[[TE1]]...[[/TE1]]` markers, keeping the text inside them. */
+export function stripTermAnnotationMarkers(text) {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(/\[\[\s*TE\d+\s*\]\]/g, '')
+    .replace(/\[\[\s*\/\s*TE\d+\s*\]\]/g, '');
 }

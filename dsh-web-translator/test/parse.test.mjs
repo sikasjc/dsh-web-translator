@@ -80,3 +80,21 @@ test('multi-segment batches never use the plain fallback', () => {
   const result = parseTranslations('just some prose', { expectedCount: 2 });
   assert.equal(result.ok, false);
 });
+
+test('withTerms exposes the raw terms array without changing the translation contract', () => {
+  const raw = '{"translations":["配置端口"],"terms":[{"segment":0,"source":"port","target":"端口"}]}';
+  const plain = parseTranslations(raw, { expectedCount: 1 });
+  assert.equal(plain.ok, true);
+  assert.deepEqual(plain.translations, ['配置端口']);
+  assert.equal(Object.hasOwn(plain, 'terms'), false);
+
+  const withTerms = parseTranslations(raw, { expectedCount: 1, withTerms: true });
+  assert.deepEqual(withTerms.terms, [{ segment: 0, source: 'port', target: '端口' }]);
+
+  const fenced = parseTranslations('Here:\n```json\n' + raw + '\n```', { expectedCount: 1, withTerms: true });
+  assert.deepEqual(fenced.terms, [{ segment: 0, source: 'port', target: '端口' }]);
+
+  assert.deepEqual(parseTranslations('["你好"]', { expectedCount: 1, withTerms: true }).terms, []);
+  assert.deepEqual(parseTranslations('{"translations":["你好"],"terms":"nope"}', { expectedCount: 1, withTerms: true }).terms, []);
+  assert.deepEqual(parseTranslations('{"translation":"你好"}', { expectedCount: 1, withTerms: true }).terms, []);
+});

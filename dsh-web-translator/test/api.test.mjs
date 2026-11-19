@@ -332,6 +332,7 @@ test('translate validates text limits and language overrides', async (t) => {
   await assertApiError(api.translate({ texts: Array.from({ length: 51 }, () => 'x') }), 'BAD_REQUEST');
   await assertApiError(api.translate({ texts: ['x'.repeat(8001)] }), 'BAD_REQUEST');
   await assertApiError(api.translate({ texts: ['x'], targetLanguage: 'xx-YY' }), 'BAD_REQUEST');
+  await assertApiError(api.translate({ texts: ['x'], suggestTerms: 'yes' }), 'BAD_REQUEST');
   await assertApiError(api.translate({}), 'BAD_REQUEST');
 });
 
@@ -516,6 +517,81 @@ test('enabled custom libraries change prompts and protection; disabling restores
   assert.equal(prompts[1].includes('feature flag'), true, 'the segment itself still contains the source text');
   assert.equal(prompts[1].includes('keep "feature flag" in English'), false);
   assert.equal(prompts[1].includes('translate "behavior tree"'), false);
+});
+
+test('suggestTerms returns unknown candidates, caches the suggestion pass and strips markers from previews', async (t) => {
+  const stream = () => textStream(JSON.stringify({
+    translations: ['上下文工程流程在服务器上'],
+    terms: [
+      { segment: 0, source: 'context engineering', target: '上下文工程' },
+      { segment: 0, source: 'server', target: '服务器' },
+    ],
+  }));
+  const { api, llm } = await setupApi(t, { streams: [stream] });
+  const first = await api.translate({
+    texts: ['A context engineering workflow on the server'],
+    suggestTerms: true,
+    sourceUrl: 'https://example.com/blog',
+  });
+  assert.equal(first.translations[0], '[[TE1]]上下文工程[[/TE1]]流程在服务器上');
+  assert.equal(first.termSuggestions.length, 1, 'the conventional term server is filtered out');
+  assert.equal(first.termSuggestions[0].key, 'unknown:context engineering');
+  assert.equal(first.termSuggestions[0].form, 'target');
+  assert.ok(llm.state.streamCalls[0].system.includes('Terminology discovery'), 'the suggestion note joins the system prompt');
+
+  const { events } = await api.listUsageEvents({ limit: 10 });
+  const recorded = events.find((item) => item.sourceUrl === 'https://example.com/blog');
+  assert.ok(recorded, 'the translate usage event is recorded');
+  assert.equal(recorded.outputPreview.includes('[[TE'), false, 'candidate markers stay out of usage previews');
+
+  const second = await api.translate({
+    texts: ['A context engineering workflow on the server'],
+    suggestTerms: true,
+    sourceUrl: 'https://example.com/blog',
+  });
+  assert.equal(second.cached, true, 'the translation cache is reused');
+  assert.equal(second.termSuggestions.length, 1, 'suggestions are cached alongside the translation');
+  assert.equal(second.termSuggestions[0].target, '上下文工程');
+});
+
+test('unknown candidates skip library terms and quick-add stores the choice under 我的术语', async (t) => {
+  const stream = () => textStream(JSON.stringify({
+    translations: ['上下文工程流程和氛围编程'],
+    terms: [
+      { segment: 0, source: 'context engineering', target: '上下文工程' },
+      { segment: 0, source: 'vibe coding', target: '氛围编程' },
+    ],
+  }));
+  const { api } = await setupApi(t, { streams: [stream] });
+  const created = await api.addTermLibrary({ name: '项目术语' });
+  await api.addTermEntry({ libraryId: created.id, source: 'vibe coding', policy: 'translate', target: '氛围编程' });
+
+  const result = await api.translate({
+    texts: ['A context engineering workflow and vibe coding'],
+    suggestTerms: true,
+    sourceUrl: 'https://example.com/blog',
+  });
+  assert.equal(result.termSuggestions.length, 1);
+  assert.equal(result.termSuggestions[0].key, 'unknown:context engineering');
+
+  const added = await api.quickAddTerm({ source: 'context engineering', policy: 'translate', target: '上下文工程' });
+  assert.equal(added.libraryName, '我的术语');
+  assert.equal(added.created, true);
+  assert.equal(added.updated, false);
+  const library = added.libraries.find((item) => item.name === '我的术语');
+  assert.ok(library);
+  assert.equal(library.enabled, true, 'the quick-add library is enabled so the term takes effect');
+  const entry = library.terms.find((item) => item.source === 'context engineering');
+  assert.equal(entry.policy, 'translate');
+  assert.equal(entry.target, '上下文工程');
+
+  const updated = await api.quickAddTerm({ source: 'Context Engineering', policy: 'keep' });
+  assert.equal(updated.updated, true);
+  assert.equal(updated.created, false);
+  const updatedLibrary = updated.libraries.find((item) => item.name === '我的术语');
+  assert.equal(updatedLibrary.terms.length, 1, 'the same source is updated rather than duplicated');
+  assert.equal(updatedLibrary.terms[0].policy, 'keep');
+  assert.equal(updatedLibrary.terms[0].target, '');
 });
 
 test('disabling a built-in pack removes its prompt hints and deterministic fallbacks', async (t) => {

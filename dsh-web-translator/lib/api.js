@@ -36,6 +36,7 @@ import {
 } from './settings.js';
 import { createJsonStore, resolveDataDir, resolveDshHome } from './store.js';
 import { createTermLibrariesService, TERM_LIBRARIES_VERSION } from './term-libraries.js';
+import { stripTermAnnotationMarkers } from './terms.js';
 import { createTranslateService } from './translate.js';
 import { recognizeImage as recognizeLocalImage } from './local-ocr.js';
 import { createUsageService } from './usage.js';
@@ -368,7 +369,8 @@ function successUsageEvent(kind, body, meta, result, startedAt) {
     event.cached = result?.cached === true;
     const translations = Array.isArray(result?.translations) ? result.translations : [];
     const first = translations.find((value) => typeof value === 'string' && value.length > 0);
-    const preview = previewText(first, LIMITS.outputPreviewChars);
+    // 术语候选标记只服务于扩展渲染，不能进 usage 预览/DSH 轨迹。
+    const preview = previewText(stripTermAnnotationMarkers(first), LIMITS.outputPreviewChars);
     if (preview !== undefined) event.outputPreview = preview;
   }
   event.retries = toCount(result?.retries);
@@ -457,7 +459,9 @@ function conversationRound(kind, body, meta, result, error, selection, ok) {
     if (kind === 'lookup') {
       round.translation = isPlainObject(result.result) ? result.result.translation : undefined;
     } else {
-      round.translations = Array.isArray(result.translations) ? result.translations : [];
+      round.translations = Array.isArray(result.translations)
+        ? result.translations.map((value) => (typeof value === 'string' ? stripTermAnnotationMarkers(value) : value))
+        : [];
     }
   } else {
     round.provider = selection?.provider;
@@ -600,6 +604,10 @@ export function createApi({
     defaultValue: () => ({ v: PERSISTENT_CACHE_VERSION, savedAt: 0, entries: {} }),
     logger: log,
   });
+  const suggestionCacheStore = createJsonStore(join(directory, 'term-suggest-cache.json'), {
+    defaultValue: () => ({ v: PERSISTENT_CACHE_VERSION, savedAt: 0, entries: {} }),
+    logger: log,
+  });
   const catalog = createCatalogService({ ctx, logger: log, now: clock });
   const settingsService = createSettingsService({ store: settingsStore, logger: log, now: clock });
   /** 是否记录翻译历史（token 统计/轨迹 + DSH 原生会话）；由 settings.recordHistory 控制。 */
@@ -631,6 +639,14 @@ export function createApi({
   // Load the previous process' cache in the background; requests await
   // `cache.whenReady()` so a restart can hit disk without delaying startup.
   void cache.hydrate();
+  const suggestionCache = createPersistentBatchCache({
+    store: suggestionCacheStore,
+    max: LIMITS.translationCacheEntries,
+    ttlMs: LIMITS.translationCacheTtlMs,
+    now: clock,
+    logger: log,
+  });
+  void suggestionCache.hydrate();
   const dictionary = createDictionaryLookup({
     fetchImpl,
     logger: log,
@@ -658,6 +674,7 @@ export function createApi({
     try {
       ctx.effect(() => () => {
         void cache.flush();
+        void suggestionCache.flush();
       }, 'dsh-web-translator: translation cache flush');
     } catch {
       // Optional lifecycle seam (tests mount createApi without a full ctx).
@@ -688,6 +705,7 @@ export function createApi({
   const translateService = createTranslateService({
     resolveSelection,
     cache,
+    suggestionCache,
     logger: log,
     dictionary,
     termLibraries,
@@ -1150,6 +1168,11 @@ export function createApi({
     } catch {
       // Cache readiness must never block a translation.
     }
+    try {
+      await suggestionCache.whenReady();
+    } catch {
+      // Suggestions are best-effort; the translation cache still works.
+    }
     return run();
   }
 
@@ -1159,6 +1182,11 @@ export function createApi({
    */
   async function clearCache() {
     await cache.clear();
+    try {
+      await suggestionCache.clear();
+    } catch {
+      // Suggestion-cache cleanup is best effort.
+    }
     return { cleared: true, entries: cache.stats().entries };
   }
 
@@ -1630,6 +1658,11 @@ export function createApi({
     return termLibraries.removeEntry(body);
   }
 
+  /** `POST /terms/quick-add` (DESIGN §5.7.4): save one unknown term under「我的术语」. */
+  async function quickAddTerm(body) {
+    return termLibraries.quickAdd(body);
+  }
+
   /** `POST /terms/import` (DESIGN §5.7.3): bulk-import custom libraries atomically. */
   async function importTermLibraries(body) {
     return termLibraries.importLibraries(body);
@@ -1676,6 +1709,7 @@ export function createApi({
     addTermEntry,
     updateTermEntry,
     removeTermEntry,
+    quickAddTerm,
     importTermLibraries,
     listWordbook,
     addWordbookEntry: (body) => wordbook.add(body),

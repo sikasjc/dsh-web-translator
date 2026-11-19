@@ -6,6 +6,7 @@
  * translation text, no JSON). Default prompt text lives in `constants.js` so
  * the settings API, the tests and this renderer share one source of truth.
  */
+import { TERM_SUGGESTION_NOTE } from './term-suggest.js';
 import {
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_USER_TEMPLATE,
@@ -173,7 +174,8 @@ export function renderPageContext(pageContext = {}, { compact = false } = {}) {
  * Render the system + user prompts for one translation batch (DESIGN §4.1).
  * @param {{systemPrompt?: string, userTemplate?: string, texts: readonly string[],
  *   targetLanguage: string, sourceLanguage?: string,
- *   pageContext?: {title?: string, url?: string, technical?: boolean, terminologyHint?: string}}} input - batch context.
+ *   pageContext?: {title?: string, url?: string, technical?: boolean, terminologyHint?: string,
+ *     suggestTerms?: boolean}}} input - batch context.
  * @returns {{system: string, user: string, textsJson: string, segmentCount: number}}
  */
 export function renderTranslatePrompts({ systemPrompt, userTemplate, texts, targetLanguage, sourceLanguage = 'auto', pageContext }) {
@@ -199,6 +201,7 @@ export function renderTranslatePrompts({ systemPrompt, userTemplate, texts, targ
     : '';
   let system = baseSystem;
   if (linkNote.length > 0) system += '\n\n' + linkNote;
+  if (pageContext?.suggestTerms === true) system += '\n\n' + TERM_SUGGESTION_NOTE;
   // Keep the static system prompt as a stable prefix for provider prompt caching.
   // Dynamic page/style context goes into the user message instead (before the
   // segments), unless a custom template already renders {{pageContext}} itself.

@@ -13,6 +13,7 @@ import { apiError, isApiError } from './errors.js';
 import { BATCH_TIMEOUT_MS, callModel, estimateMaxTokens, estimateRetryMaxTokens, userMessage } from './llm.js';
 import { plainTextTranslation, parseTranslations } from './parse.js';
 import { CORRECTION_MESSAGE, looksLikeTechnicalContent, renderLookupPrompts, renderTranslatePrompts } from './prompts.js';
+import { normalizeTermSuggestions, markUnknownTerms, parseSuggestionCache, serializeSuggestionCache } from './term-suggest.js';
 import { buildTerminologyRules } from './terms.js';
 import {
   isPlainObject,
@@ -95,7 +96,7 @@ export function normalizeSegmentText(value) {
     .trim();
 }
 
-export function createTranslateService({ resolveSelection, cache, logger, dictionary, termLibraries, timeoutMs = BATCH_TIMEOUT_MS } = {}) {
+export function createTranslateService({ resolveSelection, cache, suggestionCache, logger, dictionary, termLibraries, timeoutMs = BATCH_TIMEOUT_MS } = {}) {
   /**
    * Log the first 200 characters of an unusable model answer; never returned to
    * the client (DESIGN §4.3 step 5).
@@ -187,19 +188,19 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       answer = await call(baseMessages, DEFAULT_TEMPERATURE, maxTokens);
     }
     usage = addUsage(usage, answer.usage);
-    let parsed = parseTranslations(answer.text, { expectedCount: plan.batch.length });
+    let parsed = parseTranslations(answer.text, { expectedCount: plan.batch.length, withTerms: plan.suggestTerms === true });
 
     if (!parsed.ok) {
       retries += 1;
       const retry = await call([...baseMessages, userMessage(CORRECTION_MESSAGE)], 0, maxTokens);
       usage = addUsage(usage, retry.usage);
-      parsed = parseTranslations(retry.text, { expectedCount: plan.batch.length });
+      parsed = parseTranslations(retry.text, { expectedCount: plan.batch.length, withTerms: plan.suggestTerms === true });
       if (!parsed.ok) {
         logInvalidOutput(retry.text);
         throw apiError('INVALID_MODEL_OUTPUT', 'the model did not return the required translation JSON');
       }
     }
-    return { translations: parsed.translations, usage, retries };
+    return { translations: parsed.translations, terms: parsed.terms ?? [], usage, retries };
   }
 
   return {
@@ -207,13 +208,17 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
      * `POST /translate` (DESIGN §5.6).
      * @param {unknown} input - request body.
      * @param {{signal?: AbortSignal}} [options] - caller abort signal.
-     * @returns {Promise<{translations: string[], provider: string, model: string,
-     *   reasoningEffort: string, usage: object, cached: boolean, retries: number}>}
+     * @returns {Promise<{translations: string[], termSuggestions?: object[], provider: string,
+     *   model: string, reasoningEffort: string, usage: object, cached: boolean, retries: number}>}
      */
     async translate(input, { signal } = {}) {
       const body = isPlainObject(input) ? input : {};
       const invalid = validateTextsList(body.texts);
       if (invalid !== null) throw apiError('BAD_REQUEST', invalid);
+      if (body.suggestTerms !== undefined && typeof body.suggestTerms !== 'boolean') {
+        throw apiError('BAD_REQUEST', 'suggestTerms must be a boolean');
+      }
+      const suggestTerms = body.suggestTerms === true;
       const requestTarget = normalizeLanguageTag(body.targetLanguage, {
         field: 'targetLanguage',
         allowed: TARGET_LANGUAGES,
@@ -245,6 +250,7 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         style,
         technical: style === 'programming'
           || (style === 'auto' && looksLikeTechnicalContent({ title: sourceTitle, url: sourceUrl, texts })),
+        suggestTerms,
       };
       const terminology = await resolveTerminology(pageContext);
       if (terminology !== null) pageContext.terminologyHint = terminology.hint(false);
@@ -257,6 +263,7 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
       if (entries.length === 0) {
         return {
           translations: texts.map(() => ''),
+          ...(suggestTerms ? { termSuggestions: [] } : {}),
           provider,
           model,
           reasoningEffort: reasoningEffort ?? 'auto',
@@ -297,8 +304,13 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
           protection,
           rendered,
           key,
+          suggestTerms,
           cached: Array.isArray(cached) ? cached : undefined,
+          cachedSuggestions: Array.isArray(cached)
+            ? parseSuggestionCache(suggestionCache?.get?.(key))
+            : undefined,
           translations: undefined,
+          suggestions: undefined,
           usage: undefined,
         };
       });
@@ -317,10 +329,18 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         plan.translations = finalized;
         plan.usage = result.usage;
         plan.retries = result.retries;
+        plan.suggestions = result.terms;
         try {
           cache?.set?.(plan.key, finalized);
         } catch {
           // A cache failure must never fail a paid-for translation.
+        }
+        if (suggestTerms) {
+          try {
+            suggestionCache?.set?.(plan.key, serializeSuggestionCache(result.terms));
+          } catch {
+            // Suggestions are best-effort; the translation is already paid for.
+          }
         }
       });
 
@@ -338,8 +358,39 @@ export function createTranslateService({ resolveSelection, cache, logger, dictio
         }
       }
 
+      const normalizedTranslations = translations.map((value) => normalizeSegmentText(value));
+      if (!suggestTerms) {
+        return {
+          translations: normalizedTranslations,
+          provider,
+          model,
+          reasoningEffort: reasoningEffort ?? 'auto',
+          usage,
+          cached: misses.length === 0,
+          retries,
+        };
+      }
+      const rawSuggestions = [];
+      for (const plan of plans) {
+        const list = plan.cachedSuggestions ?? plan.suggestions ?? [];
+        for (const item of Array.isArray(list) ? list : []) {
+          if (!item || !Number.isInteger(item.segment)) continue;
+          const entry = plan.batch[item.segment];
+          if (!entry) continue;
+          rawSuggestions.push({ segment: entry.index, source: item.source, target: item.target });
+        }
+      }
+      const suggestions = normalizeTermSuggestions(rawSuggestions, {
+        segmentCount: texts.length,
+        sources: texts,
+        translations: normalizedTranslations,
+        knownEntries: terminology?.entries ?? [],
+        targetLanguage,
+      });
+      const marked = markUnknownTerms(suggestions, { sources: texts, translations: normalizedTranslations });
       return {
-        translations: translations.map((value) => normalizeSegmentText(value)),
+        translations: marked.translations,
+        termSuggestions: marked.annotations,
         provider,
         model,
         reasoningEffort: reasoningEffort ?? 'auto',

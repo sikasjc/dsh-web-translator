@@ -19,6 +19,9 @@ import { BUILTIN_TERM_LIBRARIES, TERM_ENTRY_POLICIES, TERM_LIBRARY_LIMITS } from
 /** Persisted document version. */
 export const TERM_LIBRARIES_VERSION = 1;
 
+/** Default custom library used by the extension's unknown-term quick-add. */
+export const QUICK_TERMS_LIBRARY_NAME = '我的术语';
+
 /** Scope description returned by `GET /terms` (prompt hints only). */
 const APPLIES_TO = Object.freeze({
   styles: Object.freeze(['auto', 'programming']),
@@ -248,7 +251,8 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     const active = Array.isArray(doc?.active)
       ? doc.active.filter((id) => typeof id === 'string' && id.length > 0)
       : null;
-    return { libraries, active };
+    const quickLibraryId = typeof doc?.quickLibraryId === 'string' ? doc.quickLibraryId : '';
+    return { libraries, active, quickLibraryId };
   }
 
   /** All existing ids (built-in first, custom after). */
@@ -291,6 +295,7 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     draft.version = TERM_LIBRARIES_VERSION;
     if (!Array.isArray(draft.active)) draft.active = [...enabledIds(docState)];
     if (!Array.isArray(draft.libraries)) draft.libraries = docState.libraries;
+    if (typeof draft.quickLibraryId !== 'string') draft.quickLibraryId = docState.quickLibraryId || '';
     return draft;
   }
 
@@ -387,6 +392,7 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
       const { index, libraries } = requireCustomLibrary(next, id);
       libraries.splice(index, 1);
       next.active = next.active.filter((item) => item !== id);
+      if (next.quickLibraryId === id) next.quickLibraryId = '';
       return { ...snapshot(readDoc(next)), id };
     });
   }
@@ -508,6 +514,83 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     });
   }
 
+  /**
+   * `POST /terms/quick-add`: add (or update) one term from the extension's
+   * unknown-term menu. The term goes to the「我的术语」library, which is created
+   * on first use and enabled so the choice takes effect on future pages.
+   * @param {{source?: string, policy?: string, target?: string}} body
+   * @returns {Promise<object>}
+   */
+  async function quickAdd(body) {
+    const source = normalizeSource(body?.source);
+    const policy = normalizePolicy(body?.policy);
+    const target = normalizeTarget(body?.target, policy);
+    const state = await readState();
+    return store.mutate((draft) => {
+      const next = prepareDraft(draft, state);
+      const timestamp = clock();
+      let library = next.quickLibraryId
+        ? next.libraries.find((item) => item && item.id === next.quickLibraryId)
+        : null;
+      if (!library) {
+        library = next.libraries.find(
+          (item) => item && item.name.toLowerCase() === QUICK_TERMS_LIBRARY_NAME.toLowerCase(),
+        );
+        if (library) next.quickLibraryId = library.id;
+      }
+      let created = false;
+      if (!library) {
+        if (next.libraries.length >= TERM_LIBRARY_LIMITS.libraries) {
+          throw apiError(
+            'BAD_REQUEST',
+            `at most ${TERM_LIBRARY_LIMITS.libraries} custom libraries are allowed; create or rename one「${QUICK_TERMS_LIBRARY_NAME}」in DSH first`,
+          );
+        }
+        library = {
+          id: newLibraryId(),
+          name: QUICK_TERMS_LIBRARY_NAME,
+          terms: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        next.libraries.push(library);
+        next.quickLibraryId = library.id;
+        created = true;
+      }
+      if (!next.active.includes(library.id)) next.active.push(library.id);
+      let entry = library.terms.find((term) => sameSource(term.source, source));
+      let updated = false;
+      if (entry) {
+        entry.policy = policy;
+        entry.target = target;
+        entry.updatedAt = timestamp;
+        updated = true;
+      } else {
+        if (library.terms.length >= TERM_LIBRARY_LIMITS.termsPerLibrary) {
+          throw apiError('BAD_REQUEST', `at most ${TERM_LIBRARY_LIMITS.termsPerLibrary} terms per library are allowed`);
+        }
+        entry = {
+          id: newEntryId(),
+          source,
+          policy,
+          target,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        library.terms.push(entry);
+      }
+      library.updatedAt = timestamp;
+      return {
+        ...snapshot(readDoc(next)),
+        libraryId: library.id,
+        libraryName: library.name,
+        entryId: entry.id,
+        created,
+        updated,
+      };
+    });
+  }
+
   /** `POST /terms/entries/remove` */
   async function removeEntry(body) {
     const libraryId = typeof body?.libraryId === 'string' ? body.libraryId.trim() : '';
@@ -536,6 +619,7 @@ export function createTermLibrariesService({ store, now = Date.now } = {}) {
     addEntry,
     updateEntry,
     removeEntry,
+    quickAdd,
     importLibraries,
   };
 }

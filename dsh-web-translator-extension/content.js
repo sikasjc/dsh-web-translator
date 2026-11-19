@@ -30,7 +30,10 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.17.17';
+  var EXT_VERSION = '1.19.0';
+
+  /** 每页最多展示的未收录术语候选数（Host 还会按批次再限一次）。 */
+  var MAX_SUGGESTIONS_PER_PAGE = 6;
   // 供 DSH 插件页检测“当前浏览器是否安装了扩展”；不包含页面数据。
   if (!IS_SUBFRAME) {
     try {
@@ -238,6 +241,20 @@
       statusExtracting: '正在抽取页面段落…',
       statusTranslating: '正在翻译…',
       statusDone: '翻译完成。',
+      termMenuTitle: '未收录术语',
+      termUnknownHint: '术语库里没有这个词。选「以后显示译文」或「以后显示原文」，会存入「我的术语」库。',
+      termSourceLabel: '原文',
+      termTargetLabel: '译文',
+      termUseTarget: '以后显示译文',
+      termUseSource: '以后显示原文',
+      termIgnore: '忽略',
+      termAdded: '已加入术语库「{library}」',
+      termAddFailed: '加入术语库失败：{msg}',
+      termIgnored: '已忽略该术语',
+      termTargetEmpty: '请先填写译文',
+      termAria: '未收录术语：{source} → {target}。点击加入术语库。',
+      termTitle: '未收录术语\n原文：{source}\n译文：{target}\n点击加入术语库',
+      termTitleStatic: '未收录术语：{source} → {target}',
       statusLazyIdle: '当前可见内容已翻译；继续向下滚动会自动翻译更多段落。',
       statusNeedSelection: '请先选中要翻译的文本。',
       statusPartial: '翻译完成，其中 {failed} 段失败，可点击红色占位重试。',
@@ -336,6 +353,20 @@
       statusExtracting: 'Extracting page segments…',
       statusTranslating: 'Translating…',
       statusDone: 'Translation complete.',
+      termMenuTitle: 'Unknown term',
+      termUnknownHint: 'This term is not in your term library. Choose “Show translation from now on” or “Show original from now on”; it will be saved to “My terms”.',
+      termSourceLabel: 'Original',
+      termTargetLabel: 'Translation',
+      termUseTarget: 'Show translation from now on',
+      termUseSource: 'Show original from now on',
+      termIgnore: 'Ignore',
+      termAdded: 'Added to the term library “{library}”',
+      termAddFailed: 'Could not add the term: {msg}',
+      termIgnored: 'Term ignored',
+      termTargetEmpty: 'Enter a translation first',
+      termAria: 'Unknown term: {source} → {target}. Click to add it to the term library.',
+      termTitle: 'Unknown term\nOriginal: {source}\nTranslation: {target}\nClick to add it to the term library',
+      termTitleStatic: 'Unknown term: {source} → {target}',
       statusLazyIdle: 'Visible content translated. Scroll down to translate more segments.',
       statusNeedSelection: 'Select some text first.',
       statusPartial: 'Translation complete; {failed} segment(s) failed. Click a red placeholder to retry.',
@@ -440,6 +471,13 @@
     ui: null,
     panelOpen: false,
     lastDoubleClickAt: 0,
+    /** 术语双显：本页已出现过的术语（key → true）与本地显示偏好（key → mode） */
+    termSeen: Object.create(null),
+    ignoredTerms: Object.create(null),
+    suggestKeys: Object.create(null),
+    suggestCount: 0,
+    termMenu: null,
+    termClickAt: 0,
     hiddenBallSites: [],
     cardState: null,
     cardToken: 0,
@@ -1797,18 +1835,128 @@
     return String(text || '').replace(/\[\[\s*\/?\s*\d+\s*\]\]/g, '');
   }
 
+  /** 去掉 Host 返回的术语标记，保留内部文字（未成对标记也清理掉）。 */
+  function stripTermMarkers(text) {
+    return String(text || '')
+      .replace(/\[\[\s*TE\d+\s*\]\]/g, '')
+      .replace(/\[\[\s*\/\s*TE\d+\s*\]\]/g, '');
+  }
+
   /**
-   * 把带 [[n]]...[[/n]] 标记的译文还原为文本 + <a> 节点。
-   * 标记缺失/不完整时退化为纯文本（不显示标记本身）。
+   * 重绘一个「未收录术语」候选 span。
+   * 每页第一次出现在译文后附原文；所有出现都带一个可点的「＋」。
+   */
+  function renderSuggestSpan(span) {
+    try {
+      var term = span && span.__dshTerm;
+      if (!term) return;
+      var source = typeof term.source === 'string' ? term.source : '';
+      var target = typeof term.target === 'string' ? term.target : '';
+      var primary = term.form === 'source' ? source : target;
+      var alternate = term.form === 'source' ? target : source;
+      var first = span.getAttribute('data-dsh-term-first') === '1';
+      span.textContent = '';
+      span.appendChild(document.createTextNode(primary));
+      if (first && alternate && alternate !== primary) {
+        var alt = document.createElement('span');
+        alt.className = 'dsh-it-term-alt';
+        alt.textContent = ' (' + alternate + ')';
+        span.appendChild(alt);
+      }
+      if (!IS_SUBFRAME) {
+        var add = document.createElement('span');
+        add.className = 'dsh-it-term-add';
+        add.textContent = '＋';
+        span.appendChild(add);
+      }
+      var vars = { source: source, target: target };
+      if (IS_SUBFRAME) {
+        span.setAttribute('title', t('termTitleStatic', vars));
+      } else {
+        span.setAttribute('title', t('termTitle', vars));
+        span.setAttribute('aria-label', t('termAria', vars));
+      }
+    } catch (err) {
+      /* 术语渲染失败时保留 span 内已有文字 */
+    }
+  }
+
+  /** 创建一个可点击的「未收录术语」候选 span，并登记本页第一次出现。 */
+  function createTermSpan(term) {
+    var span = document.createElement('span');
+    span.setAttribute('data-dsh-it-term', '');
+    span.setAttribute('data-dsh-term-suggest', '');
+    span.setAttribute('data-dsh-term-key', term.key || '');
+    span.__dshTerm = term;
+    if (term.key && !state.termSeen[term.key]) {
+      state.termSeen[term.key] = true;
+      span.setAttribute('data-dsh-term-first', '1');
+    }
+    if (IS_SUBFRAME) {
+      // 子框架没有自己的 UI：只展示候选，不提供入库菜单。
+      span.setAttribute('data-dsh-term-static', '');
+    } else {
+      span.setAttribute('role', 'button');
+      span.setAttribute('tabindex', '0');
+      span.setAttribute('aria-haspopup', 'dialog');
+      var activate = function (event) {
+        if (event) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        state.termClickAt = Date.now();
+        safe(function () {
+          openTermMenu(span);
+        });
+      };
+      span.addEventListener('click', activate);
+      span.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') activate(event);
+      });
+    }
+    renderSuggestSpan(span);
+    return span;
+  }
+
+  /** 把一段纯文本中的 [[TE1]]…[[/TE1]] 还原为术语 span + 文本节点。 */
+  function appendTextWithTerms(parent, text, terms) {
+    var value = String(text || '');
+    if (!value) return;
+    var byId = terms && terms.byId ? terms.byId : null;
+    if (!byId || value.indexOf('[[TE') === -1) {
+      parent.appendChild(document.createTextNode(stripTermMarkers(value)));
+      return;
+    }
+    var pattern = /\[\[\s*TE(\d+)\s*\]\]([\s\S]*?)\[\[\s*\/\s*TE\1\s*\]\]/g;
+    var cursor = 0;
+    var match;
+    while ((match = pattern.exec(value)) !== null) {
+      if (match.index > cursor) {
+        parent.appendChild(document.createTextNode(stripTermMarkers(value.slice(cursor, match.index))));
+      }
+      var term = byId[match[1]];
+      if (term) parent.appendChild(createTermSpan(term));
+      else parent.appendChild(document.createTextNode(stripTermMarkers(match[2])));
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < value.length) {
+      parent.appendChild(document.createTextNode(stripTermMarkers(value.slice(cursor))));
+    }
+  }
+
+  /**
+   * 把带 [[n]]...[[/n]] 链接标记和 [[TE1]]...[[/TE1]] 术语标记的译文还原为
+   * 文本 + <a>/<code>/术语 span。标记缺失/不完整时退化为纯文本（不显示标记本身）。
    * @param {Element} node - translated node.
    * @param {string} text - translated text.
    * @param {object[]} links - source link descriptors (1-based marker index).
+   * @param {{byId: object}|null} terms - term annotations keyed by marker id.
    */
-  function fillTranslatedContent(node, text, links) {
+  function fillTranslatedContent(node, text, links, terms) {
     var value = String(text || '');
     node.textContent = '';
     if (!Array.isArray(links) || links.length === 0) {
-      node.textContent = value;
+      appendTextWithTerms(node, value, terms);
       return;
     }
     var pattern = /\[\[\s*(\d+)\s*\]\]([\s\S]*?)\[\[\s*\/\s*\1\s*\]\]/g;
@@ -1817,10 +1965,12 @@
     var match;
     while ((match = pattern.exec(value)) !== null) {
       matched = true;
-      if (match.index > cursor) node.appendChild(document.createTextNode(stripLinkMarkers(value.slice(cursor, match.index))));
+      if (match.index > cursor) {
+        appendTextWithTerms(node, stripLinkMarkers(value.slice(cursor, match.index)), terms);
+      }
       var index = parseInt(match[1], 10) - 1;
       var link = links[index];
-      var inner = stripLinkMarkers(match[2]);
+      var inner = stripTermMarkers(stripLinkMarkers(match[2]));
       if (link && link.kind === 'code') {
         var codeNode = document.createElement('code');
         if (link.className) codeNode.setAttribute('class', link.className);
@@ -1852,13 +2002,70 @@
       cursor = match.index + match[0].length;
     }
     if (!matched) {
-      node.textContent = stripLinkMarkers(value);
+      appendTextWithTerms(node, stripLinkMarkers(value), terms);
       return;
     }
-    if (cursor < value.length) node.appendChild(document.createTextNode(stripLinkMarkers(value.slice(cursor))));
+    if (cursor < value.length) {
+      appendTextWithTerms(node, stripLinkMarkers(value.slice(cursor)), terms);
+    }
   }
 
-  function createTransNode(block, text, layout) {
+  /**
+   * 块级译文的段间距：沿用原文段落的下外边距，再多留 0.75em，避免译文贴住下一段。
+   * 内嵌注入（li/td/flex 内部）不复制外层 margin，避免撑坏原容器。
+   */
+  function applyBlockSpacing(block, node) {
+    if (!block || !node || block.inner) return;
+    try {
+      var sourceMarginBottom = window.getComputedStyle(block.el).marginBottom;
+      var numericMargin = parseFloat(sourceMarginBottom);
+      if (!sourceMarginBottom || sourceMarginBottom === 'auto' || !isFinite(numericMargin) || numericMargin <= 0) {
+        sourceMarginBottom = '0.75em';
+      }
+      // 原文和译文是一组；在原文段落外边距之外再留 0.75em，避免译文
+      // 直接贴住下一段原文（长文双语阅读时尤其容易混淆段落边界）。
+      node.style.setProperty('margin-bottom', 'calc(' + sourceMarginBottom + ' + 0.75em)');
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  /**
+   * 并排布局只有「原文和译文真的排在同一行」时才成立。
+   * 正文段落字号 >=20px 且较短（<=80 字符）时会被当成展示型短块并排；
+   * 一旦原文占满整行，译文就换行到下一行、还带着 0.75em 左缩进，
+   * 同时原文的段落外边距失效，看上去就是「译文上下没有空格、和下一段粘在一起」。
+   * 插入后量一次真实位置：换行了就退回块级译文（原文下方另起一行）。
+   */
+  function demoteWrappedInline(block, node) {
+    if (!block || !node || !block.el || block.inner) return 'inline';
+    if (!node.isConnected || !block.el.isConnected) return 'inline';
+    // 标题有自己的长标题处理（小号块级译注），不在这里改
+    if (/^H[1-6]$/.test(block.tag)) return 'inline';
+    try {
+      var sourceRect = block.el.getBoundingClientRect();
+      var transRect = node.getBoundingClientRect();
+      if (!transRect.width || !transRect.height) return 'inline';
+      if (transRect.top < sourceRect.bottom - 2) return 'inline'; // 仍与原文同一行
+    } catch (err) {
+      return 'inline';
+    }
+    try {
+      node.setAttribute(LAYOUT_ATTR, 'below');
+      node.style.setProperty('display', 'block');
+      node.style.setProperty('margin-left', '0');
+      node.style.setProperty('margin-right', '0');
+      node.style.setProperty('margin-top', '0.25em');
+      applyBlockSpacing(block, node);
+      markSourceLayout(block.el, 'below');
+      return 'below';
+    } catch (err) {
+      /* 退回失败时保留并排译文 */
+      return 'inline';
+    }
+  }
+
+  function createTransNode(block, text, layout, terms) {
     var tag = block.inner ? 'div' : block.tag;
     var node;
     try {
@@ -1871,25 +2078,9 @@
     node.setAttribute(LAYOUT_ATTR, layout === 'inline' ? 'inline' : 'below');
     node.setAttribute('lang', state.effectiveTarget || '');
     node.setAttribute('dir', 'auto');
-    fillTranslatedContent(node, text, block.links);
+    fillTranslatedContent(node, text, block.links, terms);
     node.style.cssText = layout === 'inline' ? TRANS_STYLE_INLINE : TRANS_STYLE_BLOCK;
-    // 块级译文与下一段原文之间沿用原文段落的下外边距，避免译文贴住下一段；
-    // 内嵌注入（li/td/flex 内部）不复制外层 margin，避免撑坏原容器。
-    if (!block.inner && layout !== 'inline') {
-      try {
-        var sourceSpacing = window.getComputedStyle(block.el);
-        var sourceMarginBottom = sourceSpacing.marginBottom;
-        var numericMargin = parseFloat(sourceMarginBottom);
-        if (!sourceMarginBottom || sourceMarginBottom === 'auto' || !isFinite(numericMargin) || numericMargin <= 0) {
-          sourceMarginBottom = '0.75em';
-        }
-        // 原文和译文是一组；在原文段落外边距之外再留 0.75em，避免译文
-        // 直接贴住下一段原文（长文双语阅读时尤其容易混淆段落边界）。
-        node.style.setProperty('margin-bottom', 'calc(' + sourceMarginBottom + ' + 0.75em)');
-      } catch (spacingErr) {
-        /* ignore */
-      }
-    }
+    if (layout !== 'inline') applyBlockSpacing(block, node);
     // 与原文同样的排版：从原文元素（或表格单元格）复制 computed style
     copyTypography(block.el, node);
     if (!block.inner) copyHorizontalAlignment(block.el, node);
@@ -2048,7 +2239,7 @@
     for (var i = 0; i < state.units.length; i += 1) hideBlockLoading(state.units[i]);
   }
 
-  function injectTranslation(block, text) {
+  function injectTranslation(block, text, terms) {
     if (!block || !block.el || !block.el.isConnected) return false;
     hideBlockLoading(block);
     try {
@@ -2061,8 +2252,8 @@
         block.placeholder.remove();
         block.placeholder = null;
       }
-      var layout = resolveTransLayout(block, text);
-      var node = createTransNode(block, text, layout);
+      var layout = resolveTransLayout(block, stripTermMarkers(text));
+      var node = createTransNode(block, text, layout, terms);
       if (block.flexInner) {
         try {
           block.el.setAttribute('data-dsh-it-flex-inner', 'true');
@@ -2072,6 +2263,8 @@
       }
       if (!insertBlockNode(block, node)) return false;
       markSourceLayout(block.el, layout);
+      // 并排译文一旦换行到下一行，退回块级译文（见 demoteWrappedInline）
+      if (layout === 'inline') demoteWrappedInline(block, node);
       block.transNode = node;
       return true;
     } catch (err) {
@@ -2197,7 +2390,7 @@
     }
   }
 
-  function injectInlineTranslation(unit, text) {
+  function injectInlineTranslation(unit, text, terms) {
     var host = unit && unit.el;
     if (!host || !host.isConnected) return false;
     try {
@@ -2244,11 +2437,11 @@
       }
       var trans = document.createElement('span');
       trans.setAttribute(MARK_ATTR, 'trans-inline');
-      trans.textContent = text;
+      fillTranslatedContent(trans, text, null, terms);
       // 复制 label/链接/按钮本身的排版与颜色 → 译文与原文同样式（背景随元素自然继承）
       copyComputedStyle(host, trans, INLINE_STYLE_PROPS);
       var hostTag = tagOf(host);
-      var longHeading = /^H[1-3]$/.test(hostTag) && (unit.text.length > 60 || text.length > 90);
+      var longHeading = /^H[1-3]$/.test(hostTag) && (unit.text.length > 60 || stripTermMarkers(text).length > 90);
       if (longHeading) {
         // 长标题/文章 H1 若把全尺寸译文并排塞进标题，会把首屏撑成一屏重复文字。
         // 改为标题内的小号块级译注：原文一行、译文另起一行且字号更小。
@@ -2338,12 +2531,14 @@
     }
     safe(function () {
       return requestTranslations([unit])
-        .then(function (translations) {
+        .then(function (result) {
           if (session !== state.sessionId) return;
+          var translations = result.translations;
           var value = translations[0];
           var text = translationTextOf(value);
-          if (!text) throw makeError('EMPTY_TRANSLATION', t('errEmptyTranslation'));
-          if (!isSameTranslation(unit.text, text)) injectInlineTranslation(unit, text);
+          var plainText = stripTermMarkers(text);
+          if (!plainText) throw makeError('EMPTY_TRANSLATION', t('errEmptyTranslation'));
+          if (!isSameTranslation(unit.text, plainText)) injectInlineTranslation(unit, text, result.terms);
           if (placeholder && placeholder.isConnected) {
             state.injectedNodes.delete(placeholder);
             placeholder.remove();
@@ -2378,10 +2573,10 @@
   }
 
   /** 按单元类型分发：块级 / 行内 */
-  function injectUnit(unit, text) {
+  function injectUnit(unit, text, terms) {
     if (!unit) return false;
-    if (unit.kind === 'inline') return injectInlineTranslation(unit, text);
-    return injectTranslation(unit, text);
+    if (unit.kind === 'inline') return injectInlineTranslation(unit, text, terms);
+    return injectTranslation(unit, text, terms);
   }
 
   function failUnit(session, unit, err) {
@@ -2419,6 +2614,13 @@
 
   function clearTranslations() {
     state.sessionId++;
+    // 新一次翻译/还原：重新计算「术语本页第一次出现」，并收起术语菜单
+    state.termSeen = Object.create(null);
+    state.ignoredTerms = Object.create(null);
+    state.suggestKeys = Object.create(null);
+    state.suggestCount = 0;
+    state.termClickAt = 0;
+    closeTermMenu();
     // 先把行内原文从包裹 span 中还原（必须在移除注入节点之前，否则会丢原文文字）
     try {
       var inlineWraps = Array.prototype.slice.call(document.querySelectorAll('[' + MARK_ATTR + '="src-inline"]'));
@@ -2530,6 +2732,14 @@
     'html[' + MODE_ATTR + '="source"] [data-dsh-it="trans-inline"]{display:none!important;}',
     'html[' + MODE_ATTR + '="only"] [data-dsh-it="src-inline"]{display:none!important;}',
     '[data-dsh-it="trans-inline"].dsh-it-inline-retry:hover{filter:brightness(0.9);}',
+    // 术语：可点击、悬停高亮；双显时原文用小一号的括号附注
+    '[data-dsh-it-term]{cursor:pointer!important;text-decoration:underline dashed rgba(217,119,6,0.85)!important;text-underline-offset:2px;border-radius:2px;}' +
+      '[data-dsh-it-term]:not([data-dsh-term-static]):hover{background:rgba(245,158,11,0.16)!important;}' +
+      '[data-dsh-it-term]:focus-visible{outline:2px solid rgba(217,119,6,0.70)!important;outline-offset:1px!important;}' +
+      '[data-dsh-it-term][data-dsh-term-static]{cursor:inherit!important;text-decoration:none!important;}' +
+      '[data-dsh-it-term] .dsh-it-term-alt{font-size:0.82em!important;font-weight:400!important;opacity:0.72!important;white-space:nowrap!important;}' +
+      '[data-dsh-it-term] .dsh-it-term-add{display:inline-block!important;margin-left:2px!important;padding:0 2px!important;border-radius:3px!important;' +
+      'font-size:0.72em!important;line-height:1.1!important;font-weight:600!important;color:#b45309!important;background:rgba(245,158,11,0.18)!important;vertical-align:super!important;}',
     // 并排布局：原文与译文同处一行；仅双语模式改变原文 display，原文/仅译文模式不受影响
     'html[' + MODE_ATTR + '="bilingual"] [data-dsh-it="src"]' + '[' + LAYOUT_ATTR + '="inline"]{' +
       'display:inline-block!important;vertical-align:baseline!important;max-width:100%;margin-block:0!important;}',
@@ -2576,6 +2786,26 @@
     }
   }
 
+  /**
+   * 切回可见模式后补一次并排判定：在「原文」模式下发起的翻译量不到位置，
+   * 译文一旦显示出来仍然可能是换行的并排样式。
+   */
+  function demoteWrappedInlineNodes() {
+    if (state.mode === 'source') return;
+    var nodes;
+    try {
+      nodes = document.querySelectorAll('[' + MARK_ATTR + '="trans"][' + LAYOUT_ATTR + '="inline"]');
+    } catch (err) {
+      return;
+    }
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var source = node.previousElementSibling;
+      if (!source || source.getAttribute(MARK_ATTR) !== 'src') continue;
+      demoteWrappedInline({ el: source, tag: tagOf(source), inner: false }, node);
+    }
+  }
+
   function applyMode(mode, persist) {
     var next = MODES.indexOf(mode) === -1 ? 'bilingual' : mode;
     state.mode = next;
@@ -2585,6 +2815,7 @@
     } catch (err) {
       /* ignore */
     }
+    demoteWrappedInlineNodes();
     postToChildFrames({ __dshItFrame: true, action: 'mode', mode: next });
     updateModeButtons();
     if (persist) {
@@ -2641,6 +2872,23 @@
     'padding:8px 12px!important;border-radius:10px!important;background:#1f2430!important;color:#fff!important;' +
     'font-size:12px!important;line-height:1.45!important;box-shadow:0 8px 24px rgba(15,23,42,0.30)!important;' +
     'pointer-events:none!important;z-index:3!important;}' +
+    '.dsh-term-menu{position:fixed!important;z-index:4!important;width:300px!important;max-width:calc(100vw - 16px)!important;' +
+    'padding:12px!important;border-radius:12px!important;background:var(--dsh-bg)!important;color:var(--dsh-fg)!important;' +
+    'box-shadow:0 12px 32px rgba(15,23,42,0.30),0 0 0 1px var(--dsh-border)!important;pointer-events:auto!important;font-size:12px!important;}' +
+    '.dsh-term-menu-head{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;margin-bottom:8px!important;}' +
+    '.dsh-term-menu-title{font-weight:600!important;font-size:12px!important;color:var(--dsh-fg)!important;}' +
+    '.dsh-term-menu-pair{display:flex!important;align-items:baseline!important;gap:6px!important;margin-bottom:8px!important;font-size:12px!important;line-height:1.45!important;color:var(--dsh-sub)!important;word-break:break-word!important;}' +
+    '.dsh-term-menu-label{flex:none!important;color:var(--dsh-sub)!important;}' +
+    '.dsh-term-menu-source{color:var(--dsh-fg)!important;word-break:break-word!important;}' +
+    '.dsh-term-menu-field{display:flex!important;align-items:center!important;gap:6px!important;margin-bottom:8px!important;}' +
+    '.dsh-term-input{flex:1 1 auto!important;min-width:0!important;box-sizing:border-box!important;padding:6px 8px!important;border:1px solid var(--dsh-border)!important;' +
+    'border-radius:8px!important;background:var(--dsh-bg2)!important;color:var(--dsh-fg)!important;font:inherit!important;font-size:12px!important;line-height:18px!important;}' +
+    '.dsh-term-input:focus-visible{outline:2px solid var(--dsh-accent)!important;outline-offset:1px!important;}' +
+    '.dsh-term-menu-hint{font-size:11px!important;line-height:1.4!important;color:var(--dsh-sub)!important;margin-bottom:8px!important;}' +
+    '.dsh-term-menu-actions{display:flex!important;gap:6px!important;flex-wrap:wrap!important;}' +
+    '.dsh-term-menu-btn{flex:1 1 46%!important;min-width:56px!important;padding:6px 8px!important;border-radius:8px!important;border:1px solid var(--dsh-border)!important;' +
+    'font-size:12px!important;line-height:16px!important;color:var(--dsh-fg)!important;background:var(--dsh-bg2)!important;white-space:nowrap!important;}' +
+    '.dsh-term-menu-btn.is-primary{flex-basis:100%!important;background:var(--dsh-accent)!important;border-color:var(--dsh-accent)!important;color:#fff!important;}' +
     '.dsh-panel{position:fixed!important;right:16px!important;bottom:74px!important;width:324px!important;' +
     'max-width:calc(100vw - 32px)!important;max-height:calc(100vh - 110px)!important;overflow:auto!important;' +
     'display:flex!important;flex-direction:column!important;gap:10px!important;padding:14px!important;border-radius:14px!important;' +
@@ -2817,13 +3065,21 @@
       cardStatus: null,
       cardTokens: null,
       cardPlay: null,
-      cardAdd: null
+      cardAdd: null,
+      termMenu: null,
+      termMenuTitle: null,
+      termMenuClose: null,
+      termMenuSource: null,
+      termMenuInput: null,
+      termMenuHint: null,
+      termMenuButtons: []
     };
 
     buildBubble();
     buildPanel();
     buildCard();
     buildToast();
+    buildTermMenu();
     updateUiText();
     applyMode(state.mode, false);
     setStatus(t('statusIdle'), '');
@@ -3177,6 +3433,210 @@
     }
   }
 
+  /**
+   * 未收录术语菜单：挂在 Shadow DOM 里，跟随被点击的候选 span 定位。
+   * 用户可以改译文，然后选择「以后显示译文 / 以后显示原文 / 忽略」。
+   */
+  function buildTermMenu() {
+    var ui = state.ui;
+    if (!ui) return;
+    var menu = make('div', {
+      class: 'dsh-term-menu',
+      role: 'dialog',
+      'aria-label': t('termMenuTitle')
+    });
+    menu.hidden = true;
+    var title = make('span', { class: 'dsh-term-menu-title', text: t('termMenuTitle') });
+    var closeBtn = make('button', {
+      type: 'button',
+      class: 'dsh-icon-btn',
+      'aria-label': t('close'),
+      title: t('close'),
+      text: '✕',
+      onClick: function () {
+        closeTermMenu();
+      }
+    });
+    var source = make('div', { class: 'dsh-term-menu-pair' });
+    var sourceLabel = make('span', { class: 'dsh-term-menu-label', text: t('termSourceLabel') });
+    var sourceValue = make('span', { class: 'dsh-term-menu-source' });
+    source.appendChild(sourceLabel);
+    source.appendChild(document.createTextNode(' '));
+    source.appendChild(sourceValue);
+    var targetRow = make('label', { class: 'dsh-term-menu-field' });
+    targetRow.appendChild(make('span', { class: 'dsh-term-menu-label', text: t('termTargetLabel') }));
+    var input = make('input', {
+      type: 'text',
+      class: 'dsh-term-input',
+      maxlength: '120',
+      'aria-label': t('termTargetLabel'),
+      onKeydown: function (event) {
+        if (event.isComposing || event.keyCode === 229) return;
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          safe(function () {
+            saveTermChoice('target');
+          });
+        }
+      }
+    });
+    targetRow.appendChild(input);
+    var hint = make('div', { class: 'dsh-term-menu-hint', text: t('termUnknownHint') });
+    var actions = make('div', { class: 'dsh-term-menu-actions' });
+    var choices = [
+      ['target', 'termUseTarget'],
+      ['source', 'termUseSource'],
+      ['ignore', 'termIgnore']
+    ];
+    var buttons = [];
+    for (var i = 0; i < choices.length; i++) {
+      (function (choice, labelKey) {
+        var button = make('button', {
+          type: 'button',
+          class: 'dsh-term-menu-btn' + (choice === 'target' ? ' is-primary' : ''),
+          'data-choice': choice,
+          text: t(labelKey),
+          onClick: function () {
+            safe(function () {
+              if (choice === 'ignore') ignoreTerm();
+              else saveTermChoice(choice);
+            });
+          }
+        });
+        buttons.push(button);
+        actions.appendChild(button);
+      })(choices[i][0], choices[i][1]);
+    }
+    menu.appendChild(make('div', { class: 'dsh-term-menu-head' }, [title, closeBtn]));
+    menu.appendChild(source);
+    menu.appendChild(targetRow);
+    menu.appendChild(hint);
+    menu.appendChild(actions);
+    state.root.appendChild(menu);
+    ui.termMenu = menu;
+    ui.termMenuTitle = title;
+    ui.termMenuClose = closeBtn;
+    ui.termMenuSource = sourceValue;
+    ui.termMenuInput = input;
+    ui.termMenuHint = hint;
+    ui.termMenuButtons = buttons;
+  }
+
+  function positionTermMenu(anchorRect) {
+    var menu = state.ui && state.ui.termMenu;
+    if (!menu) return;
+    var margin = 8;
+    var viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+    var viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+    menu.hidden = false;
+    menu.style.visibility = 'hidden';
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+    var rect = menu.getBoundingClientRect();
+    var width = rect.width || 280;
+    var height = rect.height || 170;
+    var left = anchorRect.left + anchorRect.width / 2 - width / 2;
+    var top = anchorRect.bottom + 6;
+    if (top + height > viewportHeight - margin) top = anchorRect.top - height - 6;
+    if (top < margin) top = Math.min(anchorRect.bottom + 6, viewportHeight - height - margin);
+    left = clamp(left, margin, Math.max(margin, viewportWidth - width - margin));
+    top = clamp(top, margin, Math.max(margin, viewportHeight - height - margin));
+    menu.style.left = Math.round(left) + 'px';
+    menu.style.top = Math.round(top) + 'px';
+    menu.style.visibility = '';
+  }
+
+  function openTermMenu(span) {
+    var ui = state.ui;
+    var term = span && span.__dshTerm;
+    if (!ui || !ui.termMenu || !term) return;
+    closeCard();
+    state.termMenu = { span: span, term: term };
+    if (ui.termMenuSource) ui.termMenuSource.textContent = term.source || '';
+    if (ui.termMenuInput) {
+      ui.termMenuInput.value = term.target || '';
+      try {
+        ui.termMenuInput.focus();
+        ui.termMenuInput.select();
+      } catch (err) {
+        /* ignore */
+      }
+    }
+    ui.termMenu.hidden = false;
+    positionTermMenu(span.getBoundingClientRect());
+  }
+
+  function closeTermMenu() {
+    state.termMenu = null;
+    var ui = state.ui;
+    if (ui && ui.termMenu) ui.termMenu.hidden = true;
+  }
+
+  /** 把当前页所有该候选 span 替换成最终显示的文字。 */
+  function replaceTermSpans(key, text) {
+    try {
+      var nodes = document.querySelectorAll('[data-dsh-term-suggest][data-dsh-term-key]');
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (!node.__dshTerm || node.__dshTerm.key !== key) continue;
+        try {
+          node.replaceWith(document.createTextNode(text));
+        } catch (err) {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  /** 保存未收录术语：以后显示译文 / 原文；Host 自动放入「我的术语」库。 */
+  function saveTermChoice(choice) {
+    var current = state.termMenu;
+    if (!current || !current.term) return;
+    var term = current.term;
+    var key = term.key || '';
+    var target = state.ui && state.ui.termMenuInput ? String(state.ui.termMenuInput.value || '').trim() : '';
+    if (choice === 'target' && !target) {
+      showToast(t('termTargetEmpty'), 2600);
+      try {
+        if (state.ui && state.ui.termMenuInput) state.ui.termMenuInput.focus();
+      } catch (err) {
+        /* ignore */
+      }
+      return;
+    }
+    closeTermMenu();
+    if (!key) return;
+    var body = { source: term.source, policy: choice === 'target' ? 'translate' : 'keep' };
+    if (choice === 'target') body.target = target;
+    rpc('terms/quick-add', body)
+      .then(function (data) {
+        var shown = choice === 'target' ? target : (term.source || term.target || '');
+        // 抑制同一页里可能还在途的旧响应再次渲染该候选。
+        state.ignoredTerms[key] = true;
+        replaceTermSpans(key, shown);
+        var library = data && typeof data.libraryName === 'string' && data.libraryName ? data.libraryName : t('termMenuTitle');
+        showToast(t('termAdded', { library: library }), 2800);
+      })
+      .catch(function (err) {
+        showToast(t('termAddFailed', { msg: errorText(err) }), 4200);
+      });
+  }
+
+  /** 忽略该候选：当前页恢复模型译文，不再重复提示。 */
+  function ignoreTerm() {
+    var current = state.termMenu;
+    if (!current || !current.term) return;
+    var term = current.term;
+    var key = term.key || '';
+    closeTermMenu();
+    if (!key) return;
+    state.ignoredTerms[key] = true;
+    replaceTermSpans(key, term.form === 'source' ? (term.source || '') : (term.target || ''));
+    showToast(t('termIgnored'), 2200);
+  }
+
   function buildPanel() {
     var ui = state.ui;
     var panel = make('div', {
@@ -3493,6 +3953,24 @@
         play.setAttribute('title', t('cardPlay'));
         play.setAttribute('aria-label', t('cardPlay'));
       }
+      if (ui.termMenu) ui.termMenu.setAttribute('aria-label', t('termMenuTitle'));
+      if (ui.termMenuTitle) ui.termMenuTitle.textContent = t('termMenuTitle');
+      if (ui.termMenuClose) {
+        ui.termMenuClose.setAttribute('aria-label', t('close'));
+        ui.termMenuClose.setAttribute('title', t('close'));
+      }
+      if (ui.termMenuHint) ui.termMenuHint.textContent = t('termUnknownHint');
+      if (ui.termMenu) {
+        var labels = ui.termMenu.querySelectorAll('.dsh-term-menu-label');
+        if (labels[0]) labels[0].textContent = t('termSourceLabel');
+        if (labels[1]) labels[1].textContent = t('termTargetLabel');
+      }
+      if (ui.termMenuInput) ui.termMenuInput.setAttribute('aria-label', t('termTargetLabel'));
+      var choiceKeys = ['termUseTarget', 'termUseSource', 'termIgnore'];
+      var menuButtons = ui.termMenuButtons || [];
+      for (var m = 0; m < menuButtons.length && m < choiceKeys.length; m++) {
+        menuButtons[m].textContent = t(choiceKeys[m]);
+      }
     } catch (err) {
       /* UI 文案更新失败不影响主流程 */
     }
@@ -3595,6 +4073,7 @@
 
   function openPanel() {
     if (!state.ui || !state.ui.panel) return;
+    closeTermMenu();
     state.ui.panel.hidden = false;
     state.panelOpen = true;
     maybeRefreshModel();
@@ -4427,7 +4906,7 @@
       state.runId = makeTurnId('tr');
       state.runStep = 0;
     }
-    var payload = Object.assign({ texts: texts }, requestMeta(), {
+    var payload = Object.assign({ texts: texts, suggestTerms: true }, requestMeta(), {
       turnId: state.runId,
       stepIndex: state.runStep++,
       mode: state.mode
@@ -4449,7 +4928,31 @@
       if (!translations || translations.length !== group.length) {
         throw makeError('INVALID_MODEL_OUTPUT', t('errInvalidOutput'));
       }
-      return translations;
+      // 未收录术语候选：Host 把候选译文包成 [[TE1]]…[[/TE1]]，并返回 id → 术语信息。
+      // 用户在当前页「忽略」过的来源不再渲染。
+      var suggestions = data && Array.isArray(data.termSuggestions) ? data.termSuggestions : [];
+      var byId = Object.create(null);
+      var termCount = 0;
+      for (var t = 0; t < suggestions.length; t++) {
+        var suggestion = suggestions[t];
+        if (!suggestion || suggestion.id === undefined || suggestion.id === null) continue;
+        var key = typeof suggestion.key === 'string' && suggestion.key
+          ? suggestion.key
+          : 'unknown:' + String(suggestion.source || '').toLowerCase();
+        if (state.ignoredTerms[key]) continue;
+        if (!state.suggestKeys[key]) {
+          // 页面级预算：同一来源只算一次，超过预算的候选直接按普通译文展示。
+          if (state.suggestCount >= MAX_SUGGESTIONS_PER_PAGE) continue;
+          state.suggestKeys[key] = true;
+          state.suggestCount += 1;
+        }
+        byId[String(suggestion.id)] = Object.assign({}, suggestion, { key: key });
+        termCount += 1;
+      }
+      return {
+        translations: translations,
+        terms: termCount > 0 ? { byId: byId } : null
+      };
     });
   }
 
@@ -4457,17 +4960,20 @@
     if (state.stopFlag || session !== state.sessionId) return Promise.resolve();
     var failure = null;
     return requestTranslations(group).then(
-      function (translations) {
+      function (result) {
         if (state.stopFlag || session !== state.sessionId) return;
+        var translations = result.translations;
+        var terms = result.terms;
         for (var i = 0; i < group.length; i++) {
           var block = group[i];
           var value = translations[i];
           var text = translationTextOf(value);
-          if (!text) {
+          var plainText = stripTermMarkers(text);
+          if (!plainText) {
             failUnit(session, block, makeError('EMPTY_TRANSLATION', t('errEmptyTranslation')));
             continue;
           }
-          if (isSameTranslation(block.text, text)) {
+          if (isSameTranslation(block.text, plainText)) {
             // 专有名词/缩写等译名与原文相同：不再重复注入，避免 “ARM ARM”“Patreon Patreon”
             hideBlockLoading(block);
             block.status = 'done';
@@ -4475,7 +4981,7 @@
             continue;
           }
           try {
-            if (injectUnit(block, text)) {
+            if (injectUnit(block, text, terms)) {
               block.status = 'done';
               state.done++;
             } else {
@@ -4651,12 +5157,14 @@
     }
     safe(function () {
       return requestTranslations([block])
-        .then(function (translations) {
+        .then(function (result) {
           if (session !== state.sessionId) return;
+          var translations = result.translations;
           var value = translations[0];
           var text = translationTextOf(value);
-          if (!text) throw makeError('EMPTY_TRANSLATION', t('errEmptyTranslation'));
-          if (!isSameTranslation(block.text, text)) injectTranslation(block, text);
+          var plainText = stripTermMarkers(text);
+          if (!plainText) throw makeError('EMPTY_TRANSLATION', t('errEmptyTranslation'));
+          if (!isSameTranslation(block.text, plainText)) injectTranslation(block, text, result.terms);
           if (placeholder && placeholder.isConnected) {
             state.injectedNodes.delete(placeholder);
             placeholder.remove();
@@ -4988,6 +5496,7 @@
   function openCard(text, rect) {
     var ui = state.ui;
     if (!ui || !ui.card) return;
+    closeTermMenu();
     // 轨迹（Turn）：每次打开查词卡 = 一个单步 Turn（lk_…，stepIndex = 0）
     state.cardTurnId = makeTurnId('lk');
     state.cardState = {
@@ -5114,6 +5623,7 @@
     if (state.running || state.lazyActive) stopTranslate();
     endTurn();
     closeCard();
+    closeTermMenu();
     removeImageTranslation();
     resetPageTokenStats();
     setStatus(t('statusNavigate'), 'warn');
@@ -5143,6 +5653,8 @@
 
   function handleSelectionEvent(force) {
     try {
+      // 刚点过术语 span：不要把它当成划词/双击查词，也不要收起术语菜单。
+      if (Date.now() - (state.termClickAt || 0) < 600) return;
       var fromDoubleClick = Date.now() - (state.lastDoubleClickAt || 0) < 600;
       if (!force) {
         if (fromDoubleClick) {
@@ -5271,6 +5783,7 @@
 
   function onDocumentMouseUp(event) {
     if (isFromOurUi(event)) return;
+    if (Date.now() - (state.termClickAt || 0) < 400) return;
     setTimeout(function () {
       safe(handleSelectionEvent);
     }, 220);
@@ -5282,6 +5795,7 @@
   }
 
   function onDocumentMouseDown(event) {
+    if (!isFromOurUi(event) && state.termMenu) closeTermMenu();
     if (imageOverlay) {
       if (isFromOurUi(event)) return;
       removeImageTranslation();
@@ -5294,6 +5808,10 @@
 
   function onDocumentKeyDown(event) {
     if (event.key !== 'Escape') return;
+    if (state.termMenu) {
+      closeTermMenu();
+      return;
+    }
     if (imageOverlay) {
       removeImageTranslation();
       return;
@@ -5306,12 +5824,14 @@
   }
 
   function onWindowScroll(event) {
+    if (state.termMenu) closeTermMenu();
     if (!state.cardState) return;
     if (isFromOurUi(event)) return;
     closeCard();
   }
 
   function onWindowResize() {
+    if (state.termMenu) closeTermMenu();
     if (state.cardState) closeCard();
     applyBallPosition(state.settings.ballPosition, true);
   }
@@ -5337,16 +5857,18 @@
       });
       if (units.length === 0) return;
       detailsEl.setAttribute('data-dsh-it-details-done', '1');
-      requestTranslations(units).then(function (translations) {
+      requestTranslations(units).then(function (result) {
+        var translations = result.translations;
         for (var i = 0; i < units.length; i += 1) {
           var unit = units[i];
           var translated = translations && typeof translations[i] === 'string' ? translations[i] : '';
-          if (!translated || isSameTranslation(unit.text, translated)) {
+          var plainText = stripTermMarkers(translated);
+          if (!plainText || isSameTranslation(unit.text, plainText)) {
             unit.status = 'done';
             continue;
           }
           try {
-            if (injectInlineTranslation(unit, translated)) unit.status = 'done';
+            if (injectInlineTranslation(unit, translated, result.terms)) unit.status = 'done';
           } catch (err) {
             /* 单段失败不影响其它 */
           }

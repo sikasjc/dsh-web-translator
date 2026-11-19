@@ -42,6 +42,7 @@ const ROUTES = Object.freeze({
   '/terms/entries/add': Object.freeze(['POST']),
   '/terms/entries/update': Object.freeze(['POST']),
   '/terms/entries/remove': Object.freeze(['POST']),
+  '/terms/quick-add': Object.freeze(['POST']),
   '/terms/import': Object.freeze(['POST']),
   '/ball-sites': Object.freeze(['GET']),
   '/ball-sites/add': Object.freeze(['POST']),
@@ -311,6 +312,8 @@ async function dispatchWrite(path, body, api, signal) {
       return api.updateTermEntry(body);
     case '/terms/entries/remove':
       return api.removeTermEntry(body);
+    case '/terms/quick-add':
+      return api.quickAddTerm(body);
     case '/terms/import':
       return api.importTermLibraries(body);
     case '/ball-sites/add':

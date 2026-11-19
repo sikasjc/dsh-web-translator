@@ -108,6 +108,10 @@ function createStubApi(overrides = {}) {
       calls.push({ op: 'removeTermEntry', body });
       return { libraries: [], limits: {}, appliesTo: {}, libraryId: body.libraryId, entryId: body.entryId };
     },
+    quickAddTerm: async (body) => {
+      calls.push({ op: 'quickAddTerm', body });
+      return { libraries: [], limits: {}, appliesTo: {}, libraryId: 'tl_my', libraryName: '我的术语', entryId: 'te_new' };
+    },
     importTermLibraries: async (body) => {
       calls.push({ op: 'importTermLibraries', body });
       return { libraries: [], limits: {}, appliesTo: {}, imported: (body.libraries || []).map((library, index) => ({ id: 'tl_' + index, name: library.name })) };
@@ -259,6 +263,7 @@ test('dispatches GET/PUT/POST routes with parsed bodies and signals', async () =
     ['/terms/entries/add', 'POST'],
     ['/terms/entries/update', 'POST'],
     ['/terms/entries/remove', 'POST'],
+    ['/terms/quick-add', 'POST'],
     ['/terms/import', 'POST'],
     ['/usage', 'GET'],
     ['/usage/events', 'GET'],
