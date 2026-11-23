@@ -30,7 +30,7 @@
     IS_SUBFRAME = true;
   }
 
-  var EXT_VERSION = '1.19.0';
+  var EXT_VERSION = '1.20.0';
 
   /** 每页最多展示的未收录术语候选数（Host 还会按批次再限一次）。 */
   var MAX_SUGGESTIONS_PER_PAGE = 6;
@@ -95,6 +95,20 @@
   var PRELOAD_FACTORS = { none: 0, half: 0.5, one: 1 };
   var MAX_SELECTION = 500;
   var RPC_TIMEOUT_MS = 125000;
+  /** 查词交互开关：浮窗面板的快捷开关与 DSH 插件页「交互」Tab 共用这三个键。 */
+  var LOOKUP_SETTING_KEYS = ['selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate'];
+  /** 三个开关对应的面板文案 key。 */
+  var LOOKUP_LABEL_KEYS = {
+    selectionTranslate: 'lookupSelection',
+    doubleClickTranslate: 'lookupDoubleClick',
+    shortcutTranslate: 'lookupShortcut'
+  };
+  /** DSH 插件页 ↔ 扩展的同页消息桥（只在 DSH 源上响应，见 isBridgeOrigin）。 */
+  var BRIDGE_PLUGIN_SOURCE = 'dsh-it-plugin';
+  var BRIDGE_EXTENSION_SOURCE = 'dsh-it-extension';
+  var BRIDGE_TYPE_GET = 'dsh-it:bridge:get';
+  var BRIDGE_TYPE_SET = 'dsh-it:bridge:set';
+  var BRIDGE_TYPE_STATE = 'dsh-it:bridge:state';
 
   var DEFAULT_SETTINGS = {
     dshBaseUrl: 'http://127.0.0.1:3080',
@@ -226,6 +240,10 @@
       tokensUnit: 'tokens',
       statusDoneTokens: '翻译完成 · 本页消耗 {tokens} tokens。',
       cardTokens: '本次查询 输入 {input} · 输出 {output} tokens',
+      lookupMode: '查词方式',
+      lookupSelection: '划词',
+      lookupDoubleClick: '双击查词',
+      lookupShortcut: '快捷键',
       translate: '翻译此页',
       retranslate: '重新翻译',
       translating: '翻译中…',
@@ -338,6 +356,10 @@
       tokensUnit: 'tokens',
       statusDoneTokens: 'Translation complete · {tokens} tokens used on this page.',
       cardTokens: 'This lookup: input {input} · output {output} tokens',
+      lookupMode: 'Lookup',
+      lookupSelection: 'Selection',
+      lookupDoubleClick: 'Double-click',
+      lookupShortcut: 'Shortcut',
       translate: 'Translate page',
       retranslate: 'Re-translate',
       translating: 'Translating…',
@@ -2903,9 +2925,10 @@
     '.dsh-icon-btn:hover{background:var(--dsh-bg2)!important;color:var(--dsh-fg)!important;}' +
     '.dsh-seg{display:flex!important;border:1px solid var(--dsh-border)!important;border-radius:9px!important;overflow:hidden!important;}' +
     '.dsh-seg-btn{flex:1 1 0!important;padding:6px 4px!important;font-size:12px!important;color:var(--dsh-sub)!important;' +
-    'border-right:1px solid var(--dsh-border)!important;}' +
+    'white-space:nowrap!important;border-right:1px solid var(--dsh-border)!important;}' +
     '.dsh-seg-btn:last-child{border-right:0!important;}' +
     '.dsh-seg-btn[aria-pressed="true"]{background:var(--dsh-accent)!important;color:#fff!important;}' +
+    '.dsh-row .dsh-seg{flex:1 1 auto!important;min-width:0!important;}' +
     '.dsh-row{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;}' +
     '.dsh-label{color:var(--dsh-sub)!important;font-size:12px!important;flex:0 0 auto!important;}' +
     '.dsh-select{flex:1 1 auto!important;min-width:0!important;height:28px!important;padding:0 6px!important;border-radius:8px!important;' +
@@ -3708,6 +3731,33 @@
       langSelect
     ]));
 
+    // 查词方式：划词 / 双击查词 / 快捷键（与扩展选项页、DSH「dsh翻译 → 交互」同一份设置）
+    var lookupButtons = {};
+    var lookupSeg = make('div', { class: 'dsh-seg', role: 'group', 'aria-label': t('lookupMode') });
+    for (var lk = 0; lk < LOOKUP_SETTING_KEYS.length; lk += 1) {
+      (function (key) {
+        var button = make('button', {
+          type: 'button',
+          class: 'dsh-seg-btn',
+          'data-setting': key,
+          'aria-pressed': 'false',
+          title: t(LOOKUP_LABEL_KEYS[key]),
+          onClick: function () {
+            safe(function () {
+              return toggleLookupSetting(key);
+            });
+          }
+        });
+        button.textContent = t(LOOKUP_LABEL_KEYS[key]);
+        lookupButtons[key] = button;
+        lookupSeg.appendChild(button);
+      })(LOOKUP_SETTING_KEYS[lk]);
+    }
+    panel.appendChild(make('div', { class: 'dsh-row' }, [
+      make('span', { class: 'dsh-label', text: t('lookupMode') }),
+      lookupSeg
+    ]));
+
     // 当前模型（只读）
     var model = make('span', { class: 'dsh-model', text: t('modelUnknown') });
     panel.appendChild(make('div', { class: 'dsh-row' }, [
@@ -3834,6 +3884,7 @@
     ui.panelTitle = title;
     ui.modeButtons = modeButtons;
     ui.langSelect = langSelect;
+    ui.lookupButtons = lookupButtons;
     ui.model = model;
     ui.tokensPage = tokensPage;
     ui.tokensPageLabel = tokensPageLabel;
@@ -4062,6 +4113,7 @@
       }
       updateProgressUi();
       applyBallSiteVisibility();
+      syncLookupButtons();
       if (ui.status) {
         ui.status.textContent = state.statusText;
         ui.status.className = 'dsh-status' + (state.statusKind ? ' is-' + state.statusKind : '');
@@ -4078,6 +4130,44 @@
     state.panelOpen = true;
     maybeRefreshModel();
     refreshTodayUsage();
+  }
+
+  /** 面板「查词方式」三个开关的按下态与实际设置保持一致。 */
+  function syncLookupButtons() {
+    var buttons = state.ui && state.ui.lookupButtons;
+    if (!buttons) return;
+    for (var index = 0; index < LOOKUP_SETTING_KEYS.length; index += 1) {
+      var key = LOOKUP_SETTING_KEYS[index];
+      var button = buttons[key];
+      if (!button) continue;
+      var on = state.settings[key] === true;
+      button.setAttribute('aria-pressed', on ? 'true' : 'false');
+      button.title = t(LOOKUP_LABEL_KEYS[key]) + (on ? ' ✓' : '');
+    }
+  }
+
+  /**
+   * 切换一个查词交互开关：先本地生效（面板立刻反映），再写入 chrome.storage.local。
+   * 与扩展选项页共用同一份设置，写入失败时回滚。
+   */
+  function toggleLookupSetting(key) {
+    if (LOOKUP_SETTING_KEYS.indexOf(key) < 0) return Promise.resolve(false);
+    var nextValue = state.settings[key] !== true;
+    var patch = {};
+    patch[key] = nextValue;
+    var next = Object.assign({}, state.settings);
+    next[key] = nextValue;
+    state.settings = normalizeSettings(next);
+    refreshUi();
+    return storageSet(patch).then(function (ok) {
+      if (ok) return true;
+      var revert = {};
+      revert[key] = !nextValue;
+      state.settings = normalizeSettings(Object.assign({}, state.settings, revert));
+      refreshUi();
+      setStatus(t('errUnknown'), 'warn');
+      return false;
+    });
   }
 
   function closePanel() {
@@ -5924,6 +6014,7 @@
     try {
       var next = Object.assign({}, state.settings);
       var changed = false;
+      var lookupChanged = false;
       if (changes.dshBaseUrl) {
         next.dshBaseUrl = changes.dshBaseUrl.newValue;
         changed = true;
@@ -5951,14 +6042,17 @@
       if (changes.selectionTranslate) {
         next.selectionTranslate = changes.selectionTranslate.newValue;
         changed = true;
+        lookupChanged = true;
       }
       if (changes.doubleClickTranslate) {
         next.doubleClickTranslate = changes.doubleClickTranslate.newValue;
         changed = true;
+        lookupChanged = true;
       }
       if (changes.shortcutTranslate) {
         next.shortcutTranslate = changes.shortcutTranslate.newValue;
         changed = true;
+        lookupChanged = true;
       }
       if (changes.hideBallSameLanguage) {
         next.hideBallSameLanguage = changes.hideBallSameLanguage.newValue;
@@ -6011,6 +6105,8 @@
       updateAutoSiteButton();
       applyBallSiteVisibility();
       refreshUi();
+      // 面板/选项页改了查词开关时，同步给打开中的 DSH 插件页（无 requestId = 广播）
+      if (lookupChanged) postBridgeState(null);
     } catch (err) {
       /* ignore */
     }
@@ -6067,6 +6163,94 @@
           startImageTranslation(message.srcUrl);
         });
         return;
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  /* ================================================================ */
+  /* DSH 插件页 ↔ 扩展 消息桥                                           */
+  /* ================================================================ */
+
+  /**
+   * 桥只在本机 DSH 页面（扩展设置里的 DSH 地址同源）上生效：
+   * 别的网站即使往 window 发同样的消息也改不了扩展设置。
+   */
+  function isBridgeOrigin() {
+    if (IS_SUBFRAME) return false;
+    try {
+      var base = state.settings && state.settings.dshBaseUrl ? state.settings.dshBaseUrl : DEFAULT_SETTINGS.dshBaseUrl;
+      return location.origin === new URL(String(base)).origin;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /** 桥交换的状态：只有三个查词开关，不含任何页面数据。 */
+  function bridgeLookupState() {
+    var result = {};
+    for (var index = 0; index < LOOKUP_SETTING_KEYS.length; index += 1) {
+      var key = LOOKUP_SETTING_KEYS[index];
+      result[key] = state.settings[key] === true;
+    }
+    return result;
+  }
+
+  function postBridgeState(requestId) {
+    if (!isBridgeOrigin()) return;
+    try {
+      window.postMessage(
+        {
+          source: BRIDGE_EXTENSION_SOURCE,
+          type: BRIDGE_TYPE_STATE,
+          requestId: typeof requestId === 'string' ? requestId : null,
+          version: EXT_VERSION,
+          state: bridgeLookupState()
+        },
+        location.origin
+      );
+    } catch (err) {
+      /* ignore */
+    }
+  }
+
+  /** 应用插件页传来的开关：只接受已知键的布尔值，其它字段一律忽略。 */
+  function applyBridgePatch(patch) {
+    if (!patch || typeof patch !== 'object') return false;
+    var next = Object.assign({}, state.settings);
+    var changed = false;
+    for (var index = 0; index < LOOKUP_SETTING_KEYS.length; index += 1) {
+      var key = LOOKUP_SETTING_KEYS[index];
+      if (typeof patch[key] !== 'boolean' || next[key] === patch[key]) continue;
+      next[key] = patch[key];
+      changed = true;
+    }
+    if (!changed) return false;
+    state.settings = normalizeSettings(next);
+    var toStore = {};
+    for (var stored = 0; stored < LOOKUP_SETTING_KEYS.length; stored += 1) {
+      toStore[LOOKUP_SETTING_KEYS[stored]] = state.settings[LOOKUP_SETTING_KEYS[stored]] === true;
+    }
+    storageSet(toStore);
+    refreshUi();
+    return true;
+  }
+
+  function onBridgeMessage(event) {
+    try {
+      if (!isBridgeOrigin()) return;
+      if (!event || event.source !== window || event.origin !== location.origin) return;
+      var data = event.data;
+      if (!data || typeof data !== 'object' || data.source !== BRIDGE_PLUGIN_SOURCE) return;
+      var requestId = typeof data.requestId === 'string' ? data.requestId : null;
+      if (data.type === BRIDGE_TYPE_GET) {
+        postBridgeState(requestId);
+        return;
+      }
+      if (data.type === BRIDGE_TYPE_SET) {
+        applyBridgePatch(data.patch);
+        postBridgeState(requestId);
       }
     } catch (err) {
       /* ignore */
@@ -6649,6 +6833,12 @@
         bindEvents();
         setStatus(t('statusIdle'), '');
         refreshUi();
+        try {
+          // DSH 插件页「交互」Tab 通过同页消息读写这三个开关
+          window.addEventListener('message', onBridgeMessage, false);
+        } catch (err) {
+          /* ignore */
+        }
         try {
           if (chrome && chrome.storage && chrome.storage.onChanged) {
             chrome.storage.onChanged.addListener(onStorageChanged);

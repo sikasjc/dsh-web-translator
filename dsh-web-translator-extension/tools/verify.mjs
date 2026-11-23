@@ -48,7 +48,7 @@ try {
 }
 if (manifest) {
   check('manifest: MV3', manifest.manifest_version === 3);
-  check('manifest: version 1.19.0', manifest.version === '1.19.0', manifest.version);
+  check('manifest: version 1.20.0', manifest.version === '1.20.0', manifest.version);
   check(
     'manifest: permissions 仅 storage/activeTab/scripting/contextMenus',
     JSON.stringify(manifest.permissions) === JSON.stringify(['storage', 'activeTab', 'scripting', 'contextMenus']),
@@ -144,7 +144,7 @@ const CONTENT_TOKENS = [
   ['translate', "rpc('translate'"],
   ['lookup', "rpc('lookup'"],
   ['wordbook/add', "rpc('wordbook/add'"],
-  ['EXT 版本 1.19.0', "EXT_VERSION = '1.19.0'"],
+  ['EXT 版本 1.20.0', "EXT_VERSION = '1.20.0'"],
   ['图片翻译右键消息', "message.type === 'dsh-it:translate-image'"],
   ['图片翻译入口', 'function startImageTranslation('],
   ['图片翻译覆盖层', 'function renderImageTranslation('],
@@ -254,6 +254,31 @@ check(
   content.includes('selectionTranslate') && content.includes('doubleClickTranslate') && content.includes('shortcutTranslate') &&
     content.includes('handleShortcutTranslate') && content.includes('shortcutDisabled')
 );
+check(
+  'content.js 浮窗面板「查词方式」快捷开关（划词/双击查词/快捷键，即时写 storage）',
+  content.includes("var LOOKUP_SETTING_KEYS = ['selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate']") &&
+    content.includes('function toggleLookupSetting(key)') &&
+    content.includes('function syncLookupButtons()') &&
+    content.includes("class: 'dsh-seg'") &&
+    content.includes("'aria-pressed': 'false'") &&
+    content.includes('lookupDoubleClick')
+);
+check(
+  'content.js DSH 插件页消息桥（读/写三个开关，仅 DSH 源响应）',
+  content.includes("BRIDGE_TYPE_GET = 'dsh-it:bridge:get'") &&
+    content.includes("BRIDGE_TYPE_SET = 'dsh-it:bridge:set'") &&
+    content.includes("BRIDGE_TYPE_STATE = 'dsh-it:bridge:state'") &&
+    content.includes('function isBridgeOrigin()') &&
+    content.includes('function applyBridgePatch(patch)') &&
+    content.includes('function postBridgeState(requestId)') &&
+    content.includes('window.addEventListener(\'message\', onBridgeMessage, false)')
+);
+check(
+  'content.js 消息桥只接受布尔开关（不信任 payload 其它字段）',
+  content.includes("if (typeof patch[key] !== 'boolean' || next[key] === patch[key]) continue;") &&
+    content.includes('if (!data || typeof data !== \'object\' || data.source !== BRIDGE_PLUGIN_SOURCE) return;')
+);
+check('options.html 查词文案：划词查词 / 双击查词', read('options.html').includes('划词查词') && read('options.html').includes('双击查词'));
 check('content.js 翻译后自动收起面板', content.includes('closePanel();'));
 check(
   'content.js 语言一致隐藏悬浮球（默认开启）',

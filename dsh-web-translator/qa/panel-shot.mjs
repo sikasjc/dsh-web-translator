@@ -11,7 +11,7 @@
  *  3. boots the dashboard, clicks the sidebar.panellist entry
  *     dsh翻译 / dsh-web-translator, asserts the main panel switched and the
  *     entry shows an active state;
- *  4. asserts the four tabs (概览/轨迹/设置/单词本), captures PNG screenshots for
+ *  4. asserts the seven tabs (概览/轨迹/设置/单词本/术语库/悬浮球/交互), captures PNG screenshots for
  *     overview, Turn traces, expanded Turn, settings, wordbook (light) + dark
  *     attempt, and records console errors/warnings + /dsh-immersive/api codes;
  *     the 轨迹 assertions cover the Turn-trace redesign (DESIGN-TURN-TRACE §3):
@@ -69,9 +69,9 @@ function check(name, ok, detail) {
 const PANEL_LABEL_RE = /dsh翻译|Immersive\s*Translate/i;
 /** Expected tab labels per locale. */
 const TAB_SETS = [
-  ['概览', '轨迹', '设置', '单词本'],
-  ['Overview', 'Traces', 'Settings', 'Wordbook'],
-  ['Overview', 'Traces', 'Settings', 'Word book'],
+  ['概览', '轨迹', '设置', '单词本', '术语库', '悬浮球', '交互'],
+  ['Overview', 'Traces', 'Settings', 'Wordbook', 'Terminology', 'Floating ball', 'Interaction'],
+  ['Overview', 'Traces', 'Settings', 'Word book', 'Terminology', 'Floating ball', 'Interaction'],
 ];
 /** Labels for a tab, given its canonical names. */
 const TAB_ALIASES = {
@@ -79,6 +79,9 @@ const TAB_ALIASES = {
   traces: ['轨迹', 'Traces', 'Trajectory', 'Trace'],
   settings: ['设置', 'Settings'],
   wordbook: ['单词本', 'Wordbook', 'Word book', 'Words'],
+  terms: ['术语库', 'Terminology'],
+  ball: ['悬浮球', 'Floating ball'],
+  interaction: ['交互', 'Interaction'],
 };
 
 const TABS_QUERY = `(() => Array.from(document.querySelectorAll('[role="tab"]')).map((el) => ({
@@ -477,12 +480,12 @@ async function main() {
     }
 
     // 4) Wait for the page tabs.
-    const tabsWait = await waitFor(page, `${TABS_QUERY}.length >= 4`, { timeoutMs: 25_000, intervalMs: 250 });
+    const tabsWait = await waitFor(page, `${TABS_QUERY}.length >= 7`, { timeoutMs: 25_000, intervalMs: 250 });
     const tabs = await evalOn(page, TABS_QUERY);
     const tabTexts = tabs.map((tab) => tab.text);
     const matchedTabSet = TAB_SETS.find((expected) => expected.every((label, index) => tabTexts[index] === label) || expected.every((label) => tabTexts.includes(label)));
-    check('panel tab bar has 4 tabs', tabsWait.ok && tabs.length === 4, JSON.stringify(tabTexts));
-    check('panel tabs are 概览/轨迹/设置/单词本', !!matchedTabSet, JSON.stringify(tabTexts));
+    check('panel tab bar has 7 tabs', tabsWait.ok && tabs.length === 7, JSON.stringify(tabTexts));
+    check('panel tabs are 概览/轨迹/设置/单词本/术语库/悬浮球/交互', !!matchedTabSet, JSON.stringify(tabTexts));
     check('panel tablist uses role=tablist', await evalOn(page, `!!document.querySelector('[role="tablist"]')`));
     const afterClickMain = await evalOn(page, `(() => ((document.querySelector('main') || document.body).innerText || '').slice(0, 3000))()`);
     check(

@@ -116,6 +116,22 @@ window.__ModuleLoader__.load({
       'tabs.wordbook': '单词本',
       'tabs.ball': '悬浮球',
       'tabs.terms': '术语库',
+      'tabs.interaction': '交互',
+      'interaction.title': '查词交互',
+      'interaction.hint': '这些开关保存在浏览器扩展里，改完即时生效，网页无需刷新；浮窗面板里也有同样的快捷开关。',
+      'interaction.selection': '划词查词',
+      'interaction.selectionHint': '在网页上选中 1~500 字符，弹出查词卡（原文/译文/音标/词典/发音/加入单词本）。',
+      'interaction.doubleClick': '双击查词',
+      'interaction.doubleClickHint': '双击网页上的单词或短句，弹出同一张查词卡。',
+      'interaction.shortcut': '快捷键查词',
+      'interaction.shortcutHint': '有选区时查词翻译选区，无选区时翻译整页；快捷键在 chrome://extensions/shortcuts 修改（默认 Command+K / Ctrl+K）。',
+      'interaction.version': '扩展 {version}',
+      'interaction.needExtension': '没有检测到浏览器扩展：安装并启用「dsh翻译」扩展后刷新本页，就能在这里开关查词。',
+      'interaction.bridgeTimeout': '扩展没有响应：刷新当前标签页后再试（更新/重载扩展后，已打开的 DSH 页面必须刷新一次）。',
+      'interaction.retry': '重新检测',
+      'interaction.saved': '已保存',
+      'interaction.saveFailed': '保存失败：{msg}',
+      'interaction.footer': '这三个开关只影响网页上的查词；不影响 DSH 页面内的翻译、单词本与术语库。',
       'ball.title': '悬浮球不展示域名',
       'ball.hint': '以下域名不会显示悬浮球。可在网页右键菜单「dsh翻译 → 当前域名不展示悬浮球」或浮窗底部添加；这里可以移除或手动添加。',
       'ball.placeholder': 'example.com',
@@ -396,6 +412,7 @@ window.__ModuleLoader__.load({
       'panel.tab.wordbook': '单词本',
       'panel.tab.terms': '术语库',
       'panel.tab.ball': '悬浮球',
+      'panel.tab.interaction': '交互',
       'panel.modelChip': '模型 {model}',
       'panel.modelEmpty': '未选择模型',
       'panel.modelChipTitle': '当前翻译模型（可在设置中修改）',
@@ -554,6 +571,22 @@ window.__ModuleLoader__.load({
       'tabs.wordbook': 'Wordbook',
       'tabs.ball': 'Floating ball',
       'tabs.terms': 'Terminology',
+      'tabs.interaction': 'Interaction',
+      'interaction.title': 'Lookup interaction',
+      'interaction.hint': 'These switches live in the browser extension. Changes apply immediately, no page reload needed; the floating panel has the same quick toggles.',
+      'interaction.selection': 'Selection lookup',
+      'interaction.selectionHint': 'Select 1–500 characters on a page to open the lookup card (source, translation, phonetics, definitions, audio, add to wordbook).',
+      'interaction.doubleClick': 'Double-click lookup',
+      'interaction.doubleClickHint': 'Double-click a word or short phrase on a page to open the same lookup card.',
+      'interaction.shortcut': 'Shortcut lookup',
+      'interaction.shortcutHint': 'With a selection it translates the selection; without one it translates the whole page. Change the shortcut in chrome://extensions/shortcuts (default Command+K / Ctrl+K).',
+      'interaction.version': 'extension {version}',
+      'interaction.needExtension': 'Browser extension not detected: install and enable the “dsh翻译” extension, then reload this page to manage lookups here.',
+      'interaction.bridgeTimeout': 'The extension did not respond: reload this tab and try again (after updating/reloading the extension, open DSH pages must be reloaded once).',
+      'interaction.retry': 'Check again',
+      'interaction.saved': 'Saved',
+      'interaction.saveFailed': 'Save failed: {msg}',
+      'interaction.footer': 'These switches only affect lookups on web pages; DSH-side translation, wordbook and terminology are unaffected.',
       'ball.title': 'Domains without floating ball',
       'ball.hint': 'The floating ball is hidden on these domains. Add one from the page right-click menu (“dsh翻译 → 当前域名不展示悬浮球”) or the floating panel; remove or add manually here.',
       'ball.placeholder': 'example.com',
@@ -834,6 +867,7 @@ window.__ModuleLoader__.load({
       'panel.tab.wordbook': 'Wordbook',
       'panel.tab.terms': 'Terminology',
       'panel.tab.ball': 'Floating ball',
+      'panel.tab.interaction': 'Interaction',
       'panel.modelChip': 'Model {model}',
       'panel.modelEmpty': 'No model selected',
       'panel.modelChipTitle': 'Current translation model (change it in Settings)',
@@ -1472,6 +1506,103 @@ window.__ModuleLoader__.load({
         speakSynthesized(word, lang);
       }
       return { speak: speak, stop: stop };
+    }
+    // #endregion
+
+    // #region extension bridge
+    /**
+     * 查词交互开关由浏览器扩展持有（chrome.storage.local）。插件页与扩展的
+     * content script 同源同页，用 window.postMessage 做一次请求/响应即可读写，
+     * 不需要新增 Host 路由，也不需要扩展联网。
+     */
+    const INTERACTION_KEYS = ['selectionTranslate', 'doubleClickTranslate', 'shortcutTranslate'];
+    /** Plugin → extension message source tag (the content script validates it). */
+    const INTERACTION_PLUGIN_SOURCE = 'dsh-it-plugin';
+    /** Extension → plugin state message type. */
+    const INTERACTION_STATE_TYPE = 'dsh-it:bridge:state';
+    /** One round-trip budget; a stale content script never answers. */
+    const INTERACTION_TIMEOUT_MS = 900;
+
+    /** Installed-extension version advertised by the content script (empty when absent). */
+    function extensionVersion() {
+      try {
+        const value = document.documentElement.getAttribute('data-dsh-it-extension');
+        if (typeof value === 'string' && value.length > 0) return value;
+        if (typeof window.__dshItExtensionVersion === 'string' && window.__dshItExtensionVersion.length > 0) {
+          return window.__dshItExtensionVersion;
+        }
+      } catch (error) {
+        /* ignore */
+      }
+      return '';
+    }
+
+    /** Keep only the three known switches, coerced to booleans. */
+    function normalizeInteractionState(source) {
+      const result = {};
+      const data = source && typeof source === 'object' ? source : {};
+      for (let index = 0; index < INTERACTION_KEYS.length; index += 1) {
+        const key = INTERACTION_KEYS[index];
+        result[key] = data[key] === true;
+      }
+      return result;
+    }
+
+    /**
+     * One round-trip with the extension content script.
+     * @param {object|null} patch - booleans to write; null reads the current state.
+     * @returns {Promise<object>} normalized switch state.
+     */
+    function requestInteraction(patch) {
+      return new Promise((resolve, reject) => {
+        if (typeof window === 'undefined' || typeof window.postMessage !== 'function') {
+          reject(new Error('postMessage unavailable'));
+          return;
+        }
+        const origin = window.location.origin;
+        const requestId = 'dsh-it-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+        let settled = false;
+        let timer = null;
+        function cleanup() {
+          try {
+            window.removeEventListener('message', onMessage, false);
+          } catch (error) {
+            /* ignore */
+          }
+          if (timer) clearTimeout(timer);
+        }
+        function onMessage(event) {
+          if (settled) return;
+          if (!event || event.source !== window || event.origin !== origin) return;
+          const data = event.data;
+          if (!data || typeof data !== 'object' || data.type !== INTERACTION_STATE_TYPE) return;
+          if (data.source !== 'dsh-it-extension' || data.requestId !== requestId) return;
+          settled = true;
+          cleanup();
+          resolve(normalizeInteractionState(data.state));
+        }
+        timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error('extension timeout'));
+        }, INTERACTION_TIMEOUT_MS);
+        window.addEventListener('message', onMessage, false);
+        const message = { source: INTERACTION_PLUGIN_SOURCE, requestId: requestId };
+        if (patch && typeof patch === 'object') {
+          message.type = 'dsh-it:bridge:set';
+          message.patch = normalizeInteractionState(patch);
+        } else {
+          message.type = 'dsh-it:bridge:get';
+        }
+        try {
+          window.postMessage(message, origin);
+        } catch (error) {
+          settled = true;
+          cleanup();
+          reject(error);
+        }
+      });
     }
     // #endregion
 
@@ -4120,7 +4251,7 @@ window.__ModuleLoader__.load({
 
       /** Left/right/Home/End move between the tabs. */
       function onTabKeyDown(event) {
-        const ids = ['overview', 'traces', 'settings', 'wordbook', 'terms', 'ball'];
+        const ids = ['overview', 'traces', 'settings', 'wordbook', 'terms', 'ball', 'interaction'];
         const index = ids.indexOf(tab);
         let nextIndex = -1;
         if (event.key === 'ArrowRight') nextIndex = (index + 1) % ids.length;
@@ -5208,6 +5339,7 @@ window.__ModuleLoader__.load({
         { id: 'wordbook', key: 'panel.tab.wordbook' },
         { id: 'terms', key: 'panel.tab.terms' },
         { id: 'ball', key: 'panel.tab.ball' },
+        { id: 'interaction', key: 'panel.tab.interaction' },
       ];
       const todayChip = usage
         ? h(
@@ -5356,6 +5488,17 @@ window.__ModuleLoader__.load({
                 hidden: tab !== 'ball',
               },
               mountedTabs.ball ? h(BallSitesPage) : null,
+            ),
+            h(
+              'div',
+              {
+                id: 'dsh-it-usage-panel-interaction',
+                role: 'tabpanel',
+                'aria-labelledby': 'dsh-it-usage-tab-interaction',
+                className: 'dsh-it-panel',
+                hidden: tab !== 'interaction',
+              },
+              mountedTabs.interaction ? h(InteractionPage) : null,
             ),
           ),
         ),
@@ -5539,6 +5682,169 @@ window.__ModuleLoader__.load({
                   ),
                 ),
               ),
+        ),
+      );
+    }
+
+    /**
+     * 交互 tab: the browsing-side lookup switches (selection / double-click /
+     * shortcut). The values live in the browser extension, so the page talks to
+     * the extension's content script through the same-page message bridge and
+     * degrades to an install/reload hint when it is missing or stale.
+     */
+    function InteractionPage() {
+      const t = useT();
+      const [phase, setPhase] = useState('loading');
+      const [state, setState] = useState(null);
+      const [busy, setBusy] = useState(null);
+      const [notice, setNotice] = useState(null);
+      const mountedRef = useRef(true);
+      const noticeTimerRef = useRef(null);
+
+      useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+          mountedRef.current = false;
+          if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+        };
+      }, []);
+
+      useEffect(() => {
+        void load();
+      }, []);
+
+      // 浮窗面板改了开关时，content script 会广播一次无 requestId 的状态。
+      useEffect(() => {
+        function onBroadcast(event) {
+          if (!event || event.source !== window) return;
+          const data = event.data;
+          if (!data || typeof data !== 'object' || data.type !== INTERACTION_STATE_TYPE) return;
+          if (data.source !== 'dsh-it-extension' || data.requestId) return;
+          if (!mountedRef.current) return;
+          setState(normalizeInteractionState(data.state));
+          setPhase('ready');
+        }
+        window.addEventListener('message', onBroadcast, false);
+        return () => window.removeEventListener('message', onBroadcast, false);
+      }, []);
+
+      /** 短暂的成功/失败提示，2.6s 后自动消失。 */
+      function flash(kind, text) {
+        setNotice({ kind: kind, text: text });
+        if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = setTimeout(() => {
+          if (mountedRef.current) setNotice(null);
+        }, 2600);
+      }
+
+      async function load() {
+        setPhase('loading');
+        setNotice(null);
+        try {
+          const next = await requestInteraction(null);
+          if (!mountedRef.current) return;
+          setState(next);
+          setPhase('ready');
+        } catch (error) {
+          if (!mountedRef.current) return;
+          setPhase(extensionVersion() ? 'timeout' : 'missing');
+        }
+      }
+
+      async function toggle(key) {
+        if (!state || busy) return;
+        const patch = {};
+        patch[key] = !(state[key] === true);
+        const previous = state;
+        setBusy(key);
+        setState(Object.assign({}, state, patch));
+        try {
+          const next = await requestInteraction(patch);
+          if (!mountedRef.current) return;
+          setState(next);
+          flash('ok', t('interaction.saved'));
+        } catch (error) {
+          if (!mountedRef.current) return;
+          setState(previous);
+          flash('error', t('interaction.saveFailed', { msg: describeError(error, t) }));
+        } finally {
+          if (mountedRef.current) setBusy(null);
+        }
+      }
+
+      function renderSwitch(key, labelKey, hintKey) {
+        const checked = !!(state && state[key] === true);
+        return h(
+          'div',
+          { key: 'interaction-' + key, className: 'dsh-it-switch-item' },
+          h(
+            'label',
+            { className: 'dsh-it-check-row' },
+            h('input', {
+              type: 'checkbox',
+              checked: checked,
+              disabled: busy !== null,
+              onChange: () => void toggle(key),
+            }),
+            h('span', null, t(labelKey)),
+          ),
+          h('p', { className: 'dsh-it-hint' }, t(hintKey)),
+        );
+      }
+
+      const version = extensionVersion();
+
+      if (phase === 'loading') {
+        return h('div', { className: 'dsh-it-panel' }, h('section', { className: 'dsh-it-card' }, h(LoadingSkeleton, { label: t('common.loading') })));
+      }
+
+      if (phase === 'missing' || phase === 'timeout') {
+        return h(
+          'div',
+          { className: 'dsh-it-panel' },
+          h(
+            'section',
+            { className: 'dsh-it-card' },
+            h(
+              'div',
+              { className: 'dsh-it-card-header' },
+              h('h3', { className: 'dsh-it-card-title' }, t('interaction.title')),
+              version ? h('span', { className: 'dsh-it-chip' }, t('interaction.version', { version: version })) : null,
+            ),
+            h(InlineAlert, { kind: 'warn' }, phase === 'missing' ? t('interaction.needExtension') : t('interaction.bridgeTimeout')),
+            h(
+              'div',
+              { className: 'dsh-it-row' },
+              h('button', { type: 'button', className: 'dsh-it-btn', onClick: () => void load() }, t('interaction.retry')),
+            ),
+          ),
+        );
+      }
+
+      return h(
+        'div',
+        { className: 'dsh-it-panel' },
+        h(
+          'section',
+          { className: 'dsh-it-card' },
+          h(
+            'div',
+            { className: 'dsh-it-card-header' },
+            h('h3', { className: 'dsh-it-card-title' }, t('interaction.title')),
+            version ? h('span', { className: 'dsh-it-chip' }, t('interaction.version', { version: version })) : null,
+          ),
+          h('p', { className: 'dsh-it-hint' }, t('interaction.hint')),
+          h(
+            'div',
+            { className: 'dsh-it-switch-list' },
+            renderSwitch('selectionTranslate', 'interaction.selection', 'interaction.selectionHint'),
+            renderSwitch('doubleClickTranslate', 'interaction.doubleClick', 'interaction.doubleClickHint'),
+            renderSwitch('shortcutTranslate', 'interaction.shortcut', 'interaction.shortcutHint'),
+          ),
+          h('p', { className: 'dsh-it-hint' }, t('interaction.footer')),
+          notice
+            ? h('p', { className: 'dsh-it-hint ' + (notice.kind === 'ok' ? 'dsh-it-hint-ok' : 'dsh-it-hint-error') }, notice.text)
+            : null,
         ),
       );
     }
@@ -6984,6 +7290,7 @@ window.__ModuleLoader__.load({
       const [wordbookMounted, setWordbookMounted] = useState(false);
       const [termsMounted, setTermsMounted] = useState(false);
       const [ballMounted, setBallMounted] = useState(false);
+      const [interactionMounted, setInteractionMounted] = useState(false);
 
       // Retry the optional locale connection when the page is opened: this
       // covers a locale service that registered after this plugin applied.
@@ -6997,13 +7304,14 @@ window.__ModuleLoader__.load({
         if (nextTab === 'wordbook') setWordbookMounted(true);
         if (nextTab === 'terms') setTermsMounted(true);
         if (nextTab === 'ball') setBallMounted(true);
+        if (nextTab === 'interaction') setInteractionMounted(true);
       }
 
       /** Left/right arrows move between tabs. */
       function onTabKeyDown(event) {
         if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
         event.preventDefault();
-        const order = ['settings', 'wordbook', 'terms', 'ball'];
+        const order = ['settings', 'wordbook', 'terms', 'ball', 'interaction'];
         const index = order.indexOf(tab);
         const step = event.key === 'ArrowRight' ? 1 : order.length - 1;
         const nextTab = order[(index + step) % order.length];
@@ -7019,6 +7327,7 @@ window.__ModuleLoader__.load({
         { id: 'wordbook', key: 'tabs.wordbook' },
         { id: 'terms', key: 'tabs.terms' },
         { id: 'ball', key: 'tabs.ball' },
+        { id: 'interaction', key: 'tabs.interaction' },
       ];
 
       return h(
@@ -7111,6 +7420,19 @@ window.__ModuleLoader__.load({
               h(BallSitesPage),
             )
           : null,
+        interactionMounted
+          ? h(
+              'div',
+              {
+                id: 'dsh-it-panel-interaction',
+                role: 'tabpanel',
+                'aria-labelledby': 'dsh-it-tab-interaction',
+                className: 'dsh-it-panel',
+                hidden: tab !== 'interaction',
+              },
+              h(InteractionPage),
+            )
+          : null,
       );
     }
     // #endregion
@@ -7179,6 +7501,8 @@ window.__ModuleLoader__.load({
 .dsh-it-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .dsh-it-check-row{display:flex;align-items:center;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer}
 .dsh-it-check-row input{width:15px;height:15px;margin:0;cursor:pointer}
+.dsh-it-switch-list{display:flex;flex-direction:column;gap:14px;min-width:0}
+.dsh-it-switch-item{display:flex;flex-direction:column;gap:2px;min-width:0}
 .dsh-it-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:inherit;font-size:13px;line-height:20px;font-weight:500;border-radius:8px;padding:6px 14px;cursor:pointer;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);white-space:nowrap}
 .dsh-it-btn:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
 .dsh-it-btn:disabled{opacity:.5;cursor:not-allowed}

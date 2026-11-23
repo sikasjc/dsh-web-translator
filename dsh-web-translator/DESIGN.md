@@ -313,7 +313,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ## 6. DSH Client（设置页）规范
 
 - 注册：`settings.section` `{ id:'immersive-translate', order:35, label: () => t('title') }`；插件 meta 走 `locale/{en,zh}.json`。
-- 页面结构：标题「dsh翻译」+ Tab「翻译设置 / 单词本 / 术语库 / 悬浮球」（Tab 本地状态；术语库与悬浮球按首次访问懒挂载，数据分别来自 `GET /terms`、`GET /ball-sites`）。左侧工具栏整页同样嵌入 `TermsPage` 与 `BallSitesPage`（其 Tab 为「概览 / 轨迹 / 设置 / 单词本 / 术语库 / 悬浮球」），两处共用同一组件。
+- 页面结构：标题「dsh翻译」+ Tab「翻译设置 / 单词本 / 术语库 / 悬浮球 / 交互」（Tab 本地状态；术语库、悬浮球与交互按首次访问懒挂载，数据分别来自 `GET /terms`、`GET /ball-sites`、扩展消息桥）。左侧工具栏整页同样嵌入 `TermsPage`、`BallSitesPage` 与 `InteractionPage`（其 Tab 为「概览 / 轨迹 / 设置 / 单词本 / 术语库 / 悬浮球 / 交互」），两处共用同一组件。
 - **翻译设置**：
   - 模型：按 provider 分组的 select（数据来自 GET /settings.catalog）；切换后调 GET /models/resolve 刷新推理强度选项；
   - 推理强度：当前模型 advertised 的各 effort（默认最低档，无 `auto` 选项；模型未声明时显示「模型默认（不可调）」）；目标语言 select；「保存」按钮（PUT /settings），脏状态提示；
@@ -323,6 +323,11 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
   - 顶部「新建术语库」输入 + 创建（上限 20 个自定义库），以及「导出全部」（JSON）与「导入」（JSON/CSV）入口；卡片列表按内置包 → 自定义库排序，每个库显示启用 checkbox、名称、内置/自定义 chip、词条数、说明。内置库只读（可停用但不可改名/删除/增删词条），自定义库可重命名、二次确认删除，并支持单库导出 JSON / CSV。
   - 词条行显示原文、处理策略（保留原文/固定译法）、目标译法、内置词的兜底纠正列表；自定义库提供内联添加词条表单（原文/策略/译法，上限 200 条）与逐条删除。所有写操作有 busy 态 + 成功/失败 notice，成功后用响应 payload 整体替换列表；数据缺字段/请求失败时降级为空态/错误态（可重试）。
   - 导入/导出：导出全部自定义库为 JSON（`{version, exportedAt, libraries:[{name,enabled,terms}]}`），单库可导出 JSON 或 CSV（header `source,policy,target`，RFC4180 式引号转义）；导入 JSON 支持导出信封/单库信封/裸数组并做防御性归一化，导入 CSV 以文件名建一个新库；统一走 `POST /terms/import`，成功后展示 `imported` 数量并广播跨挂载同步事件。
+- **交互**（查词开关，`InteractionPage`）：
+  - 三个 checkbox：划词查词 / 双击查词 / 快捷键查词。值不存 Host——它们在浏览器扩展的 `chrome.storage.local`（`selectionTranslate` / `doubleClickTranslate` / `shortcutTranslate`），插件页只做读写 UI。
+  - 读写走**同页 postMessage 桥**（不新增 Host 路由、不联网）：插件页 `postMessage({source:'dsh-it-plugin', type:'dsh-it:bridge:get'|'dsh-it:bridge:set', requestId, patch?}, location.origin)`；扩展 content script 回 `{source:'dsh-it-extension', type:'dsh-it:bridge:state', requestId, version, state:{selectionTranslate,doubleClickTranslate,shortcutTranslate}}`。请求 900ms 超时；content script 收到 storage 变化时广播一次**无 requestId** 的 state，插件页据此与浮窗面板/选项页保持同步。
+  - 安全：content script 只在 `location.origin === origin(dshBaseUrl)`（默认本机 3080）时响应，并校验 `event.source === window`、`event.origin === location.origin`、`data.source === 'dsh-it-plugin'`；`patch` 只接受三个已知键的布尔值，其它字段忽略。
+  - 降级：`document.documentElement[data-dsh-it-extension]` 为空 → 「未检测到扩展」+ 安装提示；有版本号但桥超时 → 「扩展没有响应，刷新本页」（更新扩展后旧 content script 仍在页面里）。每次改动走乐观更新，失败回滚并提示。
 - **单词本**：
   - 顶部统计（总数/待复习/已掌握）+ 搜索框 + 过滤 tab（待复习/全部/已掌握）；
   - 列表：单词、音标、译文、下次复习、发音按钮（🔊）、编辑备注、标记掌握、删除；
@@ -381,6 +386,8 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 - 划词翻译 / 双击翻译（V1.9，默认关闭，选项 `selectionTranslate` / `doubleClickTranslate`）：开启后 selection 长度 1..500 → 弹卡（Shadow DOM 定位 fixed）：原文、加载、译文、音标/词义、🔊（speechSynthesis / audioUrl）、「加入单词本」；`handleSelectionEvent` 按来源门控：双击来源需 `doubleClickTranslate`，拖选来源需 `selectionTranslate`，关闭时对应操作不弹卡；点击外部/Esc/滚动关闭。
 - 快捷键翻译（V1.9，默认关闭，选项 `shortcutTranslate`）：manifest `commands.shortcut-translate`（建议 `Command+K` / `Ctrl+K`，在 `chrome://extensions/shortcuts` 自定义）；background 收到 `commands.onCommand` 后向当前 tab 发 `dsh-it:shortcut-translate`，content 校验开关后：有选区 → `handleSelectionEvent(true)` 翻译选区，无选区 → `toggleTranslate()` 整页；开关关闭时只 toast 提示未启用。
 - 面板行为：点击「翻译此页/重新翻译」并成功启动后自动 `closePanel()`，只保留悬浮球；进度/状态在下次展开时可见。
+- 面板「查词方式」（V1.20）：语言行下方一行 segmented 按钮 `划词 / 双击查词 / 快捷键`（`aria-pressed` 表示开关，`.dsh-seg-btn[data-setting]`），点击 `toggleLookupSetting(key)` 先本地生效再写 `chrome.storage.local`（写失败回滚 + 状态行提示）；`refreshUi()` → `syncLookupButtons()` 保证按下态与设置一致。与选项页三个 checkbox、DSH「交互」Tab 共用同一份 storage。
+- DSH 插件页消息桥（V1.20）：content 顶层 `window.addEventListener('message', onBridgeMessage)`；`isBridgeOrigin()` 要求 `location.origin === origin(dshBaseUrl)`，收到 `source:'dsh-it-plugin'` 的 `get`/`set` 后回 `dsh-it:bridge:state`（带 `version` 与三个布尔开关）；`applyBridgePatch` 只写已知键的布尔值；`onStorageChanged` 命中三个键时 `postBridgeState(null)` 广播给打开中的 DSH 页面。
 - 工具栏图标：`chrome.action.onClicked` 只发 `dsh-it:toggle-panel` 打开/收起面板，**不触发翻译**。
 - 悬浮球（V1.10）：左键 `quickTranslateFromBall()` —— 未翻译时按当前模式（`only` 保留仅译文，其余按 `bilingual`）静默开始翻译，翻译中再点停止，已翻译再点还原；右键 `contextmenu` 阻止默认菜单并打开功能面板；拖动（≥5px）不触发翻译/面板。
 - 连接失败可操作提示（V1.17.14）：`startTranslate` 的启动健康检查失败时由 `connectionStatusHint(err)` 归类——`DSH_UNREACHABLE`/`TIMEOUT`（DSH Web 未启动或地址不对）→「无法连接本机 DSH…」、`HTTP_404`（DSH 已启动但插件未安装/未启用）→「DSH 中未安装或未启用 dsh-web-translator 插件…」；面板入口把提示写进状态行，静默入口（悬浮球左键快捷翻译、跟随/自动翻译等）额外在悬浮球上方 `showToast(7000)`，不再出现点击后毫无反馈的情况（子框架广播也走静默分支，但子框架不创建 UI，toast 自然是空操作）；提示文本同时进入 zh/en 字典，错误码判定保持在前端，Host 契约不变。
@@ -408,6 +415,7 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 
 ### 7.4 options.html / options.js
 - 字段：DSH 地址（默认 127.0.0.1:3080）、目标语言、模式默认、自动翻译、界面语言；「测试连接」（GET /health）、「打开 DSH 设置」（提示在 DSH → 设置 → dsh翻译 中改模型/提示词/复习）。
+- 查词开关文案（V1.20）：`selectionTranslate` / `doubleClickTranslate` 标签统一为「划词查词 / 双击查词」（与浮窗面板、DSH「交互」Tab 一致），`shortcutTranslate` 保留「快捷键翻译」；三处共用同一份 storage，无第二份配置。
 - 模型与提示词编辑放在 DSH 设置页（单一权威源）；扩展选项页提供「获取当前模型/语言」只读回显（GET /settings）与目标语言快捷覆盖（存 chrome.storage，请求时覆盖）。
 - 保存至 `chrome.storage.local`；保存成功提示。
 

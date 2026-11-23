@@ -27,7 +27,7 @@ dsh翻译是 DSH（DeepSeek Harness）的本地网页翻译前端。翻译由你
 
 功能：
 • 原文 / 双语对照 / 仅译文三种模式，右键菜单可切换
-• 划词翻译、双击查词、自定义快捷键（默认关闭，可在选项页开启）
+• 划词查词、双击查词、自定义快捷键（默认关闭，可在浮窗面板、扩展选项页或 DSH 设置页开启）
 • 单词本：查词后一键加入，在 DSH 插件页复习
 • 悬浮球拖动/隐藏，按域名隐藏，页面语言与目标语言一致时自动隐藏
 • 面板显示本页/今日 token 消耗；可选翻译 iframe 内内容
@@ -45,7 +45,7 @@ dsh翻译 is a local front-end for web page translation backed by DSH (DeepSeek 
 
 Features:
 • Source / bilingual / translation-only modes, switchable from the context menu
-• Selection translation, double-click lookup and a configurable shortcut (off by default)
+• Selection lookup, double-click lookup and a configurable shortcut (off by default; toggle them in the floating panel, the extension options or DSH settings)
 • Wordbook: add words while looking them up and review them on the DSH plugin page
 • Draggable/hideable floating ball, per-domain hiding, auto-hide when the page language matches the target
 • Token usage for the current page and today; optional iframe translation

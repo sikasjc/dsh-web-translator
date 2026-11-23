@@ -2777,6 +2777,81 @@ async function main() {
   );
   await evalOn(sw, `chrome.storage.local.set({ followTranslation: true })`);
 
+  /* 7.5) 浮窗面板「查词方式」快捷开关 + DSH 插件页消息桥 */
+  await evalOn(sw, `chrome.storage.local.set({ selectionTranslate: false, doubleClickTranslate: false, shortcutTranslate: false })`);
+  await wait(300);
+  await evalOn(sw, `chrome.tabs.sendMessage(${tab.id}, { type: 'dsh-it:toggle-panel' })`);
+  await wait(350);
+  const panelLookupProbe = await evalOn(page, `(async () => {
+    const shadow = document.getElementById('dsh-it-host').shadowRoot;
+    const buttons = Array.from(shadow.querySelectorAll('.dsh-seg-btn[data-setting]'));
+    const button = buttons.find((node) => node.dataset.setting === 'doubleClickTranslate');
+    const before = button ? button.getAttribute('aria-pressed') : null;
+    if (button) button.click();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const after = button ? button.getAttribute('aria-pressed') : null;
+    return { count: buttons.length, labels: buttons.map((node) => node.textContent).join('|'), before, after };
+  })()`);
+  const toggledStorage = await evalOn(sw, `(async () => await chrome.storage.local.get(['doubleClickTranslate']))()`);
+  check(
+    '浮窗面板：查词方式三个快捷开关（划词/双击查词/快捷键）',
+    panelLookupProbe.count === 3 && panelLookupProbe.labels === '划词|双击查词|快捷键' && panelLookupProbe.before === 'false' && panelLookupProbe.after === 'true',
+    JSON.stringify(panelLookupProbe)
+  );
+  check('浮窗面板：双击查词开关写入 storage', toggledStorage.doubleClickTranslate === true, JSON.stringify(toggledStorage));
+  const panelToggleOff = await evalOn(page, `(async () => {
+    const shadow = document.getElementById('dsh-it-host').shadowRoot;
+    const button = Array.from(shadow.querySelectorAll('.dsh-seg-btn[data-setting]')).find((node) => node.dataset.setting === 'doubleClickTranslate');
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return button.getAttribute('aria-pressed');
+  })()`);
+  const toggleOffStorage = await evalOn(sw, `(async () => await chrome.storage.local.get(['doubleClickTranslate']))()`);
+  check('浮窗面板：再点一次关闭并回写 storage', panelToggleOff === 'false' && toggleOffStorage.doubleClickTranslate === false, panelToggleOff + '/' + JSON.stringify(toggleOffStorage));
+  await evalOn(sw, `chrome.tabs.sendMessage(${tab.id}, { type: 'dsh-it:toggle-panel' })`);
+  await wait(250);
+
+  /* 7.6) DSH 插件页 ↔ 扩展消息桥（仅 DSH 源） */
+  const testOrigin = new URL(pageUrl).origin;
+  const bridgeCall = (type, requestId, patch) => `(async () => {
+    const origin = location.origin;
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener('message', onMessage);
+        resolve({ timeout: true });
+      }, 1200);
+      function onMessage(event) {
+        const data = event.data;
+        if (!data || data.source !== 'dsh-it-extension' || data.type !== 'dsh-it:bridge:state' || data.requestId !== '${requestId}') return;
+        clearTimeout(timer);
+        window.removeEventListener('message', onMessage);
+        resolve({ state: data.state, version: data.version });
+      }
+      window.addEventListener('message', onMessage);
+      window.postMessage({ source: 'dsh-it-plugin', type: '${type}', requestId: '${requestId}'${patch ? ', patch: ' + JSON.stringify(patch) : ''} }, origin);
+    });
+  })()`;
+  await evalOn(sw, `chrome.storage.local.set({ dshBaseUrl: ${JSON.stringify(testOrigin)} })`);
+  await wait(400);
+  const bridgeGet = await evalOn(page, bridgeCall('dsh-it:bridge:get', 'e2e-get'));
+  check(
+    '消息桥：DSH 源上读取查词开关',
+    bridgeGet && bridgeGet.state && bridgeGet.state.doubleClickTranslate === false && typeof bridgeGet.version === 'string',
+    JSON.stringify(bridgeGet)
+  );
+  const bridgeSet = await evalOn(page, bridgeCall('dsh-it:bridge:set', 'e2e-set', { doubleClickTranslate: true }));
+  const bridgeStored = await evalOn(sw, `(async () => await chrome.storage.local.get(['doubleClickTranslate', 'selectionTranslate', 'shortcutTranslate']))()`);
+  check(
+    '消息桥：DSH 源上写入查词开关（回包 + storage 同步）',
+    bridgeSet && bridgeSet.state && bridgeSet.state.doubleClickTranslate === true && bridgeStored.doubleClickTranslate === true &&
+      bridgeStored.selectionTranslate === false && bridgeStored.shortcutTranslate === false,
+    JSON.stringify({ reply: bridgeSet, stored: bridgeStored })
+  );
+  await evalOn(sw, `chrome.storage.local.set({ dshBaseUrl: 'http://127.0.0.1:3080', doubleClickTranslate: false })`);
+  await wait(400);
+  const bridgeSilent = await evalOn(page, bridgeCall('dsh-it:bridge:get', 'e2e-silent'));
+  check('消息桥：非 DSH 源不响应（普通网站改不了扩展设置）', bridgeSilent && bridgeSilent.timeout === true, JSON.stringify(bridgeSilent));
+
   /* 8) options 页 */
   try {
     const created = await browser.send('Target.createTarget', { url: 'chrome-extension://' + extensionId + '/options.html' });
