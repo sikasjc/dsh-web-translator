@@ -244,8 +244,10 @@ Body：settings 子集。校验：类型/范围（batchSegments 1..20、batchCha
 ### 5.6.1 `DELETE /records` 与 `recordHistory` 设置
 
 - `settings.recordHistory`（boolean，默认 `true`）控制是否记录翻译历史；关闭后 `withUsage()` 跳过 usage 账本与 DSH 原生翻译会话（`conversations.recordTurn`），翻译/查词本身不受影响。
-- `DELETE /records`：调用 `conversations.clearRecords()`（停止 live 会话、归档并把翻译会话移出「dsh翻译记录」workspace、删除该 workspace）后清空 usage 账本；因 DSH 没有删除会话的 API，会话日志本身保留在磁盘、从侧边栏隐藏。
+- `DELETE /records`：调用 `conversations.clearRecords()` 后清空 usage 账本。`clearRecords()` **永久删除** header cwd 指向本插件私有 `$DSH_HOME/immersive-translate/conversations` 的 DSH 会话：DSH 没有删除会话的 API，插件按 `sessionPersistence` 的 `root` + 每条快照的 `location.path` 定位 `<sessions root>/<project>/<sessionId>/`，校验目录名等于会话 id、两级布局、无符号链接且 realpath 仍在 root 内，才 `rm -rf` 该会话目录；不合法就一个字节都不删。删除后把 id 从归档集合移除（旧版本的归档记录不再残留），并 `session/disposed` 通知客户端立刻移除该行；全部删除成功后删除「dsh翻译记录」分组（下一次翻译会重新创建）。
+- `clearRecords()` 返回 `{sessions, deleted, failed, groupRemoved, error?}`：有删除失败或分组未移除时 client 必须显示失败提示，不能显示「已清理」。归属边界只认会话 header 的 cwd，删除范围绝不超出插件的私有会话目录。
 - Client 设置页新增「翻译记录」卡片：关闭记录开关（默认关闭 = 默认记录）与「清理所有记录」二次确认。
+- Host 服务探测（`agents`/`sessionTitle`/`workspaceRegistry`/`sessionPersistence`）在缺失时必须每次重试，不能把一次 `undefined` 缓存成永久关闭：DSH 服务 fiber 在插件重载/启动窗口内可能短暂不可用。
 
 ### 5.7.1 `GET /ball-sites` / `POST /ball-sites/add|remove`
 悬浮球域名隐藏列表：GET 返回 `{sites, updatedAt}`；add/remove 请求 `{domain}`，域名统一小写、去掉协议/路径/端口/`www.` 前缀，去重且最多 200 个。

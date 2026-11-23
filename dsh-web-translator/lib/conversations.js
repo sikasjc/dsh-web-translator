@@ -16,8 +16,8 @@
  * `null`; the caller keeps recording into the plugin's own usage ledger.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, realpath } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { resolveDataDir } from './store.js';
 
 /** Session id prefix for translation conversations (kept path-safe). */
@@ -157,6 +157,74 @@ export function normalizeSessionUsage(usage) {
   return event;
 }
 
+/** @returns {Promise<void>} resolves after `ms` milliseconds. */
+function delay(ms) {
+  return new Promise((resolveDelay) => {
+    const timer = setTimeout(resolveDelay, ms);
+    if (timer !== null && typeof timer === 'object' && typeof timer.unref === 'function') timer.unref();
+  });
+}
+
+/**
+ * On-disk artifact path of one stored session, from the persistence snapshot
+ * (`location`) or the backend's `locate()`. Returns null when the backend has
+ * no materialized file for the session (nothing to delete on disk).
+ * @param {object | null} snapshot - persistence list entry.
+ * @param {object} header - session header.
+ * @param {object | null} persistence - session persistence service.
+ * @returns {string | null}
+ */
+function artifactPathOf(snapshot, header, persistence) {
+  const location = snapshot !== null && typeof snapshot === 'object' ? snapshot.location : null;
+  if (location !== null && typeof location === 'object' && typeof location.path === 'string' && location.path.length > 0) {
+    return location.path;
+  }
+  try {
+    const located = typeof persistence?.locate === 'function' ? persistence.locate(header) : null;
+    if (located !== null && typeof located === 'object' && typeof located.path === 'string' && located.path.length > 0) {
+      return located.path;
+    }
+  } catch {
+    // An unknown artifact means nothing can be deleted safely.
+  }
+  return null;
+}
+
+/**
+ * Prove that `directory` is exactly `<sessionsRoot>/<project>/<sessionId>/`,
+ * with real (never symlinked) components that stay inside the root, before
+ * anything is removed. Mirrors the DSH session layout so a forged or stale
+ * snapshot location can never delete an unrelated directory.
+ * @param {string} root - sessions root reported by the persistence layout.
+ * @param {string} directory - candidate session directory.
+ * @param {string} id - expected session id.
+ * @returns {Promise<string>} the absolute directory to remove.
+ */
+async function verifySessionDirectory(root, directory, id) {
+  const base = resolve(root);
+  const target = resolve(directory);
+  const rel = relative(base, target);
+  const parts = rel.split(sep);
+  if (rel.length === 0 || isAbsolute(rel) || parts.length !== 2 || parts.some((part) => part === '' || part === '.' || part === '..') || parts[1] !== id) {
+    throw new Error(`refusing to delete '${directory}': not a session directory under '${root}'`);
+  }
+  const canonicalRoot = await realpath(base);
+  let current = base;
+  for (const part of parts) {
+    current = join(current, part);
+    const info = await lstat(current);
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+      throw new Error(`refusing to delete '${directory}': a path component is not a real directory`);
+    }
+    const canonical = await realpath(current);
+    const child = relative(canonicalRoot, canonical);
+    if (child.length === 0 || isAbsolute(child) || child.split(sep).includes('..')) {
+      throw new Error(`refusing to delete '${directory}': it resolves outside '${root}'`);
+    }
+  }
+  return target;
+}
+
 /**
  * Create the conversation bridge.
  * @param {object} options - host seams.
@@ -179,13 +247,11 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
   let titleService;
   let workspaceRegistry;
   let persistenceService;
+  let sessionsService;
   /** Cached workspace entity for the translation conversation group. */
   let workspace = null;
   /** In-flight workspace creation (idempotence for concurrent rounds). */
   let workspacePromise = null;
-  /** True once the host proved it has no usable workspace registry. */
-  let workspaceDisabled = false;
-  let disabled = false;
   let disposedAll = false;
   let warned = false;
 
@@ -200,17 +266,38 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
     }
   }
 
-  /** Resolve optional host services once, tolerating their absence (tests). */
-  function services() {
+  /**
+   * Resolve one optional host service. A miss is never remembered: the next
+   * call probes again, so a service fiber that is still starting (or a plugin
+   * remount that briefly drops the service) cannot disable workspace support
+   * for the rest of the bridge lifetime.
+   * @param {object | null | undefined} current - previously resolved value.
+   * @param {string} name - Cordis service name.
+   * @returns {object | null} the service, or null while it stays unavailable.
+   */
+  function resolveService(current, name) {
+    if (current !== undefined && current !== null) return current;
     try {
-      if (agentsService === undefined) agentsService = ctx?.get?.('agents') ?? null;
-      if (titleService === undefined) titleService = ctx?.get?.('sessionTitle') ?? null;
-      if (workspaceRegistry === undefined) workspaceRegistry = ctx?.get?.('workspaceRegistry') ?? null;
-      if (persistenceService === undefined) persistenceService = ctx?.get?.('sessionPersistence') ?? null;
+      return ctx?.get?.(name) ?? null;
     } catch {
-      // Optional services only.
+      return null;
     }
-    return { agents: agentsService, titles: titleService, workspaces: workspaceRegistry, persistence: persistenceService };
+  }
+
+  /** Resolve optional host services, tolerating their absence (tests). */
+  function services() {
+    agentsService = resolveService(agentsService, 'agents');
+    titleService = resolveService(titleService, 'sessionTitle');
+    workspaceRegistry = resolveService(workspaceRegistry, 'workspaceRegistry');
+    persistenceService = resolveService(persistenceService, 'sessionPersistence');
+    sessionsService = resolveService(sessionsService, 'sessions');
+    return {
+      agents: agentsService,
+      titles: titleService,
+      workspaces: workspaceRegistry,
+      persistence: persistenceService,
+      sessions: sessionsService,
+    };
   }
 
   /** @param {unknown} handle - value returned by `agents.create`. */
@@ -358,13 +445,9 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
    */
   async function ensureWorkspace() {
     if (workspace !== null) return workspace;
-    if (workspaceDisabled) return null;
     if (workspacePromise !== null) return workspacePromise;
     const { workspaces } = services();
-    if (workspaces === null || typeof workspaces?.create !== 'function') {
-      workspaceDisabled = true;
-      return null;
-    }
+    if (workspaces === null || typeof workspaces?.create !== 'function') return null;
     workspacePromise = (async () => {
       try {
         await mkdir(cwd, { recursive: true, mode: 0o700 });
@@ -434,7 +517,6 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
   async function createConversation(turnId, info) {
     const { agents, titles } = services();
     if (agents === null || typeof agents?.create !== 'function') {
-      disabled = true;
       warn('the agents service is unavailable; translation conversations are ledger-only');
       return null;
     }
@@ -511,7 +593,7 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
    * @returns {Promise<object | null>}
    */
   async function ensureConversation(turnId, info) {
-    if (disabled || disposedAll) return null;
+    if (disposedAll) return null;
     const existing = conversations.get(turnId);
     if (existing !== undefined) return existing;
     const inflight = pending.get(turnId);
@@ -606,70 +688,166 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
   }
 
   /**
-   * 清理「dsh翻译记录」：停止所有 live 会话，归档并移出分组中的翻译会话，
-   * 最后删除该 workspace（下一次翻译会重新创建）。DSH 没有删除会话的 API，
-   * 因此会话日志本身保留在磁盘上，但会从侧边栏/分组视图隐藏。
-   * @returns {Promise<{sessions: number, archived: number}>}
+   * 清理「dsh翻译记录」：停止所有 live 会话，并**永久删除**该分组里的 DSH
+   * 会话日志（DSH 没有删除会话的 API，只能由插件按它自己的存储布局删除）。
+   * 只处理 header cwd 指向本插件私有 conversations 目录的会话；删除前校验
+   * `<sessions root>/<project>/<sessionId>/` 布局、拒绝符号链接，路径不合法就
+   * 一个字节都不动。全部删除成功后顺手移除该分组，下次翻译会重新创建。
+   * @returns {Promise<{sessions: number, deleted: number, failed: number,
+   *   groupRemoved: boolean, error?: string}>}
    */
   async function clearRecords() {
-    const { workspaces, persistence } = services();
-    const ids = new Set();
+    // This is the one operation where a stale "service unavailable" snapshot
+    // silently leaves every session visible, so probe the registry freshly
+    // instead of trusting what an earlier round cached.
+    workspaceRegistry = resolveService(null, 'workspaceRegistry');
+    const { workspaces, persistence, sessions: sessionStore } = services();
+    let firstError;
+    const fail = (error) => {
+      if (firstError !== undefined) return;
+      firstError = error instanceof Error ? error.message : String(error);
+    };
+
+    const liveIds = new Set();
     for (const conversation of conversations.values()) {
-      if (typeof conversation.sessionId === 'string' && conversation.sessionId.length > 0) ids.add(conversation.sessionId);
+      if (typeof conversation.sessionId === 'string' && conversation.sessionId.length > 0) liveIds.add(conversation.sessionId);
     }
-    if (workspace !== null && Array.isArray(workspace.sessionIds)) {
-      for (const id of workspace.sessionIds) {
-        if (typeof id === 'string' && id.length > 0) ids.add(id);
-      }
+    const hadLive = liveIds.size > 0;
+    for (const conversation of [...conversations.values()]) disposeConversation(conversation);
+    if (hadLive) {
+      // Give a detached live session's write-behind drain a moment before its
+      // artifact is removed, so it cannot materialize again after the delete.
+      await delay(250);
     }
     try {
+      // The cwd is the ownership boundary; make sure it resolves even when this
+      // process never recorded a translation (cold bridge after a restart).
+      await mkdir(cwd, { recursive: true, mode: 0o700 });
+    } catch {
+      // A missing directory only leaves nothing to own.
+    }
+
+    const candidates = [];
+    const canonical = await canonicalPath(cwd);
+    if (canonical === null) fail(new Error('the conversation directory could not be resolved'));
+    try {
       if (persistence !== null && typeof persistence?.list === 'function') {
-        const canonical = await canonicalPath(cwd);
-        const snapshots = await persistence.list();
-        for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
-          const header = snapshot !== null && typeof snapshot === 'object' ? snapshot.header ?? snapshot : null;
-          if (header === null || typeof header.id !== 'string' || header.id.length === 0) continue;
-          const headerCwd = typeof header.cwd === 'string' ? await canonicalPath(header.cwd) : null;
-          if (canonical !== null && headerCwd === canonical) ids.add(header.id);
-        }
-      }
-    } catch (error) {
-      warn(`clear records list failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    for (const conversation of [...conversations.values()]) disposeConversation(conversation);
-    let archived = 0;
-    if (workspaces !== null && typeof workspaces?.archiveSession === 'function') {
-      for (const id of ids) {
-        try {
-          await workspaces.archiveSession(id, { stopActivity: true });
-          archived += 1;
-        } catch (error) {
-          warn(`archive session failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    }
-    const entity = workspace;
-    if (entity !== null && typeof entity === 'object') {
-      if (typeof entity.detachSession === 'function') {
-        for (const id of ids) {
-          try {
-            await entity.detachSession(id);
-          } catch {
-            // Detaching is best-effort; archival already hid the session.
+        if (canonical !== null) {
+          const snapshots = await persistence.list();
+          for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+            const header = snapshot !== null && typeof snapshot === 'object' ? snapshot.header ?? snapshot : null;
+            if (header === null || typeof header.id !== 'string' || header.id.length === 0) continue;
+            const headerCwd = typeof header.cwd === 'string' ? await canonicalPath(header.cwd) : null;
+            if (headerCwd !== canonical) continue;
+            candidates.push({ id: header.id, header, snapshot });
           }
         }
+      } else if (workspace !== null || hadLive) {
+        // Nothing can be enumerated or verified: report it instead of a false success.
+        fail(new Error('the session persistence service is unavailable'));
       }
-      if (workspaces !== null && typeof workspaces?.delete === 'function' && typeof entity.id === 'string') {
+    } catch (error) {
+      fail(error);
+    }
+
+    // The backend's own root is the containment boundary; never infer it from
+    // the candidate path, or a forged location could point anywhere.
+    const sessionsRoot = persistence !== null && typeof persistence?.root === 'string' && persistence.root.length > 0
+      ? persistence.root
+      : null;
+    const planned = [];
+    for (const candidate of candidates) {
+      let dir = null;
+      try {
+        const path = artifactPathOf(candidate.snapshot, candidate.header, persistence);
+        if (path !== null) dir = dirname(path);
+      } catch (error) {
+        dir = undefined;
+        fail(error);
+      }
+      planned.push({ ...candidate, dir });
+    }
+
+    let deleted = 0;
+    let failed = 0;
+    for (const entry of planned) {
+      try {
+        if (entry.dir === undefined) throw new Error(`session '${entry.id}': artifact location could not be verified`);
+        // Stop and detach a live row before its file disappears, so no pending
+        // flush can materialize the artifact again after the delete.
+        let wasLive = false;
         try {
-          await workspaces.delete(entity.id);
-        } catch (error) {
-          warn(`workspace delete failed: ${error instanceof Error ? error.message : String(error)}`);
+          const live = sessionStore !== null && typeof sessionStore?.get === 'function' ? sessionStore.get(entry.id) : undefined;
+          if (live !== undefined && live !== null) {
+            wasLive = true;
+            try {
+              await sessionStore.flush?.(live);
+            } catch {
+              // A failed flush only means the log was already drained.
+            }
+            const stored = sessionStore?.store?.get?.(entry.id);
+            if (stored !== undefined && typeof stored?.detach === 'function') stored.detach();
+          }
+        } catch {
+          // Best-effort: stale live rows disappear on the next restart.
         }
+        if (wasLive) await delay(200);
+        if (entry.dir !== null) {
+          if (sessionsRoot === null) throw new Error('the sessions root is unavailable; refusing to delete session files');
+          const verified = await verifySessionDirectory(sessionsRoot, entry.dir, entry.id);
+          await rm(verified, { recursive: true, force: true });
+        }
+        try {
+          ctx?.emit?.('session/disposed', { id: entry.id });
+        } catch {
+          // Best-effort UI notification.
+        }
+        // Leave no stale archive entry behind (archives from older versions).
+        if (workspaces !== null && typeof workspaces?.unarchiveSession === 'function') {
+          try {
+            await workspaces.unarchiveSession(entry.id);
+          } catch {
+            // A stale archive id is invisible; never fail the delete over it.
+          }
+        }
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        fail(error);
+      }
+    }
+
+    // The group is the plugin's own; remove it once nothing is left inside so a
+    // restart cannot recreate a phantom group from archived logs.
+    let group = workspace;
+    if (group === null && workspaces !== null && typeof workspaces?.resolveByPath === 'function') {
+      try {
+        group = await workspaces.resolveByPath(cwd) ?? null;
+      } catch {
+        group = null;
+      }
+    }
+    let groupRemoved = group === null;
+    if (group !== null && failed === 0 && workspaces !== null && typeof workspaces?.delete === 'function' && typeof group.id === 'string') {
+      try {
+        await workspaces.delete(group.id);
+        groupRemoved = true;
+      } catch (error) {
+        fail(error);
       }
     }
     workspace = null;
     workspacePromise = null;
-    return { sessions: ids.size, archived };
+    if (firstError !== undefined) {
+      // Log unconditionally: the one-shot `warn` above may already be spent,
+      // and a clear that deletes nothing must never look like a silent success.
+      try {
+        logger?.warn?.(`[dsh-web-translator] conversations: clear records deleted ${deleted}/${candidates.length} sessions: ${firstError}`);
+      } catch {
+        // Diagnostics only.
+      }
+    }
+    return { sessions: candidates.length, deleted, failed, groupRemoved, ...(firstError === undefined ? {} : { error: firstError }) };
   }
 
   /**
@@ -705,7 +883,7 @@ export function createConversationBridge({ ctx, dataDir, logger, now = Date.now 
     list,
     ensureWorkspace,
     dispose,
-    enabled: () => !disabled && !disposedAll,
+    enabled: () => !disposedAll && services().agents !== null,
     /** @returns {string} the conversation cwd used for stored sessions. */
     cwd: () => cwd,
   };

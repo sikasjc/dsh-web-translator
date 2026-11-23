@@ -103,7 +103,7 @@ export function createFakeLlm({ providers, models, modelInfo, streams } = {}) {
  *   agents?: object, sessionTitle?: object, workspaceRegistry?: object,
  *   sessionPersistence?: object, effect?: Function}} [options]
  */
-export function createFakeCtx({ llm, logger, selection, agents, sessionTitle, workspaceRegistry, sessionPersistence, effect } = {}) {
+export function createFakeCtx({ llm, logger, selection, agents, sessionTitle, workspaceRegistry, sessionPersistence, sessions, effect } = {}) {
   const defaultSelection = selection === undefined
     ? { provider: 'modelhub', model: 'deepseek-flash', reasoningEffort: 'max' }
     : selection;
@@ -119,6 +119,7 @@ export function createFakeCtx({ llm, logger, selection, agents, sessionTitle, wo
       if (name === 'sessionTitle') return sessionTitle;
       if (name === 'workspaceRegistry') return workspaceRegistry;
       if (name === 'sessionPersistence') return sessionPersistence;
+      if (name === 'sessions') return sessions;
       return undefined;
     },
     ...(typeof effect === 'function' ? { effect } : {}),
@@ -169,7 +170,7 @@ export function createFakeAgents({ create } = {}) {
  *   optional hooks: throw to simulate failures, or return a custom workspace.
  */
 export function createFakeWorkspaceRegistry({ create, attachSession, existing } = {}) {
-  const state = { createCalls: [], attached: [], reordered: [], resolveCalls: [], archived: [], deleted: [], detached: [], workspace: null };
+  const state = { createCalls: [], attached: [], reordered: [], resolveCalls: [], archived: [], unarchived: [], deleted: [], detached: [], workspace: null };
   if (existing !== undefined) state.workspace = existing;
   const registry = {
     state,
@@ -210,6 +211,9 @@ export function createFakeWorkspaceRegistry({ create, attachSession, existing } 
     },
     async archiveSession(sessionId, options = {}) {
       state.archived.push({ sessionId, options });
+    },
+    async unarchiveSession(sessionId) {
+      state.unarchived.push(sessionId);
     },
     async delete(id) {
       state.deleted.push(id);

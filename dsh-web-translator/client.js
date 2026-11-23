@@ -251,10 +251,12 @@ window.__ModuleLoader__.load({
       'settings.disableRecord': '关闭翻译记录',
       'settings.disableRecordHint': '默认开启记录（此开关默认关闭）。开启后新的翻译/查词不会写入任何记录。',
       'settings.clearRecords': '清理所有记录',
-      'settings.clearRecordsConfirmText': '将清空全部 token 统计/轨迹，并把「dsh翻译记录」分组中的 DSH 会话归档隐藏（DSH 不提供删除会话 API）。此操作不可恢复。',
+      'settings.clearRecordsConfirmText': '将清空全部 token 统计/轨迹，并永久删除「dsh翻译记录」分组里的 DSH 会话日志（含已归档的会话），最后移除该分组。此操作不可恢复。',
       'settings.clearRecordsConfirm': '确认清理',
-      'settings.clearRecordsDone': '翻译记录已清理',
+      'settings.clearRecordsDone': '翻译记录已彻底删除',
       'settings.clearRecordsFailed': '清理记录失败',
+      'settings.clearRecordsPartial': '统计已清空，但有 {failed} 个翻译会话未能删除。请重启 DSH 后重试。',
+      'settings.clearRecordsGroupRemaining': '翻译会话已删除，但「dsh翻译记录」分组未能移除；可在侧栏手动删除该工作区。',
       'extension.title': '未检测到浏览器扩展',
       'extension.desc': 'DSH 插件只提供翻译后端。要翻译网页和使用划词/双击查词，还需要在浏览器中安装 dsh翻译 Chrome/Edge 扩展。',
       'extension.step1': '打开 GitHub 仓库，下载或克隆项目，找到 dsh-web-translator-extension 目录。',
@@ -687,10 +689,12 @@ window.__ModuleLoader__.load({
       'settings.disableRecord': 'Disable translation recording',
       'settings.disableRecordHint': 'Recording is on by default (this switch is off by default). When enabled, new translations/lookups write no records.',
       'settings.clearRecords': 'Clear all records',
-      'settings.clearRecordsConfirmText': 'Clears all token stats/traces and archives the translation conversations out of the「dsh翻译记录」group (DSH has no session-delete API). This cannot be undone.',
-      'settings.clearRecordsConfirm': 'Clear records',
-      'settings.clearRecordsDone': 'Translation records cleared',
+      'settings.clearRecordsConfirmText': 'Clears all token stats/traces, permanently deletes the DSH session logs in the「dsh翻译记录」group (including archived ones) and then removes that group. This cannot be undone.',
+      'settings.clearRecordsConfirm': 'Delete records',
+      'settings.clearRecordsDone': 'Translation records deleted',
       'settings.clearRecordsFailed': 'Could not clear records',
+      'settings.clearRecordsPartial': 'Stats cleared, but {failed} translation sessions could not be deleted. Restart DSH and try again.',
+      'settings.clearRecordsGroupRemaining': 'Translation sessions were deleted, but the「dsh翻译记录」group could not be removed; delete that workspace from the sidebar.',
       'extension.title': 'Browser extension not detected',
       'extension.desc': 'The DSH plugin only provides the translation backend. To translate pages and look up words in the browser, install the dsh翻译 Chrome/Edge extension.',
       'extension.step1': 'Open the GitHub repository, download or clone it and locate the dsh-web-translator-extension directory.',
@@ -1908,9 +1912,25 @@ window.__ModuleLoader__.load({
         setClearingRecords(true);
         setRecordsNotice(null);
         request('records', { method: 'DELETE' })
-          .then(() => {
+          .then((payload) => {
             if (!mountedRef.current) return;
             setClearRecordsConfirm(false);
+            const conversations = payload && payload.conversations ? payload.conversations : null;
+            const sessions = Number(conversations && conversations.sessions) || 0;
+            const deleted = Number(conversations && conversations.deleted) || 0;
+            const missed = Number(conversations && conversations.failed) || Math.max(sessions - deleted, 0);
+            if (conversations === null || missed > 0) {
+              // Never claim success when the sessions stayed on disk: that is
+              // exactly the silent failure this button used to hide.
+              setRecordsNotice(missed > 0
+                ? { kind: 'error', text: t('settings.clearRecordsPartial', { failed: missed }) }
+                : { kind: 'error', text: t('settings.clearRecordsFailed') });
+              return;
+            }
+            if (conversations.groupRemoved === false) {
+              setRecordsNotice({ kind: 'error', text: t('settings.clearRecordsGroupRemaining') });
+              return;
+            }
             setRecordsNotice({ kind: 'ok', text: t('settings.clearRecordsDone') });
           })
           .catch((error) => {

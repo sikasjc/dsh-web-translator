@@ -74,7 +74,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 |---|---|
 | **概览** | 今日请求数 / 输入 tokens / 输出 tokens / 缓存读 tokens / 失败数 / 平均时延；近 14 天消耗柱状图；按模型与按类型（翻译/查词）的分布 |
 | **轨迹** | 以**翻译会话**为单位（对齐 DSH 的「会话 → 轨迹」层级）：每次「翻译此页 / 重新翻译 / 查词」= 一条真实的 DSH 会话，会话内每个模型请求 = **一轮对话（Turn）**；会话卡片显示标题 / 站点 / 模型 / 轮数 / 输入输出 tokens / 状态，展开可看每轮摘要，点「**打开 DSH 轨迹**」直接进入 DSH 原生「对话 / 轨迹 / 统计」查看每轮完整原文、译文与 Token；旧版请求（无 DSH 会话）保留内联分组；支持 全部/翻译/查词/仅失败 过滤、「加载更早」分页、清空统计（二次确认） |
-| **设置** | 模型、推理强度、目标语言、**翻译风格（自动/通用/编程/科技/金融）**、system 提示词、user 模板、批次参数、测试翻译（与设置页同源实现）；**翻译记录**：关闭记录开关（默认记录）+ 清理所有记录（清空 token/轨迹并归档隐藏 DSH「dsh翻译记录」会话） |
+| **设置** | 模型、推理强度、目标语言、**翻译风格（自动/通用/编程/科技/金融）**、system 提示词、user 模板、批次参数、测试翻译（与设置页同源实现）；**翻译记录**：关闭记录开关（默认记录）+ 清理所有记录（清空 token/轨迹，并永久删除 DSH「dsh翻译记录」会话日志与分组） |
 | **单词本** | 单词列表、复习、发音练习（与设置页同源实现） |
 | **悬浮球**（左侧工具栏页面 + DSH 设置页 Tab） | 不展示悬浮球的域名列表：查看、移除、手动添加（扩展在面板/右键菜单添加，Host 持久化到 `ball-sites.json`） |
 | **术语库**（左侧工具栏页面 + DSH 设置页 Tab） | 多个内置术语包（Rust 编程、通用编程/网络）+ 自定义术语库；勾选启用哪些库；内置包只读，自定义库可新建/重命名/删除并增删词条（原文 → 固定译法 / 保留原文）；支持**导入 / 导出**（JSON / CSV，单库或全部）；数据来自 `GET /terms`，写操作走 `POST /terms/*` |
@@ -156,7 +156,7 @@ DSH 设置页「dsh翻译」──同源──► 同一实现的入口（单词
 | POST | `/terms/entries/remove` `{libraryId, entryId}` | 删除词条 |
 | POST | `/terms/quick-add` `{source, policy, target?}` | 扩展未收录术语入库：自动创建/启用「我的术语」库，按 source 更新或新增词条（`translate` 需要 `target`，`keep` 忽略 target） |
 | POST | `/terms/import` `{libraries:[{name, terms:[{source, policy, target?}]}]}` | 批量导入自定义术语库（原子：任一非法整体拒绝；重名自动加序号（含内置包名）；导入库默认启用；单次请求体 ≤ 8 MB；返回 `imported` 列表） |
-| DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 归档隐藏「dsh翻译记录」会话 |
+| DELETE | `/records` | 清理所有翻译记录：清空 usage 账本 + 永久删除「dsh翻译记录」会话日志（含已归档）并移除分组 |
 | POST | `/translate` | 批量翻译 `{texts, targetLanguage?, sourceUrl?, sourceTitle?, client?, turnId?, stepIndex?, mode?, suggestTerms?}`，响应含 `usage` 四字段与 `cached`；`suggestTerms:true` 时模型额外返回 `terms`，Host 过滤已收录词条后返回带 `[[TE…]]` 标记的 `translations` 与 `termSuggestions` |
 | POST | `/lookup` | 查词/查句 + 英文词典信息，响应含 `usage`；接受相同可选元数据 |
 | POST | `/image-translate` | 图片文字 OCR + 翻译 `{image:{mediaType,data}, targetLanguage?, ...元数据}` → `{result:{blocks:[{text,translation,bbox?}], provider, model, cached}, usage}`；图片用完即删 |

@@ -3,6 +3,7 @@
  * sequence, dedupe, failure tolerance and lifecycle (DESIGN-CONVERSATIONS §2).
  */
 import assert from 'node:assert/strict';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -54,6 +55,11 @@ async function setupBridge(t, { agents, sessionTitle, now, ctx, workspaceRegistr
   const bridge = createConversationBridge({ ctx: services, dataDir: dir, logger, now });
   t.after(() => bridge.dispose());
   return { bridge, logger, dir, agents: fakeAgents };
+}
+
+/** Assert that a path does not exist. */
+async function missing(path) {
+  await assert.rejects(() => stat(path), { code: 'ENOENT' });
 }
 
 /** Let queued promise jobs (agent disposal) run. */
@@ -543,17 +549,102 @@ test('workspace creation attaches persisted translation sessions that predate th
   assert.deepEqual(workspaceRegistry.state.attached, ['translation-tr_old_1', 'translation-tr_old_2'], 'oldest attaches first so newest sits on top; foreign cwd is skipped');
 });
 
-test('clearRecords archives translation sessions, detaches and deletes the workspace', async (t) => {
+/**
+ * Build a fake DSH sessions root with one real artifact per session id, plus
+ * the matching persistence snapshots. Mirrors the local JSONL layout
+ * `<root>/<project>/<sessionId>/session.v4.jsonl.zstd`.
+ */
+async function createSessionStoreFixture(dir, ids) {
+  const root = join(dir, 'sessions');
+  const project = join(root, '--translation-conversations--');
+  const cwd = join(dir, 'conversations');
+  const snapshots = [];
+  for (const id of ids) {
+    const sessionDir = join(project, id);
+    await mkdir(sessionDir, { recursive: true });
+    const path = join(sessionDir, 'session.v4.jsonl.zstd');
+    await writeFile(path, 'header\n');
+    snapshots.push({ header: { id, cwd, createdAt: 1 }, location: { kind: 'jsonl', path } });
+  }
+  return { root, project, cwd, snapshots, dirOf: (id) => join(project, id) };
+}
+
+/** Minimal fake session store: records flushes and live entry detaches. */
+function createFakeSessions() {
+  const state = { flushed: [], detached: [], store: new Map() };
+  return {
+    state,
+    get store() {
+      return state.store;
+    },
+    get(id) {
+      return state.store.get(id)?.session;
+    },
+    async flush(session) {
+      state.flushed.push(session.id);
+    },
+    addLive(id) {
+      state.store.set(id, {
+        session: { id },
+        detach() {
+          state.detached.push(id);
+        },
+      });
+    },
+  };
+}
+
+test('clearRecords permanently deletes the translation sessions and their group', async (t) => {
   const dir = await createTempDir();
   t.after(() => removeTempDir(dir));
+  const fixture = await createSessionStoreFixture(dir, ['translation-tr_live', 'translation-tr_persisted']);
   const workspaceRegistry = createFakeWorkspaceRegistry();
+  const sessions = createFakeSessions();
+  sessions.addLive('translation-tr_live');
   const bridge = createConversationBridge({
     ctx: createFakeCtx({
       agents: createFakeAgents(),
       workspaceRegistry,
+      sessions,
+      sessionPersistence: { root: fixture.root, async list() { return fixture.snapshots; } },
+    }),
+    dataDir: dir,
+    logger: createFakeLogger(),
+  });
+  t.after(() => bridge.dispose());
+  await bridge.recordTurn({ ...ROUND, turnId: 'tr_live' });
+  assert.equal(workspaceRegistry.state.createCalls.length, 1, 'the group exists before clearing');
+
+  const result = await bridge.clearRecords();
+  assert.deepEqual(result, { sessions: 2, deleted: 2, failed: 0, groupRemoved: true });
+  await missing(fixture.dirOf('translation-tr_live'));
+  await missing(fixture.dirOf('translation-tr_persisted'));
+  assert.deepEqual(workspaceRegistry.state.unarchived.sort(), ['translation-tr_live', 'translation-tr_persisted']);
+  assert.deepEqual(workspaceRegistry.state.deleted, ['ws-translations']);
+  assert.deepEqual(sessions.state.detached, ['translation-tr_live'], 'the live row is detached');
+  assert.equal(bridge.list().length, 0, 'live conversations are disposed');
+
+  await bridge.recordTurn({ ...ROUND, turnId: 'tr_after_clear' });
+  assert.equal(workspaceRegistry.state.createCalls.length, 2, 'the group is recreated on the next translation');
+});
+
+test('clearRecords never deletes a session outside the plugin conversation directory', async (t) => {
+  const dir = await createTempDir();
+  t.after(() => removeTempDir(dir));
+  const root = join(dir, 'sessions');
+  const foreignCwd = join(dir, 'someone-else');
+  const sessionDir = join(root, '--someone-else--', 'translation-tr_foreign');
+  await mkdir(sessionDir, { recursive: true });
+  const artifact = join(sessionDir, 'session.v4.jsonl.zstd');
+  await writeFile(artifact, 'header\n');
+  const bridge = createConversationBridge({
+    ctx: createFakeCtx({
+      agents: createFakeAgents(),
+      workspaceRegistry: createFakeWorkspaceRegistry(),
       sessionPersistence: {
+        root,
         async list() {
-          return [{ header: { id: 'translation-tr_persisted', cwd: join(dir, 'conversations'), createdAt: 1 } }];
+          return [{ header: { id: 'translation-tr_foreign', cwd: foreignCwd, createdAt: 1 }, location: { kind: 'jsonl', path: artifact } }];
         },
       },
     }),
@@ -561,21 +652,87 @@ test('clearRecords archives translation sessions, detaches and deletes the works
     logger: createFakeLogger(),
   });
   t.after(() => bridge.dispose());
-  await bridge.recordTurn({ ...ROUND, turnId: 'tr_live' });
 
   const result = await bridge.clearRecords();
-  assert.deepEqual(result, { sessions: 2, archived: 2 });
-  assert.deepEqual(
-    workspaceRegistry.state.archived.map((entry) => entry.sessionId).sort(),
-    ['translation-tr_live', 'translation-tr_persisted'],
-  );
-  assert.ok(workspaceRegistry.state.archived.every((entry) => entry.options.stopActivity === true));
-  assert.deepEqual(workspaceRegistry.state.deleted, ['ws-translations']);
-  assert.deepEqual(workspaceRegistry.state.detached.sort(), ['translation-tr_live', 'translation-tr_persisted']);
-  assert.equal(bridge.list().length, 0, 'live conversations are disposed');
+  assert.deepEqual(result, { sessions: 0, deleted: 0, failed: 0, groupRemoved: true });
+  assert.equal(await readFile(artifact, 'utf8'), 'header\n', 'the foreign session log is untouched');
+});
 
-  await bridge.recordTurn({ ...ROUND, turnId: 'tr_after_clear' });
-  assert.equal(workspaceRegistry.state.createCalls.length, 2, 'the workspace is recreated on the next translation');
+test('clearRecords refuses an artifact path outside the sessions root and reports the failure', async (t) => {
+  const dir = await createTempDir();
+  t.after(() => removeTempDir(dir));
+  const cwd = join(dir, 'conversations');
+  const outside = join(dir, 'outside', 'translation-tr_evil');
+  await mkdir(outside, { recursive: true });
+  const artifact = join(outside, 'session.v4.jsonl.zstd');
+  await writeFile(artifact, 'header\n');
+  const logger = createFakeLogger();
+  const bridge = createConversationBridge({
+    ctx: createFakeCtx({
+      agents: createFakeAgents(),
+      workspaceRegistry: createFakeWorkspaceRegistry(),
+      sessionPersistence: {
+        root: join(dir, 'sessions'),
+        async list() {
+          return [{ header: { id: 'translation-tr_evil', cwd, createdAt: 1 }, location: { kind: 'jsonl', path: artifact } }];
+        },
+      },
+    }),
+    dataDir: dir,
+    logger,
+  });
+  t.after(() => bridge.dispose());
+
+  const result = await bridge.clearRecords();
+  assert.equal(result.sessions, 1);
+  assert.equal(result.deleted, 0);
+  assert.equal(result.failed, 1);
+  assert.match(result.error, /refusing to delete/);
+  assert.equal(await readFile(artifact, 'utf8'), 'header\n', 'nothing outside the sessions root is removed');
+  assert.ok(logger.lines.warn.some((line) => line.includes('refusing to delete')), 'the failure is logged');
+});
+
+test('a workspace registry that appears after a transient miss still removes the group', async (t) => {
+  const dir = await createTempDir();
+  t.after(() => removeTempDir(dir));
+  const cwd = join(dir, 'conversations');
+  const artifact = join(dir, 'sessions', '--p--', 'translation-tr_late', 'session.v4.jsonl.zstd');
+  await mkdir(join(dir, 'sessions', '--p--', 'translation-tr_late'), { recursive: true });
+  await writeFile(artifact, 'header\n');
+  const agents = createFakeAgents();
+  const persistence = {
+    root: join(dir, 'sessions'),
+    async list() {
+      return [{ header: { id: 'translation-tr_late', cwd, createdAt: 1 }, location: { kind: 'jsonl', path: artifact } }];
+    },
+  };
+  // The registry is unavailable while the first translation records, exactly as
+  // during a plugin remount or a service fiber that is still starting.
+  const availability = { registry: undefined };
+  const ctx = {
+    get(name) {
+      if (name === 'agents') return agents;
+      if (name === 'workspaceRegistry') return availability.registry;
+      if (name === 'sessionPersistence') return persistence;
+      return undefined;
+    },
+  };
+  const bridge = createConversationBridge({ ctx, dataDir: dir, logger: createFakeLogger() });
+  t.after(() => bridge.dispose());
+  await bridge.recordTurn({ ...ROUND, turnId: 'tr_late' });
+
+  availability.registry = createFakeWorkspaceRegistry();
+  const existing = {
+    id: 'ws-existing',
+    path: cwd,
+    title: TRANSLATION_WORKSPACE_TITLE,
+    sessionIds: ['translation-tr_late'],
+  };
+  availability.registry.state.workspace = existing;
+  const result = await bridge.clearRecords();
+  assert.deepEqual(result, { sessions: 1, deleted: 1, failed: 0, groupRemoved: true });
+  assert.deepEqual(availability.registry.state.deleted, ['ws-existing']);
+  await missing(join(dir, 'sessions', '--p--', 'translation-tr_late'));
 });
 
 test('a failing workspace registry never blocks conversation recording', async (t) => {
